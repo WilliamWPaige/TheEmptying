@@ -1,5 +1,8 @@
+using System;
+using System.Collections.Generic;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
+using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
 using TheEmptying.Core.Scheduling;
 using TheEmptying.Core.Timekeeping;
@@ -17,8 +20,9 @@ namespace TheEmptying.Core
         public EntityRegistry Entities { get; }
         public EventDefinitionRegistry EventDefinitions { get; }
         public EventBus Events { get; }
+        public ModuleHost Modules { get; }
 
-        public Simulation(ulong worldSeed)
+        public Simulation(ulong worldSeed, IEnumerable<ModuleRegistration> modules = null, ErrorMode errorMode = ErrorMode.Development)
         {
             Random = new RandomService(worldSeed);
             Clock = new SimClock();
@@ -26,8 +30,11 @@ namespace TheEmptying.Core
             Entities = new EntityRegistry();
             EventDefinitions = new EventDefinitionRegistry();
             Events = new EventBus(EventDefinitions);
+            Modules = new ModuleHost(Events, Scheduler, Entities, EventDefinitions, Random, () => Clock.CurrentTick, errorMode);
 
             RegisterCalendarDefinitions();
+
+            Modules.Setup(modules ?? Array.Empty<ModuleRegistration>());
         }
 
         /// <summary>Runs exactly one tick: advance the clock, post calendar events, run the scheduler, deliver events.</summary>

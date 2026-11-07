@@ -45,6 +45,25 @@ namespace TheEmptying.Core.Scheduling
             _dirty = true;
         }
 
+        /// <summary>No-op if systemId isn't registered. Leaves the run order of remaining systems unchanged.</summary>
+        public void Unregister(string systemId)
+        {
+            if (systemId == null)
+            {
+                throw new ArgumentNullException(nameof(systemId));
+            }
+
+            int index = _entries.FindIndex(e => e.System.Id == systemId);
+            if (index < 0)
+            {
+                return;
+            }
+
+            _entries.RemoveAt(index);
+            _registeredIds.Remove(systemId);
+            _dirty = true;
+        }
+
         public void RunTick(long tick)
         {
             EnsureSorted();

@@ -1,13 +1,32 @@
+using System;
 using System.Collections.Generic;
 using NUnit.Framework;
 using TheEmptying.Core;
 using TheEmptying.Core.Events;
+using TheEmptying.Core.Modules;
 using TheEmptying.Core.Timekeeping;
 
 namespace TheEmptying.Tests.EditMode
 {
     public class SimulationTests
     {
+        private sealed class DayCounterModule : IModule
+        {
+            public string Id => "test.day_counter";
+            public int Version => 1;
+            public IReadOnlyList<string> Dependencies { get; } = Array.Empty<string>();
+            public int DayCount { get; private set; }
+
+            public void Initialize(ModuleContext context)
+            {
+                context.Subscribe<NewDayEvent>(e => DayCount++);
+            }
+
+            public void Shutdown()
+            {
+            }
+        }
+
         [Test]
         public void OneFullDay_PostsExactlyTwentyFourNewHourEvents_AndOneNewDayEvent_OnCorrectTicks()
         {
@@ -67,6 +86,26 @@ namespace TheEmptying.Tests.EditMode
 
             Assert.IsNotEmpty(logA);
             CollectionAssert.AreEqual(logA, logB);
+        }
+
+        [Test]
+        public void SimulationWithTestModule_SubscribingToNewDayEvents_CountsCorrectlyAfterThreeDays()
+        {
+            var dayCounter = new DayCounterModule();
+            var registrations = new[]
+            {
+                new ModuleRegistration(dayCounter, new ModuleManifest(dayCounter.Id, 1, Array.Empty<string>(), true))
+            };
+
+            var sim = new Simulation(42, registrations);
+
+            long totalTicks = CalendarConstants.TicksPerDay * 3;
+            for (long i = 0; i < totalTicks; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.AreEqual(3, dayCounter.DayCount);
         }
     }
 }
