@@ -28,6 +28,9 @@ namespace TheEmptying.Core.Modules
         public EventDefinitionRegistry EventDefinitions { get; }
         public SimRandom Random { get; }
 
+        /// <summary>True when this Initialize is part of a load, not a new game. Modules must not run new-game setup when this is true.</summary>
+        public bool IsLoading { get; }
+
         internal ModuleContext(
             string moduleId,
             EventBus events,
@@ -35,7 +38,8 @@ namespace TheEmptying.Core.Modules
             EntityRegistry entities,
             EventDefinitionRegistry eventDefinitions,
             RandomService randomService,
-            Action<string, string, Exception> onFailure)
+            Action<string, string, Exception> onFailure,
+            bool isLoading)
         {
             ModuleId = moduleId;
             Events = events;
@@ -44,6 +48,7 @@ namespace TheEmptying.Core.Modules
             EventDefinitions = eventDefinitions;
             Random = randomService.GetStream(moduleId);
             _onFailure = onFailure;
+            IsLoading = isLoading;
         }
 
         public void RegisterSystem(ISimSystem system, long interval, long offset, int order)

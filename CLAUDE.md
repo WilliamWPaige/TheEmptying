@@ -102,6 +102,7 @@ Docs/
 - UI uses UI Toolkit (UXML and USS). The older uGUI only for things floating in the 3D world.
 - Input uses the Input System package, with every action rebindable.
 - Keep classes small and focused. Prefer plain data structs for simulation state.
+- Always compare and sort strings with ordinal comparison in the simulation. Never use culture-sensitive comparison; it breaks determinism across players' language settings.
 
 ## Tests
 

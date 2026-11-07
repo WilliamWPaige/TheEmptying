@@ -37,5 +37,10 @@ namespace TheEmptying.Core.Timekeeping
 
             return new GameDate(year, (Season)seasonIndex, dayOfSeason, hour, minute);
         }
+
+        public override string ToString()
+        {
+            return $"Year {Year}, {Season}, Day {DayOfSeason}, {Hour:00}:{Minute:00}";
+        }
     }
 }

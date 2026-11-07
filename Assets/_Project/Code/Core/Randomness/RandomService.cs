@@ -49,12 +49,24 @@ namespace TheEmptying.Core.Randomness
             return state;
         }
 
+        /// <summary>
+        /// Restores every listed stream. A stream already handed out (and so
+        /// possibly captured elsewhere, e.g. by a module's scheduled system) is
+        /// mutated in place rather than replaced, so that capture stays valid.
+        /// </summary>
         public void RestoreState(RandomServiceState state)
         {
-            _streams.Clear();
             foreach (RandomStreamEntry entry in state.Streams)
             {
-                _streams[entry.Name] = SimRandom.FromState(new SimRandomState(entry.State, entry.Inc));
+                var restored = new SimRandomState(entry.State, entry.Inc);
+                if (_streams.TryGetValue(entry.Name, out SimRandom existing))
+                {
+                    existing.SetState(restored);
+                }
+                else
+                {
+                    _streams[entry.Name] = SimRandom.FromState(restored);
+                }
             }
         }
 

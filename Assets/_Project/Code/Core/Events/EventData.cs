@@ -103,6 +103,19 @@ namespace TheEmptying.Core.Events
         public bool GetBool(string name) => TryGetBool(name, out bool value) ? value : throw Missing(name);
         public string GetString(string name) => TryGetString(name, out string value) ? value : throw Missing(name);
 
+        /// <summary>Read-only views for serialization. Never null, even when nothing of that type was set.</summary>
+        public IReadOnlyDictionary<string, EntityId> EntityValues => _entities ?? (IReadOnlyDictionary<string, EntityId>)EmptyEntities;
+        public IReadOnlyDictionary<string, long> LongValues => _longs ?? (IReadOnlyDictionary<string, long>)EmptyLongs;
+        public IReadOnlyDictionary<string, double> DoubleValues => _doubles ?? (IReadOnlyDictionary<string, double>)EmptyDoubles;
+        public IReadOnlyDictionary<string, bool> BoolValues => _bools ?? (IReadOnlyDictionary<string, bool>)EmptyBools;
+        public IReadOnlyDictionary<string, string> StringValues => _strings ?? (IReadOnlyDictionary<string, string>)EmptyStrings;
+
+        private static readonly Dictionary<string, EntityId> EmptyEntities = new Dictionary<string, EntityId>();
+        private static readonly Dictionary<string, long> EmptyLongs = new Dictionary<string, long>();
+        private static readonly Dictionary<string, double> EmptyDoubles = new Dictionary<string, double>();
+        private static readonly Dictionary<string, bool> EmptyBools = new Dictionary<string, bool>();
+        private static readonly Dictionary<string, string> EmptyStrings = new Dictionary<string, string>();
+
         private static KeyNotFoundException Missing(string name)
         {
             return new KeyNotFoundException($"EventData has no value named '{name}'.");

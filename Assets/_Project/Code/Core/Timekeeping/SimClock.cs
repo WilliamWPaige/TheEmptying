@@ -15,6 +15,12 @@ namespace TheEmptying.Core.Timekeeping
 
         public GameDate CurrentDate => GameDate.FromTick(CurrentTick);
 
+        /// <summary>For loading: sets the tick directly, without running Tick() or reporting boundaries.</summary>
+        public void RestoreTick(long tick)
+        {
+            CurrentTick = tick;
+        }
+
         public TickBoundaries Tick()
         {
             CurrentTick++;

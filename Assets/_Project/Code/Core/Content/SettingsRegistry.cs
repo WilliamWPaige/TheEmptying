@@ -60,8 +60,24 @@ namespace TheEmptying.Core.Content
                 throw new KeyNotFoundException($"Setting '{id}' is not declared.");
             }
 
-            double clamped = Math.Min(Math.Max(value, definition.Minimum), definition.Maximum);
-            bool wasClamped = clamped != value;
+            double adjusted = value;
+
+            switch (definition.ValueType)
+            {
+                case SettingValueType.Integer:
+                    adjusted = Math.Round(value, MidpointRounding.AwayFromZero);
+                    break;
+                case SettingValueType.Boolean:
+                    if (value != 0 && value != 1)
+                    {
+                        throw new ArgumentOutOfRangeException(nameof(value), $"Boolean setting '{id}' only accepts 0 or 1 (got {value}).");
+                    }
+
+                    break;
+            }
+
+            double clamped = Math.Min(Math.Max(adjusted, definition.Minimum), definition.Maximum);
+            bool wasClamped = clamped != adjusted;
             _values[id] = clamped;
             return new SetResult(clamped, wasClamped);
         }

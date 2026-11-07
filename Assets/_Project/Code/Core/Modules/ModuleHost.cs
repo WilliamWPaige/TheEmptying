@@ -5,6 +5,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Randomness;
+using TheEmptying.Core.Saves;
 using TheEmptying.Core.Scheduling;
 
 namespace TheEmptying.Core.Modules
@@ -91,6 +92,39 @@ namespace TheEmptying.Core.Modules
             }
         }
 
+        /// <summary>
+        /// Phase 1, data-driven: pairs code modules with manifests bootstrapped
+        /// from data (see ModuleManifestBootstrap). A module with no matching
+        /// manifest, or a manifest with no matching module code, is an error.
+        /// </summary>
+        public void ValidateAndOrder(IEnumerable<IModule> modules, IReadOnlyDictionary<string, ModuleManifest> manifestsFromData)
+        {
+            List<IModule> moduleList = modules?.ToList() ?? new List<IModule>();
+            var moduleIds = new HashSet<string>();
+            var registrations = new List<ModuleRegistration>();
+
+            foreach (IModule module in moduleList)
+            {
+                moduleIds.Add(module.Id);
+                if (!manifestsFromData.TryGetValue(module.Id, out ModuleManifest manifest))
+                {
+                    throw new ModuleValidationException($"Module '{module.Id}' has no manifest in the data.");
+                }
+
+                registrations.Add(new ModuleRegistration(module, manifest));
+            }
+
+            foreach (string manifestId in manifestsFromData.Keys)
+            {
+                if (!moduleIds.Contains(manifestId))
+                {
+                    throw new ModuleValidationException($"Manifest '{manifestId}' has no matching module code.");
+                }
+            }
+
+            ValidateAndOrder(registrations);
+        }
+
         /// <summary>Phase 2: each enabled module, in dependency order, can register content types and declare settings.</summary>
         public void RunDeclarationPhase(ContentTypeRegistry contentTypes, SettingsRegistry settings)
         {
@@ -132,7 +166,7 @@ namespace TheEmptying.Core.Modules
         }
 
         /// <summary>Phase 4: initializes enabled modules in dependency order. Call after content has loaded (phase 3, owned by the caller).</summary>
-        public void InitializeModules()
+        public void InitializeModules(bool isLoading = false)
         {
             if (_order == null)
             {
@@ -146,7 +180,7 @@ namespace TheEmptying.Core.Modules
                     continue;
                 }
 
-                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, HandleModuleFailure);
+                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, HandleModuleFailure, isLoading);
                 _contexts[id] = context;
 
                 try
@@ -158,6 +192,46 @@ namespace TheEmptying.Core.Modules
                 {
                     HandleModuleFailure(id, "initialize", ex);
                 }
+            }
+        }
+
+        /// <summary>Active modules implementing ISaveableModule, in ascending module Id order (ordinal).</summary>
+        public IEnumerable<(string Id, ISaveableModule Module)> GetActiveSaveableModules()
+        {
+            foreach (string id in _activeModuleIds.OrderBy(i => i, StringComparer.Ordinal))
+            {
+                if (_modules[id] is ISaveableModule saveable)
+                {
+                    yield return (id, saveable);
+                }
+            }
+        }
+
+        /// <summary>A saved section is newer than the module's own SectionVersion. Development throws; Release switches the module off and reports.</summary>
+        public void HandleSectionVersionTooNew(string moduleId, int savedVersion, int understoodVersion)
+        {
+            string message = $"Save section for module '{moduleId}' is version {savedVersion}, newer than this build understands ({understoodVersion}).";
+
+            if (ErrorMode == ErrorMode.Development)
+            {
+                throw new ModuleException(message, moduleId, "load section", null);
+            }
+
+            long tick = _currentTick();
+            _failureReports.Add(new ModuleFailureReport(moduleId, "load section", new InvalidOperationException(message), tick));
+            DisableModuleCascade(moduleId, $"Module '{moduleId}' was switched off: {message}");
+        }
+
+        /// <summary>Routes a module's section Read through the same failure handling as every other call into module code.</summary>
+        public void ReadModuleSection(string moduleId, ISaveableModule module, SaveReader reader, int savedVersion)
+        {
+            try
+            {
+                module.Read(reader, savedVersion);
+            }
+            catch (Exception ex)
+            {
+                HandleModuleFailure(moduleId, "load section", ex);
             }
         }
 

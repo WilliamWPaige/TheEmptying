@@ -1,3 +1,4 @@
+using System;
 using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core.Content;
@@ -46,6 +47,29 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(0, a.Minimum);
             Assert.AreEqual(10, a.Maximum);
             Assert.AreEqual("Cat2", a.Category);
+        }
+
+        [Test]
+        public void IntegerSetting_RoundsToNearestWholeNumberOnSet()
+        {
+            var registry = new SettingsRegistry();
+            registry.Declare(new SettingDefinition { Id = "setting.count", ValueType = SettingValueType.Integer, Default = 0, Minimum = 0, Maximum = 100, Category = "Cat", Description = "d" });
+
+            Assert.AreEqual(3, registry.Set("setting.count", 2.6).Value);
+            Assert.AreEqual(2, registry.Set("setting.count", 2.4).Value);
+            Assert.AreEqual(3, registry.Set("setting.count", 2.5).Value);
+        }
+
+        [Test]
+        public void BooleanSetting_AcceptsOnlyZeroOrOne()
+        {
+            var registry = new SettingsRegistry();
+            registry.Declare(new SettingDefinition { Id = "setting.flag", ValueType = SettingValueType.Boolean, Default = 0, Minimum = 0, Maximum = 1, Category = "Cat", Description = "d" });
+
+            Assert.AreEqual(1, registry.Set("setting.flag", 1).Value);
+            Assert.AreEqual(0, registry.Set("setting.flag", 0).Value);
+            Assert.Throws<ArgumentOutOfRangeException>(() => registry.Set("setting.flag", 0.5));
+            Assert.Throws<ArgumentOutOfRangeException>(() => registry.Set("setting.flag", 2));
         }
     }
 }

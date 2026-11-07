@@ -29,6 +29,16 @@ namespace TheEmptying.Core.Events
             _pending.Add(new PostedEvent(definitionId, tick, typedEvent, null));
         }
 
+        /// <summary>For saving: events posted but not yet delivered (e.g. queued mid-delivery for the next tick).</summary>
+        public IReadOnlyList<PostedEvent> ExportPending() => new List<PostedEvent>(_pending);
+
+        /// <summary>For loading: replaces the pending queue, to be delivered on the next DeliverPending.</summary>
+        public void RestorePending(IEnumerable<PostedEvent> events)
+        {
+            _pending.Clear();
+            _pending.AddRange(events);
+        }
+
         public void Post(string definitionId, long tick, EventData data = null)
         {
             EnsureRegistered(definitionId);

@@ -35,6 +35,13 @@ namespace TheEmptying.Core.Randomness
             return new SimRandom(state.State, state.Inc);
         }
 
+        /// <summary>Mutates this instance in place, so anything already holding a reference to it sees the restored sequence.</summary>
+        public void SetState(SimRandomState state)
+        {
+            _state = state.State;
+            _inc = state.Inc;
+        }
+
         public SimRandomState GetState()
         {
             return new SimRandomState(_state, _inc);
