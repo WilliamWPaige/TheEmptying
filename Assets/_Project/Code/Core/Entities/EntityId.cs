@@ -1,4 +1,5 @@
 using System;
+using System.Globalization;
 
 namespace TheEmptying.Core.Entities
 {
@@ -46,5 +47,34 @@ namespace TheEmptying.Core.Entities
 
         public static bool operator ==(EntityId left, EntityId right) => left.Equals(right);
         public static bool operator !=(EntityId left, EntityId right) => !left.Equals(right);
+
+        /// <summary>Parses the "eIndex.Generation" form produced by ToString, e.g. "e12.3".</summary>
+        public static bool TryParse(string text, out EntityId id)
+        {
+            id = None;
+
+            if (string.IsNullOrEmpty(text) || text[0] != 'e')
+            {
+                return false;
+            }
+
+            int dot = text.IndexOf('.');
+            if (dot < 1)
+            {
+                return false;
+            }
+
+            string indexPart = text.Substring(1, dot - 1);
+            string generationPart = text.Substring(dot + 1);
+
+            if (!int.TryParse(indexPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out int index) ||
+                !int.TryParse(generationPart, NumberStyles.Integer, CultureInfo.InvariantCulture, out int generation))
+            {
+                return false;
+            }
+
+            id = new EntityId(index, generation);
+            return true;
+        }
     }
 }

@@ -1,0 +1,53 @@
+using System.Collections.Generic;
+using System.Linq;
+using TheEmptying.Core.Content;
+using TheEmptying.Core.Modules;
+
+namespace TheEmptying.Core.Startup
+{
+    /// <summary>
+    /// Runs the full startup pipeline in one place: bootstrap manifests from
+    /// data, create and order the Simulation, declare, load and validate
+    /// content, register content-defined event definitions and settings, then
+    /// initialize modules. New games and loads both go through this.
+    /// </summary>
+    public static class SimulationBuilder
+    {
+        public static (Simulation Simulation, StartupReport Report) Build(
+            ulong worldSeed,
+            IEnumerable<string> sourceFolders,
+            IEnumerable<IModule> modules,
+            ErrorMode errorMode = ErrorMode.Development,
+            bool isLoading = false)
+        {
+            List<string> sources = sourceFolders?.ToList() ?? new List<string>();
+            List<IModule> moduleList = modules?.ToList() ?? new List<IModule>();
+
+            // 1. Bootstrap manifests from the sources.
+            Dictionary<string, ModuleManifest> manifests = ModuleManifestBootstrap.LoadManifests(sources);
+
+            // 2. Create the Simulation; validate, order and apply disabling using the data manifests.
+            var simulation = new Simulation(worldSeed, errorMode);
+            simulation.Modules.ValidateAndOrder(moduleList, manifests);
+
+            // 3. Run the declaration phase (built-in content types must exist first).
+            BuiltInContentTypes.RegisterAll(simulation.ContentTypes);
+            simulation.Modules.RunDeclarationPhase(simulation.ContentTypes, simulation.Settings);
+
+            // 4. Load and validate all content.
+            var loader = new ContentLoader(simulation.ContentTypes, errorMode);
+            (ContentDatabase database, ContentLoadReport contentReport) = loader.Load(sources);
+            simulation.Content = database;
+
+            // 5. Register event definitions and settings from the loaded content.
+            BuiltInContentTypes.RegisterEventDefinitionsFrom(database, simulation.EventDefinitions);
+            BuiltInContentTypes.DeclareSettingsFrom(database, simulation.Settings);
+
+            // 6. Initialize modules.
+            simulation.Modules.InitializeModules(isLoading);
+
+            var report = new StartupReport(simulation.Modules.DisabledReasons, contentReport);
+            return (simulation, report);
+        }
+    }
+}

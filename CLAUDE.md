@@ -122,6 +122,14 @@ Before running tests, check for `Unity.exe` processes whose command line include
 
 Check the exit code, then read `Logs/editmode-results.xml` (`result="Passed"` / `result="Failed"` on the root `<test-run>` element) and `Logs/editmode-run.log` for compiler errors.
 
+PlayMode tests load real scenes, so they need the same process check and a graphics device; run them the same way with `-testPlatform PlayMode`:
+
+```
+"C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe" -runTests -batchmode -projectPath "D:\Unity_Projects\TheEmptying" -testPlatform PlayMode -testResults "D:\Unity_Projects\TheEmptying\Logs\playmode-results.xml" -logFile "D:\Unity_Projects\TheEmptying\Logs\playmode-run.log"
+```
+
+Check `Logs/playmode-results.xml` and `Logs/playmode-run.log` the same way.
+
 ## Developer tools
 
 The in-game console and inspector are part of the core. When you add a module, add console commands and inspector panels for its data where useful.

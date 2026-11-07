@@ -1,11 +1,15 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 
 namespace TheEmptying.Core.Events
 {
     public sealed class EventDefinitionRegistry
     {
         private readonly Dictionary<string, EventDefinition> _definitions = new Dictionary<string, EventDefinition>();
+
+        /// <summary>Every registered definition, in ascending Id order.</summary>
+        public IEnumerable<EventDefinition> All => _definitions.Values.OrderBy(d => d.Id, StringComparer.Ordinal);
 
         public void Register(EventDefinition definition)
         {

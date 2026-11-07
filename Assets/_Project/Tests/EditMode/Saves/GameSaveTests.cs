@@ -7,6 +7,7 @@ using TheEmptying.Core.Events;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Tests.EditMode.Content;
 
 namespace TheEmptying.Tests.EditMode.Saves
 {
@@ -23,9 +24,25 @@ namespace TheEmptying.Tests.EditMode.Saves
             return new ModuleRegistration(module, new ModuleManifest("test.counter", 1, Array.Empty<string>(), true));
         }
 
+        /// <summary>A temp source folder declaring one module's manifest, for GameSave.Load (which now bootstraps manifests from sources, like a real game).</summary>
+        private static TempContentSource ManifestSource(string moduleId, int version = 1, bool enabled = true)
+        {
+            var source = new TempContentSource("core");
+            source.WriteDataFile("manifests.json", $@"{{
+                ""type"": ""module_manifest"",
+                ""items"": [
+                    {{ ""id"": ""{moduleId}"", ""version"": {version}, ""dependencies"": [], ""enabled"": {(enabled ? "true" : "false")} }}
+                ]
+            }}");
+            return source;
+        }
+
         [Test]
         public void RoundTrip_StateHashMatches()
         {
+            using TempContentSource source = ManifestSource("test.counter");
+            string[] sources = { source.FolderPath };
+
             var counter = new CounterModule();
             var sim = new Simulation(999, new[] { CounterRegistration(counter) });
 
@@ -41,7 +58,7 @@ namespace TheEmptying.Tests.EditMode.Saves
             stream.Position = 0;
 
             var loadedCounter = new CounterModule();
-            (Simulation loaded, _) = GameSave.Load(stream, Array.Empty<SaveSourceInfo>(), new[] { CounterRegistration(loadedCounter) });
+            (Simulation loaded, _) = GameSave.Load(stream, sources, new IModule[] { loadedCounter });
 
             Assert.AreEqual(originalHash, loaded.ComputeStateHash());
         }
@@ -52,6 +69,9 @@ namespace TheEmptying.Tests.EditMode.Saves
             const ulong seed = 4242;
             const int n = 370; // mid-hour (TicksPerHour = 600)
             const int m = 850; // n + m = 1220, also mid-hour
+
+            using TempContentSource source = ManifestSource("test.counter");
+            string[] sources = { source.FolderPath };
 
             var uninterruptedCounter = new CounterModule();
             var uninterruptedSim = new Simulation(seed, new[] { CounterRegistration(uninterruptedCounter) });
@@ -74,7 +94,7 @@ namespace TheEmptying.Tests.EditMode.Saves
             stream.Position = 0;
 
             var secondCounter = new CounterModule();
-            (Simulation secondSim, _) = GameSave.Load(stream, Array.Empty<SaveSourceInfo>(), new[] { CounterRegistration(secondCounter) });
+            (Simulation secondSim, _) = GameSave.Load(stream, sources, new IModule[] { secondCounter });
 
             for (int i = 0; i < m; i++)
             {
@@ -114,7 +134,7 @@ namespace TheEmptying.Tests.EditMode.Saves
             GameSave.Save(sim, new SaveHeaderInfo { KingdomName = "K", Population = 1 }, stream);
             stream.Position = 0;
 
-            (Simulation loadedWithout, _) = GameSave.Load(stream, Array.Empty<SaveSourceInfo>(), null);
+            (Simulation loadedWithout, _) = GameSave.Load(stream, Array.Empty<string>(), null);
 
             Assert.IsTrue(loadedWithout.OrphanedModuleSections.ContainsKey("test.counter"));
 
@@ -129,6 +149,9 @@ namespace TheEmptying.Tests.EditMode.Saves
         [Test]
         public void NewerSectionVersion_Development_Throws()
         {
+            using TempContentSource source = ManifestSource("test.versioned");
+            string[] sources = { source.FolderPath };
+
             var saveModule = new VersionedModule(2);
             var saveRegs = new[] { new ModuleRegistration(saveModule, new ModuleManifest("test.versioned", 1, Array.Empty<string>(), true)) };
             var sim = new Simulation(1, saveRegs);
@@ -138,14 +161,16 @@ namespace TheEmptying.Tests.EditMode.Saves
             stream.Position = 0;
 
             var loadModule = new VersionedModule(1);
-            var loadRegs = new[] { new ModuleRegistration(loadModule, new ModuleManifest("test.versioned", 1, Array.Empty<string>(), true)) };
 
-            Assert.Throws<ModuleException>(() => GameSave.Load(stream, Array.Empty<SaveSourceInfo>(), loadRegs, ErrorMode.Development));
+            Assert.Throws<ModuleException>(() => GameSave.Load(stream, sources, new IModule[] { loadModule }, ErrorMode.Development));
         }
 
         [Test]
         public void NewerSectionVersion_Release_SwitchesOffModule_AndReports()
         {
+            using TempContentSource source = ManifestSource("test.versioned");
+            string[] sources = { source.FolderPath };
+
             var saveModule = new VersionedModule(2);
             var saveRegs = new[] { new ModuleRegistration(saveModule, new ModuleManifest("test.versioned", 1, Array.Empty<string>(), true)) };
             var sim = new Simulation(1, saveRegs);
@@ -155,9 +180,8 @@ namespace TheEmptying.Tests.EditMode.Saves
             stream.Position = 0;
 
             var loadModule = new VersionedModule(1);
-            var loadRegs = new[] { new ModuleRegistration(loadModule, new ModuleManifest("test.versioned", 1, Array.Empty<string>(), true)) };
 
-            (Simulation loaded, LoadReport report) = GameSave.Load(stream, Array.Empty<SaveSourceInfo>(), loadRegs, ErrorMode.Release);
+            (Simulation loaded, LoadReport report) = GameSave.Load(stream, sources, new IModule[] { loadModule }, ErrorMode.Release);
 
             Assert.IsFalse(loaded.Modules.IsActive("test.versioned"));
             Assert.AreEqual(1, report.NewerSectionVersions.Count);
@@ -174,7 +198,7 @@ namespace TheEmptying.Tests.EditMode.Saves
             GameSave.Save(sim, new SaveHeaderInfo { KingdomName = "K", Population = 1 }, stream);
             stream.Position = 0;
 
-            (Simulation loaded, _) = GameSave.Load(stream, Array.Empty<SaveSourceInfo>(), null);
+            (Simulation loaded, _) = GameSave.Load(stream, Array.Empty<string>(), null);
 
             int hourEventsReceived = 0;
             loaded.Events.Subscribe<NewHourEvent>(e => hourEventsReceived++);
@@ -201,6 +225,9 @@ namespace TheEmptying.Tests.EditMode.Saves
         [Test]
         public void Loading_NeverRunsNewGameSetup()
         {
+            using TempContentSource source = ManifestSource("test.counter");
+            string[] sources = { source.FolderPath };
+
             var counterForSave = new CounterModule();
             var sim = new Simulation(7, new[] { CounterRegistration(counterForSave) });
             Assert.AreEqual(1, counterForSave.SetupCount);
@@ -215,7 +242,7 @@ namespace TheEmptying.Tests.EditMode.Saves
             stream.Position = 0;
 
             var counterForLoad = new CounterModule();
-            GameSave.Load(stream, Array.Empty<SaveSourceInfo>(), new[] { CounterRegistration(counterForLoad) });
+            GameSave.Load(stream, sources, new IModule[] { counterForLoad });
 
             Assert.AreEqual(0, counterForLoad.SetupCount);
         }
@@ -239,11 +266,9 @@ namespace TheEmptying.Tests.EditMode.Saves
             GameSave.Save(sim, headerInfo, stream);
             stream.Position = 0;
 
-            var currentSources = new List<SaveSourceInfo>
-            {
-                new SaveSourceInfo { Id = "core", Version = "2.0.0" },
-                new SaveSourceInfo { Id = "modNew", Version = "1.0.0" }
-            };
+            using var core = new TempContentSource("core", "2.0.0");
+            using var modNew = new TempContentSource("modNew", "1.0.0");
+            string[] currentSources = { core.FolderPath, modNew.FolderPath };
 
             (_, LoadReport report) = GameSave.Load(stream, currentSources, null);
 

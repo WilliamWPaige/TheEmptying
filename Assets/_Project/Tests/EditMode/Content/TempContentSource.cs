@@ -8,11 +8,11 @@ namespace TheEmptying.Tests.EditMode.Content
     {
         public string FolderPath { get; }
 
-        public TempContentSource(string sourceId)
+        public TempContentSource(string sourceId, string version = "1.0.0")
         {
             FolderPath = Path.Combine(Path.GetTempPath(), "TheEmptyingContentTests", Guid.NewGuid().ToString("N"));
             Directory.CreateDirectory(Path.Combine(FolderPath, "Data"));
-            File.WriteAllText(Path.Combine(FolderPath, "mod.json"), "{\"id\": \"" + sourceId + "\", \"name\": \"" + sourceId + "\", \"version\": \"1.0.0\", \"dependencies\": []}");
+            File.WriteAllText(Path.Combine(FolderPath, "mod.json"), "{\"id\": \"" + sourceId + "\", \"name\": \"" + sourceId + "\", \"version\": \"" + version + "\", \"dependencies\": []}");
         }
 
         public void WriteDataFile(string fileName, string json)

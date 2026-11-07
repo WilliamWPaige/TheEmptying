@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TheEmptying.Core.Console;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
@@ -26,6 +27,10 @@ namespace TheEmptying.Core
         public ContentTypeRegistry ContentTypes { get; }
         public SettingsRegistry Settings { get; }
         public TypedEventSerializerRegistry EventSerializers { get; }
+        public ConsoleCommandRegistry Commands { get; }
+
+        /// <summary>The loaded content database. Empty until SimulationBuilder loads content; a Simulation built from code-supplied manifests alone has no content.</summary>
+        public ContentDatabase Content { get; internal set; }
 
         /// <summary>
         /// Sections from a loaded save whose module is currently missing or
@@ -34,7 +39,13 @@ namespace TheEmptying.Core
         /// </summary>
         public Dictionary<string, SaveSectionData> OrphanedModuleSections { get; } = new Dictionary<string, SaveSectionData>();
 
-        public Simulation(ulong worldSeed, IEnumerable<ModuleRegistration> modules = null, ErrorMode errorMode = ErrorMode.Development, bool isLoading = false)
+        /// <summary>
+        /// Builds every core service but runs none of the module startup
+        /// phases. SimulationBuilder drives ValidateAndOrder, the declaration
+        /// phase, content loading and InitializeModules itself, in that order,
+        /// with content loaded in between.
+        /// </summary>
+        internal Simulation(ulong worldSeed, ErrorMode errorMode)
         {
             Random = new RandomService(worldSeed);
             Clock = new SimClock();
@@ -42,14 +53,21 @@ namespace TheEmptying.Core
             Entities = new EntityRegistry();
             EventDefinitions = new EventDefinitionRegistry();
             Events = new EventBus(EventDefinitions);
-            Modules = new ModuleHost(Events, Scheduler, Entities, EventDefinitions, Random, () => Clock.CurrentTick, errorMode);
+            Commands = new ConsoleCommandRegistry();
+            Modules = new ModuleHost(Events, Scheduler, Entities, EventDefinitions, Random, () => Clock.CurrentTick, errorMode, Commands);
             ContentTypes = new ContentTypeRegistry();
             Settings = new SettingsRegistry();
             EventSerializers = new TypedEventSerializerRegistry();
+            Content = new ContentDatabase();
 
             RegisterCalendarDefinitions();
             CalendarEventSerializers.RegisterAll(EventSerializers);
+        }
 
+        /// <summary>The way tests build a Simulation from code-supplied manifests: validates, declares and initializes in one call, with no content loaded.</summary>
+        public Simulation(ulong worldSeed, IEnumerable<ModuleRegistration> modules = null, ErrorMode errorMode = ErrorMode.Development, bool isLoading = false)
+            : this(worldSeed, errorMode)
+        {
             Modules.ValidateAndOrder(modules ?? Array.Empty<ModuleRegistration>());
             Modules.RunDeclarationPhase(ContentTypes, Settings);
             Modules.InitializeModules(isLoading);

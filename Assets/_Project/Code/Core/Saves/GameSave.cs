@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using TheEmptying.Core.Modules;
+using TheEmptying.Core.Startup;
 
 namespace TheEmptying.Core.Saves
 {
@@ -46,18 +47,24 @@ namespace TheEmptying.Core.Saves
             SaveFile.Write(stream, header, sections);
         }
 
+        /// <summary>
+        /// Loads through SimulationBuilder, so content reloads the same way a
+        /// new game would load it. sourceFolders supplies both the content and
+        /// the "what's currently available" side of the source-difference report.
+        /// </summary>
         public static (Simulation Simulation, LoadReport Report) Load(
             Stream stream,
-            IEnumerable<SaveSourceInfo> currentSources,
-            IEnumerable<ModuleRegistration> modules,
+            IEnumerable<string> sourceFolders,
+            IEnumerable<IModule> modules,
             ErrorMode errorMode = ErrorMode.Development)
         {
             (SaveHeader header, Dictionary<string, SaveSectionData> sections) = SaveFile.ReadAll(stream);
 
             var report = new LoadReport();
+            List<SaveSourceInfo> currentSources = SourceManifestReader.ReadAll(sourceFolders);
             CompareSources(header, currentSources, report);
 
-            var simulation = new Simulation(header.WorldSeed, modules, errorMode, isLoading: true);
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(header.WorldSeed, sourceFolders, modules, errorMode, isLoading: true);
 
             CoreSections.ReadAll(sections, simulation, simulation.Settings, simulation.EventSerializers);
 
@@ -96,9 +103,9 @@ namespace TheEmptying.Core.Saves
             return (simulation, report);
         }
 
-        private static void CompareSources(SaveHeader header, IEnumerable<SaveSourceInfo> currentSources, LoadReport report)
+        private static void CompareSources(SaveHeader header, List<SaveSourceInfo> currentSources, LoadReport report)
         {
-            Dictionary<string, SaveSourceInfo> currentById = (currentSources ?? Enumerable.Empty<SaveSourceInfo>())
+            Dictionary<string, SaveSourceInfo> currentById = currentSources
                 .ToDictionary(s => s.Id, s => s, System.StringComparer.Ordinal);
             Dictionary<string, SaveSourceInfo> savedById = header.Sources.ToDictionary(s => s.Id, s => s, System.StringComparer.Ordinal);
 

@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TheEmptying.Core.Console;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Randomness;
@@ -20,6 +21,7 @@ namespace TheEmptying.Core.Modules
         private readonly Action<string, string, Exception> _onFailure;
         private readonly List<string> _registeredSystemIds = new List<string>();
         private readonly List<EventSubscriptionToken> _subscriptionTokens = new List<EventSubscriptionToken>();
+        private readonly List<string> _registeredCommandNames = new List<string>();
 
         public string ModuleId { get; }
         public EventBus Events { get; }
@@ -27,6 +29,7 @@ namespace TheEmptying.Core.Modules
         public EntityRegistry Entities { get; }
         public EventDefinitionRegistry EventDefinitions { get; }
         public SimRandom Random { get; }
+        public ConsoleCommandRegistry Commands { get; }
 
         /// <summary>True when this Initialize is part of a load, not a new game. Modules must not run new-game setup when this is true.</summary>
         public bool IsLoading { get; }
@@ -38,6 +41,7 @@ namespace TheEmptying.Core.Modules
             EntityRegistry entities,
             EventDefinitionRegistry eventDefinitions,
             RandomService randomService,
+            ConsoleCommandRegistry commands,
             Action<string, string, Exception> onFailure,
             bool isLoading)
         {
@@ -47,6 +51,7 @@ namespace TheEmptying.Core.Modules
             Entities = entities;
             EventDefinitions = eventDefinitions;
             Random = randomService.GetStream(moduleId);
+            Commands = commands;
             _onFailure = onFailure;
             IsLoading = isLoading;
         }
@@ -56,6 +61,13 @@ namespace TheEmptying.Core.Modules
             var guarded = new GuardedSystem(system, ModuleId, _onFailure);
             Scheduler.Register(guarded, interval, offset, order);
             _registeredSystemIds.Add(guarded.Id);
+        }
+
+        /// <summary>Registers a console command owned by this module; removed automatically if the module is switched off.</summary>
+        public void RegisterCommand(ConsoleCommand command)
+        {
+            Commands.Register(command);
+            _registeredCommandNames.Add(command.Name);
         }
 
         public EventSubscriptionToken Subscribe<T>(Action<T> handler) where T : struct, ISimEvent
@@ -111,6 +123,13 @@ namespace TheEmptying.Core.Modules
             }
 
             _subscriptionTokens.Clear();
+
+            foreach (string commandName in _registeredCommandNames)
+            {
+                Commands.Unregister(commandName);
+            }
+
+            _registeredCommandNames.Clear();
         }
 
         private sealed class GuardedSystem : ISimSystem

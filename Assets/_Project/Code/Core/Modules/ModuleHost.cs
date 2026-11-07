@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TheEmptying.Core.Console;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
@@ -24,6 +25,7 @@ namespace TheEmptying.Core.Modules
         private readonly EventDefinitionRegistry _eventDefinitions;
         private readonly RandomService _random;
         private readonly Func<long> _currentTick;
+        private readonly ConsoleCommandRegistry _commands;
 
         private readonly Dictionary<string, IModule> _modules = new Dictionary<string, IModule>();
         private readonly Dictionary<string, ModuleManifest> _manifests = new Dictionary<string, ModuleManifest>();
@@ -52,7 +54,8 @@ namespace TheEmptying.Core.Modules
             EventDefinitionRegistry eventDefinitions,
             RandomService random,
             Func<long> currentTick,
-            ErrorMode errorMode = ErrorMode.Development)
+            ErrorMode errorMode = ErrorMode.Development,
+            ConsoleCommandRegistry commands = null)
         {
             _events = events ?? throw new ArgumentNullException(nameof(events));
             _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
@@ -60,6 +63,7 @@ namespace TheEmptying.Core.Modules
             _eventDefinitions = eventDefinitions ?? throw new ArgumentNullException(nameof(eventDefinitions));
             _random = random ?? throw new ArgumentNullException(nameof(random));
             _currentTick = currentTick ?? throw new ArgumentNullException(nameof(currentTick));
+            _commands = commands ?? new ConsoleCommandRegistry();
             ErrorMode = errorMode;
         }
 
@@ -180,7 +184,7 @@ namespace TheEmptying.Core.Modules
                     continue;
                 }
 
-                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, HandleModuleFailure, isLoading);
+                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, _commands, HandleModuleFailure, isLoading);
                 _contexts[id] = context;
 
                 try
@@ -203,6 +207,21 @@ namespace TheEmptying.Core.Modules
                 if (_modules[id] is ISaveableModule saveable)
                 {
                     yield return (id, saveable);
+                }
+            }
+        }
+
+        /// <summary>Every active module implementing IInspectableModule's lines for this entity, prefixed with the module Id, in ascending module Id order.</summary>
+        public IEnumerable<string> Inspect(EntityId entity)
+        {
+            foreach (string id in _activeModuleIds.OrderBy(i => i, StringComparer.Ordinal))
+            {
+                if (_modules[id] is IInspectableModule inspectable)
+                {
+                    foreach (string line in inspectable.Inspect(entity))
+                    {
+                        yield return $"[{id}] {line}";
+                    }
                 }
             }
         }
