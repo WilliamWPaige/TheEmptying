@@ -113,6 +113,8 @@ Docs/
 
 Unity must be fully closed first (batch mode cannot share a project with an open editor instance).
 
+Before running tests, check for `Unity.exe` processes whose command line includes this project's path (`D:\Unity_Projects\TheEmptying`). If any exist, close them without asking. Never close Unity processes for other projects; if you can't tell which project a Unity process belongs to, ask.
+
 ```
 "C:\Program Files\Unity\Hub\Editor\6000.6.8f1\Editor\Unity.exe" -runTests -batchmode -nographics -projectPath "D:\Unity_Projects\TheEmptying" -testPlatform EditMode -testResults "D:\Unity_Projects\TheEmptying\Logs\editmode-results.xml" -logFile "D:\Unity_Projects\TheEmptying\Logs\editmode-run.log"
 ```

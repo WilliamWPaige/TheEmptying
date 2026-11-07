@@ -67,6 +67,8 @@ namespace TheEmptying.Core.Randomness
 
         public bool Chance(float probability)
         {
+            float roll = NextFloat();
+
             if (probability <= 0f)
             {
                 return false;
@@ -77,7 +79,7 @@ namespace TheEmptying.Core.Randomness
                 return true;
             }
 
-            return NextFloat() < probability;
+            return roll < probability;
         }
 
         public int WeightedPick(IReadOnlyList<float> weights)

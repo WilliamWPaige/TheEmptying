@@ -77,6 +77,26 @@ namespace TheEmptying.Tests.EditMode.Randomness
         }
 
         [Test]
+        public void Chance_AlwaysAdvancesTheStreamByExactlyOneDraw()
+        {
+            foreach (float probability in new[] { 0f, 0.5f, 1f })
+            {
+                var chanceStream = SimRandom.CreateSeeded(2024, 11);
+                var referenceStream = SimRandom.CreateSeeded(2024, 11);
+
+                chanceStream.Chance(probability);
+                referenceStream.NextUInt();
+
+                // If Chance() consumed anything other than exactly one draw, the two
+                // streams would now disagree on every subsequent roll.
+                for (int i = 0; i < 10; i++)
+                {
+                    Assert.AreEqual(referenceStream.NextUInt(), chanceStream.NextUInt(), $"probability={probability}");
+                }
+            }
+        }
+
+        [Test]
         public void Shuffle_SameSeed_GivesSameOrder()
         {
             var listA = new List<int> { 0, 1, 2, 3, 4, 5, 6, 7, 8, 9 };
