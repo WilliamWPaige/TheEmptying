@@ -19,6 +19,10 @@ namespace TheEmptying.Core.Entities
         private T[] _values = new T[4];
         private int _count;
 
+        private int[] _sortedSlots = Array.Empty<int>();
+        private int[] _sortKeysScratch = Array.Empty<int>();
+        private bool _orderDirty = true;
+
         public EntityTable(EntityRegistry registry)
         {
             _registry = registry ?? throw new ArgumentNullException(nameof(registry));
@@ -47,6 +51,7 @@ namespace TheEmptying.Core.Entities
             _values[slot] = value;
             _slotByIndex[id.Index] = slot;
             _count++;
+            _orderDirty = true;
         }
 
         public bool Has(EntityId id)
@@ -107,25 +112,49 @@ namespace TheEmptying.Core.Entities
             _generations[lastSlot] = default;
             _values[lastSlot] = default;
             _count--;
+            _orderDirty = true;
 
             _slotByIndex.Remove(id.Index);
         }
 
-        /// <summary>Rows in ascending entity index order, regardless of add/remove history.</summary>
+        /// <summary>
+        /// Rows in ascending entity index order, regardless of add/remove history.
+        /// The sorted order is cached and only recomputed when rows have been
+        /// added or removed since the last call.
+        /// </summary>
         public IEnumerable<KeyValuePair<EntityId, T>> Rows()
         {
-            var slots = new int[_count];
+            EnsureSortedSlots();
+
             for (int i = 0; i < _count; i++)
             {
-                slots[i] = i;
-            }
-
-            Array.Sort(slots, (a, b) => _entityIndices[a].CompareTo(_entityIndices[b]));
-
-            foreach (int slot in slots)
-            {
+                int slot = _sortedSlots[i];
                 yield return new KeyValuePair<EntityId, T>(new EntityId(_entityIndices[slot], _generations[slot]), _values[slot]);
             }
+        }
+
+        private void EnsureSortedSlots()
+        {
+            if (!_orderDirty)
+            {
+                return;
+            }
+
+            if (_sortedSlots.Length < _count)
+            {
+                _sortedSlots = new int[_count];
+                _sortKeysScratch = new int[_count];
+            }
+
+            for (int i = 0; i < _count; i++)
+            {
+                _sortedSlots[i] = i;
+                _sortKeysScratch[i] = _entityIndices[i];
+            }
+
+            Array.Sort(_sortKeysScratch, _sortedSlots, 0, _count);
+
+            _orderDirty = false;
         }
 
         private void EnsureCapacity(int minimum)

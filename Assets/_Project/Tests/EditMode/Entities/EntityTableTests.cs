@@ -76,5 +76,35 @@ namespace TheEmptying.Tests.EditMode.Entities
             var tableValues = rows.Select(r => r.Value).ToList();
             CollectionAssert.AreEqual(freshValues, tableValues);
         }
+
+        [Test]
+        public void Rows_IteratingThenMutatingThenIteratingAgain_StaysAscending()
+        {
+            var registry = new EntityRegistry();
+            var table = new EntityTable<int>(registry);
+
+            var ids = new List<EntityId>();
+            for (int i = 0; i < 10; i++)
+            {
+                EntityId id = registry.Create(EntityKind.Item);
+                ids.Add(id);
+                table.Add(id, i);
+            }
+
+            var firstPass = table.Rows().Select(r => r.Key.Index).ToList();
+            var firstPassSorted = new List<int>(firstPass);
+            firstPassSorted.Sort();
+            CollectionAssert.AreEqual(firstPassSorted, firstPass);
+
+            table.Remove(ids[3]);
+            table.Remove(ids[6]);
+            table.Add(registry.Create(EntityKind.Item), 100);
+            table.Add(registry.Create(EntityKind.Item), 101);
+
+            var secondPass = table.Rows().Select(r => r.Key.Index).ToList();
+            var secondPassSorted = new List<int>(secondPass);
+            secondPassSorted.Sort();
+            CollectionAssert.AreEqual(secondPassSorted, secondPass);
+        }
     }
 }

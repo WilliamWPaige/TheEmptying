@@ -21,7 +21,7 @@ namespace TheEmptying.Core.Scheduling
 
         private readonly List<Entry> _entries = new List<Entry>();
         private readonly HashSet<string> _registeredIds = new HashSet<string>();
-        private List<Entry> _sortedEntries;
+        private List<Entry> _sortedEntries = new List<Entry>();
         private bool _dirty;
 
         public void Register(ISimSystem system, long interval, long offset, int order)
