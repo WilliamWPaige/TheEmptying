@@ -1,7 +1,9 @@
 {
     "name": "TheEmptying.Core",
     "rootNamespace": "TheEmptying.Core",
-    "references": [],
+    "references": [
+        "Newtonsoft.Json"
+    ],
     "includePlatforms": [],
     "excludePlatforms": [],
     "allowUnsafeCode": false,

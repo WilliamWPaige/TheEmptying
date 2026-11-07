@@ -125,6 +125,11 @@ namespace TheEmptying.Core.Events
             {
                 invoke();
             }
+            catch (Exception ex) when (ex is IAttributedFailure)
+            {
+                // Already names its own source; don't wrap it again.
+                throw;
+            }
             catch (Exception ex)
             {
                 throw new InvalidOperationException($"Subscriber '{DescribeHandler(handler)}' threw while handling event '{definitionId}'.", ex);

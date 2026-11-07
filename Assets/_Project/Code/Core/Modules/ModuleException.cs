@@ -1,9 +1,10 @@
 using System;
+using TheEmptying.Core.Events;
 
 namespace TheEmptying.Core.Modules
 {
     /// <summary>Thrown in Development ErrorMode when a module throws during Initialize, Shutdown, a scheduled system update or an event handler.</summary>
-    public sealed class ModuleException : Exception
+    public sealed class ModuleException : Exception, IAttributedFailure
     {
         public string ModuleId { get; }
         public string Call { get; }

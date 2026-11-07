@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.Linq;
+using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Randomness;
@@ -33,11 +34,15 @@ namespace TheEmptying.Core.Modules
         private readonly List<string> _disabledReasons = new List<string>();
         private readonly List<ModuleFailureReport> _failureReports = new List<ModuleFailureReport>();
 
+        private List<string> _order;
+        private bool _declared;
+
         public ErrorMode ErrorMode { get; set; }
 
         public IReadOnlyList<string> InitializationOrder => _initializationOrder;
         public IReadOnlyList<string> DisabledReasons => _disabledReasons;
         public IReadOnlyList<ModuleFailureReport> FailureReports => _failureReports;
+        public IReadOnlyCollection<string> RegisteredModuleIds => _modules.Keys;
 
         public ModuleHost(
             EventBus events,
@@ -59,18 +64,101 @@ namespace TheEmptying.Core.Modules
 
         public bool IsActive(string moduleId) => _activeModuleIds.Contains(moduleId);
 
+        /// <summary>Convenience for callers that don't need content loaded between declaration and initialization.</summary>
         public void Setup(IEnumerable<ModuleRegistration> registrations)
+        {
+            ValidateAndOrder(registrations);
+            RunDeclarationPhase(new ContentTypeRegistry(), new SettingsRegistry());
+            InitializeModules();
+        }
+
+        /// <summary>Phase 1: validate manifests (including against each other) and apply disabling, then compute dependency order.</summary>
+        public void ValidateAndOrder(IEnumerable<ModuleRegistration> registrations)
         {
             List<ModuleRegistration> list = registrations?.ToList() ?? new List<ModuleRegistration>();
 
             RegisterAll(list);
+            ValidateManifestsDeclareModuleDependencies();
             ValidateDependenciesExist();
             ValidateNoCycles();
 
             HashSet<string> enabledIds = ApplyDisabling();
-            List<string> order = ComputeOrder(enabledIds);
+            _order = ComputeOrder(enabledIds);
 
-            InitializeInOrder(order);
+            foreach (string id in _order)
+            {
+                _activeModuleIds.Add(id);
+            }
+        }
+
+        /// <summary>Phase 2: each enabled module, in dependency order, can register content types and declare settings.</summary>
+        public void RunDeclarationPhase(ContentTypeRegistry contentTypes, SettingsRegistry settings)
+        {
+            if (_order == null)
+            {
+                throw new InvalidOperationException("RunDeclarationPhase called before ValidateAndOrder.");
+            }
+
+            if (_declared)
+            {
+                throw new InvalidOperationException("RunDeclarationPhase already ran.");
+            }
+
+            _declared = true;
+
+            foreach (string id in _order)
+            {
+                if (!_activeModuleIds.Contains(id))
+                {
+                    continue;
+                }
+
+                if (!(_modules[id] is IModuleDeclaration declarable))
+                {
+                    continue;
+                }
+
+                var context = new ModuleDeclarationContext(id, contentTypes, settings);
+
+                try
+                {
+                    declarable.Declare(context);
+                }
+                catch (Exception ex)
+                {
+                    HandleModuleFailure(id, "declare", ex);
+                }
+            }
+        }
+
+        /// <summary>Phase 4: initializes enabled modules in dependency order. Call after content has loaded (phase 3, owned by the caller).</summary>
+        public void InitializeModules()
+        {
+            if (_order == null)
+            {
+                throw new InvalidOperationException("InitializeModules called before ValidateAndOrder.");
+            }
+
+            foreach (string id in _order)
+            {
+                if (!_activeModuleIds.Contains(id))
+                {
+                    continue;
+                }
+
+                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, HandleModuleFailure);
+                _contexts[id] = context;
+
+                try
+                {
+                    _modules[id].Initialize(context);
+                    _initializationOrder.Add(id);
+                }
+                catch (Exception ex)
+                {
+                    HandleModuleFailure(id, "initialize", ex);
+                }
+            }
         }
 
         public void Shutdown()
@@ -134,6 +222,24 @@ namespace TheEmptying.Core.Modules
                     }
 
                     dependentsOfDep.Add(manifest.Id);
+                }
+            }
+        }
+
+        private void ValidateManifestsDeclareModuleDependencies()
+        {
+            foreach (KeyValuePair<string, IModule> kvp in _modules)
+            {
+                string id = kvp.Key;
+                IModule module = kvp.Value;
+                ModuleManifest manifest = _manifests[id];
+
+                foreach (string dep in module.Dependencies)
+                {
+                    if (!manifest.Dependencies.Contains(dep))
+                    {
+                        throw new ModuleValidationException($"Module '{id}' declares a dependency on '{dep}' that its manifest does not list.");
+                    }
                 }
             }
         }
@@ -274,35 +380,6 @@ namespace TheEmptying.Core.Modules
             }
 
             return order;
-        }
-
-        private void InitializeInOrder(List<string> order)
-        {
-            foreach (string id in order)
-            {
-                _activeModuleIds.Add(id);
-            }
-
-            foreach (string id in order)
-            {
-                if (!_activeModuleIds.Contains(id))
-                {
-                    continue;
-                }
-
-                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, HandleModuleFailure);
-                _contexts[id] = context;
-
-                try
-                {
-                    _modules[id].Initialize(context);
-                    _initializationOrder.Add(id);
-                }
-                catch (Exception ex)
-                {
-                    HandleModuleFailure(id, "initialize", ex);
-                }
-            }
         }
 
         private void HandleModuleFailure(string moduleId, string call, Exception exception)

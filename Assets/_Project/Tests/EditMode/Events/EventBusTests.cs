@@ -22,6 +22,13 @@ namespace TheEmptying.Tests.EditMode.Events
             public string DefinitionId => DefinitionIdValue;
         }
 
+        private sealed class AttributedTestException : Exception, IAttributedFailure
+        {
+            public AttributedTestException(string message) : base(message)
+            {
+            }
+        }
+
         private static (EventDefinitionRegistry definitions, EventBus bus) CreateBus(params string[] extraDefinitionIds)
         {
             var definitions = new EventDefinitionRegistry();
@@ -161,6 +168,18 @@ namespace TheEmptying.Tests.EditMode.Events
             StringAssert.Contains(TestEvent.DefinitionIdValue, ex.Message);
             Assert.IsNotNull(ex.InnerException);
             Assert.AreEqual("boom", ex.InnerException.Message);
+        }
+
+        [Test]
+        public void AttributedFailure_IsRethrownUnwrapped_NotWrappedAgain()
+        {
+            (_, EventBus bus) = CreateBus();
+            bus.Subscribe<TestEvent>(e => throw new AttributedTestException("already-attributed"));
+
+            bus.Post(new TestEvent(1), 0);
+
+            AttributedTestException ex = Assert.Throws<AttributedTestException>(() => bus.DeliverPending());
+            Assert.AreEqual("already-attributed", ex.Message);
         }
     }
 }
