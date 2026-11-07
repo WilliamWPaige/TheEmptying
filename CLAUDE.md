@@ -16,12 +16,12 @@ All in `Docs/Design/`:
 
 | File | Use it for |
 | --- | --- |
-| `01-Concept.md` | What the game is |
-| `02-Systems.md` | Every system and how they connect |
-| `03-SystemDesign.md` | Detailed rules and numbers for the colony sim |
-| `03b-SystemDesign-Earlier.md` | Older detailed design. Only sections that `03-SystemDesign.md` says carry over apply; everything else is history |
-| `04-ReviewAndLock.md` | Locked decisions, build order, engine and tools |
-| `05-TechnicalFramework.md` | Architecture, modules, events, rule system, build plan. Follow this for every technical decision |
+| `01-Concept.pdf` | What the game is |
+| `02-Systems.pdf` | Every system and how they connect |
+| `03-SystemDesign.pdf` | Detailed rules and numbers for the colony sim |
+| `03b-SystemDesign-Earlier.pdf` | Older detailed design. Only sections that `03-SystemDesign.pdf` says carry over apply; everything else is history |
+| `04-ReviewAndLock.pdf` | Locked decisions, build order, engine and tools |
+| `05-TechnicalFramework.pdf` | Architecture, modules, events, rule system, build plan. Follow this for every technical decision |
 
 Docs beat code. If a task shows a spec is wrong or incomplete, say so and propose the doc change. Design-level questions go to William.
 
