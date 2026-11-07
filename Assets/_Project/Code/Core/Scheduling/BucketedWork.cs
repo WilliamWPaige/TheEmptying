@@ -4,15 +4,14 @@ using System.Collections.Generic;
 namespace TheEmptying.Core.Scheduling
 {
     /// <summary>
-    /// Spreads per-entity work across a fixed number of buckets. An entity's
-    /// bucket is entityId % bucketCount. Each call to Run() processes only the
-    /// entities in the current bucket, then advances to the next bucket.
+    /// Spreads per-entity work across a fixed number of buckets. Stateless: the
+    /// current bucket and the bucket's visit count are both derived from the run
+    /// number the caller passes in, never stored. Anything stored here would need
+    /// saving, and a save/load must resume exactly where a game left off.
     /// </summary>
     public sealed class BucketedWork
     {
         private readonly int _bucketCount;
-        private readonly int[] _bucketVisitCounts;
-        private int _currentBucket;
 
         public BucketedWork(int bucketCount)
         {
@@ -22,12 +21,9 @@ namespace TheEmptying.Core.Scheduling
             }
 
             _bucketCount = bucketCount;
-            _bucketVisitCounts = new int[bucketCount];
         }
 
         public int BucketCount => _bucketCount;
-
-        public int CurrentBucket => _currentBucket;
 
         public int GetBucket(long entityId)
         {
@@ -40,23 +36,25 @@ namespace TheEmptying.Core.Scheduling
             return (int)bucket;
         }
 
-        /// <summary>Processes every entity in the current bucket, with no tier filtering.</summary>
-        public void Run(IEnumerable<long> entityIds, Action<long> process)
+        /// <summary>Processes every entity in runNumber's bucket, with no tier filtering.</summary>
+        public void Run(IEnumerable<long> entityIds, long runNumber, Action<long> process)
         {
             if (process == null)
             {
                 throw new ArgumentNullException(nameof(process));
             }
 
-            RunInternal(entityIds, null, process);
+            RunInternal(entityIds, runNumber, null, process);
         }
 
         /// <summary>
-        /// Processes entities in the current bucket, gated by importance tier: an
-        /// entity in a tier with multiplier m is processed only on every m-th visit
-        /// to its bucket.
+        /// Processes entities in runNumber's bucket, gated by importance tier.
+        /// An entity with multiplier m is processed when
+        /// (visitIndex + entityId / bucketCount) % m == 0, which staggers entities
+        /// within the same bucket across different visits instead of having them
+        /// all update on the same visit.
         /// </summary>
-        public void Run(IEnumerable<long> entityIds, Func<long, ImportanceTier> tierProvider, Action<long> process)
+        public void Run(IEnumerable<long> entityIds, long runNumber, Func<long, ImportanceTier> tierProvider, Action<long> process)
         {
             if (tierProvider == null)
             {
@@ -68,13 +66,18 @@ namespace TheEmptying.Core.Scheduling
                 throw new ArgumentNullException(nameof(process));
             }
 
-            RunInternal(entityIds, tierProvider, process);
+            RunInternal(entityIds, runNumber, tierProvider, process);
         }
 
-        private void RunInternal(IEnumerable<long> entityIds, Func<long, ImportanceTier> tierProvider, Action<long> process)
+        private void RunInternal(IEnumerable<long> entityIds, long runNumber, Func<long, ImportanceTier> tierProvider, Action<long> process)
         {
-            int bucket = _currentBucket;
-            int visitIndex = _bucketVisitCounts[bucket];
+            if (runNumber < 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(runNumber), "runNumber must not be negative.");
+            }
+
+            int bucket = (int)(runNumber % _bucketCount);
+            long visitIndex = runNumber / _bucketCount;
 
             foreach (long id in entityIds)
             {
@@ -85,8 +88,8 @@ namespace TheEmptying.Core.Scheduling
 
                 if (tierProvider != null)
                 {
-                    int multiplier = ImportanceTierConstants.GetMultiplier(tierProvider(id));
-                    if (visitIndex % multiplier != 0)
+                    long multiplier = ImportanceTierConstants.GetMultiplier(tierProvider(id));
+                    if ((visitIndex + id / _bucketCount) % multiplier != 0)
                     {
                         continue;
                     }
@@ -94,9 +97,6 @@ namespace TheEmptying.Core.Scheduling
 
                 process(id);
             }
-
-            _bucketVisitCounts[bucket] = visitIndex + 1;
-            _currentBucket = (_currentBucket + 1) % _bucketCount;
         }
     }
 }

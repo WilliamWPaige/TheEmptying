@@ -26,10 +26,10 @@ namespace TheEmptying.Tests.EditMode.Scheduling
                 processedCounts[id] = 0;
             }
 
-            for (int run = 0; run < bucketCount; run++)
+            for (long run = 0; run < bucketCount; run++)
             {
                 var processedThisRun = new List<long>();
-                bucketedWork.Run(entityIds, id =>
+                bucketedWork.Run(entityIds, run, id =>
                 {
                     processedThisRun.Add(id);
                     processedCounts[id]++;
@@ -41,6 +41,27 @@ namespace TheEmptying.Tests.EditMode.Scheduling
             }
 
             Assert.IsTrue(processedCounts.Values.All(count => count == 1));
+        }
+
+        [Test]
+        public void Run_SameRunNumberCalledTwice_GivesSameResult()
+        {
+            const int bucketCount = 10;
+            var entityIds = new List<long>();
+            for (long i = 0; i < 50; i++)
+            {
+                entityIds.Add(i);
+            }
+
+            var bucketedWork = new BucketedWork(bucketCount);
+
+            var firstCall = new List<long>();
+            bucketedWork.Run(entityIds, 23, id => firstCall.Add(id));
+
+            var secondCall = new List<long>();
+            bucketedWork.Run(entityIds, 23, id => secondCall.Add(id));
+
+            CollectionAssert.AreEqual(firstCall, secondCall);
         }
 
         [Test]
@@ -70,15 +91,44 @@ namespace TheEmptying.Tests.EditMode.Scheduling
                 return ImportanceTier.Normal;
             }
 
-            int totalRuns = bucketCount * 16;
-            for (int run = 0; run < totalRuns; run++)
+            long totalRuns = bucketCount * 16;
+            for (long run = 0; run < totalRuns; run++)
             {
-                bucketedWork.Run(entityIds, TierFor, id => processedCounts[id]++);
+                bucketedWork.Run(entityIds, run, TierFor, id => processedCounts[id]++);
             }
 
             Assert.AreEqual(16, processedCounts[highId]);
             Assert.AreEqual(4, processedCounts[normalId]);
             Assert.AreEqual(1, processedCounts[lowId]);
+        }
+
+        [Test]
+        public void Tiers_NormalEntities_ProcessedCountPerRun_HasNoSpikes()
+        {
+            const int entityCount = 1000;
+            const int bucketCount = 10;
+
+            var entityIds = new List<long>();
+            for (long i = 0; i < entityCount; i++)
+            {
+                entityIds.Add(i);
+            }
+
+            var bucketedWork = new BucketedWork(bucketCount);
+            var countsPerRun = new List<int>();
+
+            long totalRuns = bucketCount * ImportanceTierConstants.NormalMultiplier;
+            for (long run = 0; run < totalRuns; run++)
+            {
+                int processed = 0;
+                bucketedWork.Run(entityIds, run, _ => ImportanceTier.Normal, _ => processed++);
+                countsPerRun.Add(processed);
+            }
+
+            double expected = (double)entityCount / bucketCount / ImportanceTierConstants.NormalMultiplier;
+
+            Assert.LessOrEqual(countsPerRun.Max() - countsPerRun.Min(), 2, "Per-run processed counts should stay flat, not spike.");
+            Assert.That(countsPerRun.Average(), Is.EqualTo(expected).Within(1.0));
         }
     }
 }
