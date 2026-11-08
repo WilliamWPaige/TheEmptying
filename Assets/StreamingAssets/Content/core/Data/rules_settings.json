@@ -1,0 +1,14 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.rules.max_fires_per_tick",
+            "valueType": "Integer",
+            "default": 1000,
+            "minimum": 1,
+            "maximum": 1000000,
+            "category": "Rules",
+            "description": "The most times a single rule may fire in one tick before further fires that tick are skipped and reported."
+        }
+    ]
+}

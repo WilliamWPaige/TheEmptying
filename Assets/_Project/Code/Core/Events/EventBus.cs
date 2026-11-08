@@ -22,11 +22,11 @@ namespace TheEmptying.Core.Events
             _definitions = definitions ?? throw new ArgumentNullException(nameof(definitions));
         }
 
-        public void Post<T>(T typedEvent, long tick) where T : struct, ISimEvent
+        public void Post<T>(T typedEvent, long tick, int chainDepth = 0) where T : struct, ISimEvent
         {
             string definitionId = typedEvent.DefinitionId;
             EnsureRegistered(definitionId);
-            _pending.Add(new PostedEvent(definitionId, tick, typedEvent, null));
+            _pending.Add(new PostedEvent(definitionId, tick, typedEvent, null, chainDepth));
         }
 
         /// <summary>For saving: events posted but not yet delivered (e.g. queued mid-delivery for the next tick).</summary>
@@ -39,10 +39,10 @@ namespace TheEmptying.Core.Events
             _pending.AddRange(events);
         }
 
-        public void Post(string definitionId, long tick, EventData data = null)
+        public void Post(string definitionId, long tick, EventData data = null, int chainDepth = 0)
         {
             EnsureRegistered(definitionId);
-            _pending.Add(new PostedEvent(definitionId, tick, null, data));
+            _pending.Add(new PostedEvent(definitionId, tick, null, data, chainDepth));
         }
 
         /// <summary>Receives only typed events of exactly type T.</summary>

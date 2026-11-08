@@ -88,12 +88,22 @@ namespace TheEmptying.Tests.EditMode.Rules
             return database;
         }
 
-        private static (RuleRegistry Registry, RuleCompileReport Report) Compile(RuleDefinition rule, SettingsRegistry settings = null, ErrorMode errorMode = ErrorMode.Release)
+        private static EventDefinitionRegistry CreateEvents(params string[] ids)
+        {
+            var registry = new EventDefinitionRegistry();
+            foreach (string id in ids)
+            {
+                registry.Register(new EventDefinition(id, EventVisibility.Public, 0f, 0f, "test"));
+            }
+
+            return registry;
+        }
+
+        private static (RuleRegistry Registry, RuleCompileReport Report) Compile(RuleDefinition rule, SettingsRegistry settings = null, ErrorMode errorMode = ErrorMode.Release, EventDefinitionRegistry events = null)
         {
             ContentDatabase database = DatabaseWithRules(rule);
             BlockRegistry blocks = TestBlocks.CreateRegistry();
-            var events = new EventDefinitionRegistry();
-            return RuleCompiler.Compile(database, blocks, settings ?? new SettingsRegistry(), events, errorMode);
+            return RuleCompiler.Compile(database, blocks, settings ?? new SettingsRegistry(), events ?? CreateEvents("e"), errorMode);
         }
 
         [Test]
@@ -126,7 +136,7 @@ namespace TheEmptying.Tests.EditMode.Rules
 
             BlockRegistry blocks = TestBlocks.CreateRegistry();
             var settings = new SettingsRegistry();
-            var events = new EventDefinitionRegistry();
+            EventDefinitionRegistry events = CreateEvents("test.event.fired");
 
             (RuleRegistry registry, RuleCompileReport report) = RuleCompiler.Compile(database, blocks, settings, events, ErrorMode.Development);
 
@@ -372,7 +382,7 @@ namespace TheEmptying.Tests.EditMode.Rules
                 Node("n2", "test.trigger.on_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("e2") })
             }, new List<RuleConnection>());
 
-            (_, RuleCompileReport report) = Compile(rule);
+            (_, RuleCompileReport report) = Compile(rule, events: CreateEvents("e1", "e2"));
 
             RuleCompileProblem error = report.Errors.Single();
             Assert.AreEqual("rule.two_triggers", error.RuleId);
@@ -394,6 +404,42 @@ namespace TheEmptying.Tests.EditMode.Rules
             RuleCompileProblem error = report.Errors.Single(e => e.Message.Contains("used more than once"));
             Assert.AreEqual("rule.dup_id", error.RuleId);
             Assert.AreEqual("n1", error.NodeId);
+        }
+
+        [Test]
+        public void TriggerListeningForUnregisteredEvent_IsReported()
+        {
+            var rule = Rule("rule.unregistered_trigger_event", new List<RuleNode>
+            {
+                Node("n1", "test.trigger.on_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("event.does_not_exist") })
+            }, new List<RuleConnection>());
+
+            (_, RuleCompileReport report) = Compile(rule, events: new EventDefinitionRegistry());
+
+            RuleCompileProblem error = report.Errors.Single(e => e.Message.Contains("Listens for event"));
+            Assert.AreEqual("rule.unregistered_trigger_event", error.RuleId);
+            Assert.AreEqual("n1", error.NodeId);
+            StringAssert.Contains("event.does_not_exist", error.Message);
+        }
+
+        [Test]
+        public void ActionPostingUnregisteredEvent_IsReported()
+        {
+            var rule = Rule("rule.unregistered_action_event", new List<RuleNode>
+            {
+                Node("n1", "test.trigger.on_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("e") }),
+                Node("n2", "test.action.post_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("event.does_not_exist") })
+            }, new List<RuleConnection>
+            {
+                Conn("n1", "then", "n2", "exec")
+            });
+
+            (_, RuleCompileReport report) = Compile(rule);
+
+            RuleCompileProblem error = report.Errors.Single(e => e.Message.Contains("Posts event"));
+            Assert.AreEqual("rule.unregistered_action_event", error.RuleId);
+            Assert.AreEqual("n2", error.NodeId);
+            StringAssert.Contains("event.does_not_exist", error.Message);
         }
 
         [Test]
@@ -450,7 +496,7 @@ namespace TheEmptying.Tests.EditMode.Rules
                 Conn("n1", "then", "n2", "exec")
             });
 
-            (RuleRegistry registry, RuleCompileReport report) = Compile(rule);
+            (RuleRegistry registry, RuleCompileReport report) = Compile(rule, events: CreateEvents("test.event.loop"));
 
             Assert.IsFalse(report.HasErrors);
             Assert.IsTrue(registry.TryGet("rule.possible_loop", out _));
@@ -508,7 +554,7 @@ namespace TheEmptying.Tests.EditMode.Rules
 
             BlockRegistry blocks = TestBlocks.CreateRegistry();
             var settings = new SettingsRegistry();
-            var events = new EventDefinitionRegistry();
+            EventDefinitionRegistry events = CreateEvents("test.event.a");
             (RuleRegistry registry, RuleCompileReport report) = RuleCompiler.Compile(database, blocks, settings, events, ErrorMode.Development);
 
             Assert.IsFalse(report.HasErrors);
@@ -569,7 +615,7 @@ namespace TheEmptying.Tests.EditMode.Rules
             ContentDatabase database = DatabaseWithRules(badRule);
             BlockRegistry blocks = TestBlocks.CreateRegistry();
             var settings = new SettingsRegistry();
-            var events = new EventDefinitionRegistry();
+            EventDefinitionRegistry events = CreateEvents("e");
 
             RuleCompileException ex = Assert.Throws<RuleCompileException>(() => RuleCompiler.Compile(database, blocks, settings, events, ErrorMode.Development));
             Assert.IsTrue(ex.Report.Errors.Count > 0);
@@ -587,7 +633,7 @@ namespace TheEmptying.Tests.EditMode.Rules
             ContentDatabase database = DatabaseWithRules(badRule, goodRule);
             BlockRegistry blocks = TestBlocks.CreateRegistry();
             var settings = new SettingsRegistry();
-            var events = new EventDefinitionRegistry();
+            EventDefinitionRegistry events = CreateEvents("e");
 
             (RuleRegistry registry, RuleCompileReport report) = RuleCompiler.Compile(database, blocks, settings, events, ErrorMode.Release);
 

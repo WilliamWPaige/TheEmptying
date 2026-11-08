@@ -39,6 +39,11 @@ namespace TheEmptying.Core.Rules
                 throw new ArgumentNullException(nameof(settings));
             }
 
+            if (events == null)
+            {
+                throw new ArgumentNullException(nameof(events));
+            }
+
             var registry = new RuleRegistry();
             var report = new RuleCompileReport();
 
@@ -165,7 +170,7 @@ namespace TheEmptying.Core.Rules
                     continue;
                 }
 
-                if (fromPort.Kind == PortKind.Data && fromPort.DataType != toPort.DataType)
+                if (fromPort.Kind == PortKind.Data && toPort.DataType != null && fromPort.DataType != toPort.DataType)
                 {
                     errors.Add(new RuleCompileProblem(ruleId, connection.FromNode, $"Data type mismatch: '{connection.FromPort}' ({fromPort.DataType}) to '{connection.ToPort}' ({toPort.DataType})."));
                     continue;
@@ -287,6 +292,35 @@ namespace TheEmptying.Core.Rules
                 }
 
                 compiledNodes[nodeId] = new CompiledRuleNode(nodeId, blockType, node.X, node.Y, compiledFields);
+            }
+
+            // --- Errors: a trigger listening for, or an action posting, an unregistered event. ---
+            foreach (KeyValuePair<string, BlockType> kvp in blockTypesById)
+            {
+                string nodeId = kvp.Key;
+                BlockType blockType = kvp.Value;
+                RuleNode node = nodesById[nodeId];
+                IReadOnlyDictionary<string, RuleFieldValueSource> rawFields = node.Fields ?? EmptyFields;
+
+                if (blockType.Kind == BlockKind.Trigger)
+                {
+                    string listensFor = blockType.GetTriggerEventDefinitionId(rawFields);
+                    if (!string.IsNullOrEmpty(listensFor) && !events.IsRegistered(listensFor))
+                    {
+                        errors.Add(new RuleCompileProblem(ruleId, nodeId, $"Listens for event '{listensFor}', which is not registered."));
+                    }
+                }
+
+                if (blockType.Kind == BlockKind.Action)
+                {
+                    foreach (string posted in blockType.GetPostedEventDefinitionIds(rawFields) ?? Enumerable.Empty<string>())
+                    {
+                        if (!string.IsNullOrEmpty(posted) && !events.IsRegistered(posted))
+                        {
+                            errors.Add(new RuleCompileProblem(ruleId, nodeId, $"Posts event '{posted}', which is not registered."));
+                        }
+                    }
+                }
             }
 
             string triggerNodeId = triggerNodeIds.Count == 1 ? triggerNodeIds[0] : null;

@@ -3,6 +3,7 @@ using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Rules;
+using TheEmptying.Core.Rules.CoreBlocks;
 
 namespace TheEmptying.Core.Startup
 {
@@ -20,7 +21,8 @@ namespace TheEmptying.Core.Startup
             IEnumerable<string> sourceFolders,
             IEnumerable<IModule> modules,
             ErrorMode errorMode = ErrorMode.Development,
-            bool isLoading = false)
+            bool isLoading = false,
+            ILogSink logSink = null)
         {
             List<string> sources = sourceFolders?.ToList() ?? new List<string>();
             List<IModule> moduleList = modules?.ToList() ?? new List<IModule>();
@@ -32,8 +34,9 @@ namespace TheEmptying.Core.Startup
             var simulation = new Simulation(worldSeed, errorMode);
             simulation.Modules.ValidateAndOrder(moduleList, manifests);
 
-            // 3. Run the declaration phase (built-in content types must exist first).
+            // 3. Run the declaration phase (built-in content types must exist first; the core registers its own block types too).
             BuiltInContentTypes.RegisterAll(simulation.ContentTypes);
+            CoreBlocks.RegisterAll(simulation.Blocks);
             simulation.Modules.RunDeclarationPhase(simulation.ContentTypes, simulation.Settings, simulation.Blocks);
 
             // 4. Load and validate all content.
@@ -51,6 +54,11 @@ namespace TheEmptying.Core.Startup
 
             // 7. Initialize modules.
             simulation.Modules.InitializeModules(isLoading);
+
+            // 8. Activate the rule runner (after modules initialize).
+            var ruleRunner = new RuleRunner(ruleRegistry, simulation.Events, simulation.Scheduler, simulation.Random, simulation.Settings, simulation.EventDefinitions, logSink, errorMode, () => simulation.Clock.CurrentTick);
+            ruleRunner.Activate();
+            simulation.RuleRunner = ruleRunner;
 
             var report = new StartupReport(simulation.Modules.DisabledReasons, contentReport, ruleReport);
             return (simulation, report);

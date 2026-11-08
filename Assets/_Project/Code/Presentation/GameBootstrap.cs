@@ -23,7 +23,7 @@ namespace TheEmptying.Presentation
     /// component for now; it splits into separate pieces once there's a
     /// gray-box town to justify it.
     /// </summary>
-    public sealed class GameBootstrap : MonoBehaviour, IPresentationCommands
+    public sealed class GameBootstrap : MonoBehaviour, IPresentationCommands, ILogSink
     {
         private const ulong FixedWorldSeed = 1;
         private const double RealSecondsPerDay = 720; // 12 real minutes per in-game day at 1x.
@@ -226,7 +226,7 @@ namespace TheEmptying.Presentation
         private StartupReport BuildSimulation()
         {
             List<string> sources = ResolveSourceFolders();
-            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, CreateModules(), ErrorMode.Development);
+            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, CreateModules(), ErrorMode.Development, logSink: this);
             _simulation = simulation;
 
             BuiltInConsoleCommands.RegisterAll(_simulation, this);
@@ -710,7 +710,7 @@ namespace TheEmptying.Presentation
                 }
 
                 using var stream = File.OpenRead(path);
-                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), CreateModules(), ErrorMode.Development);
+                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), CreateModules(), ErrorMode.Development, logSink: this);
 
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this);
@@ -773,6 +773,16 @@ namespace TheEmptying.Presentation
 
             return string.Join("\n", lines);
         }
+
+        #endregion
+
+        #region ILogSink
+
+        public void Log(string message) => Debug.Log(message);
+
+        #endregion
+
+        #region IPresentationCommands (continued)
 
         public string SetLogFilter(string mode)
         {

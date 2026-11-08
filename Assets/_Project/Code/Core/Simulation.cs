@@ -7,6 +7,7 @@ using TheEmptying.Core.Events;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
 using TheEmptying.Core.Rules;
+using TheEmptying.Core.Rules.CoreBlocks;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Scheduling;
 using TheEmptying.Core.Timekeeping;
@@ -39,6 +40,9 @@ namespace TheEmptying.Core
         /// <summary>Every rule that compiled without errors. Empty until SimulationBuilder compiles rules.</summary>
         public RuleRegistry Rules { get; internal set; }
 
+        /// <summary>Activates and runs compiled rules. Null until SimulationBuilder builds it, after modules initialize.</summary>
+        public RuleRunner RuleRunner { get; internal set; }
+
         /// <summary>
         /// Sections from a loaded save whose module is currently missing or
         /// switched off. Kept untouched and written back out on the next save,
@@ -70,6 +74,7 @@ namespace TheEmptying.Core
             Rules = new RuleRegistry();
 
             RegisterCalendarDefinitions();
+            RegisterRuleDefinitions();
             CalendarEventSerializers.RegisterAll(EventSerializers);
         }
 
@@ -140,6 +145,11 @@ namespace TheEmptying.Core
             EventDefinitions.Register(new EventDefinition(NewDayEvent.DefinitionIdValue, EventVisibility.Public, 0f, 0f, "A new in-game day has begun."));
             EventDefinitions.Register(new EventDefinition(NewSeasonEvent.DefinitionIdValue, EventVisibility.Public, 0f, 0f, "A new season has begun."));
             EventDefinitions.Register(new EventDefinition(NewYearEvent.DefinitionIdValue, EventVisibility.Public, 0f, 0f, "A new year has begun."));
+        }
+
+        private void RegisterRuleDefinitions()
+        {
+            EventDefinitions.Register(new EventDefinition(WriteHeraldLineActionBlockType.EventDefinitionId, EventVisibility.Public, 0f, 5f, "A herald line was posted by a rule."));
         }
     }
 }

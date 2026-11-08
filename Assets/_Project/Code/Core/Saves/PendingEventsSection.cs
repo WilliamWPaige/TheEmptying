@@ -22,6 +22,7 @@ namespace TheEmptying.Core.Saves
             {
                 writer.WriteString(posted.DefinitionId);
                 writer.WriteLong(posted.Tick);
+                writer.WriteInt(posted.ChainDepth);
                 writer.WriteBool(posted.IsTyped);
 
                 if (posted.IsTyped)
@@ -54,6 +55,7 @@ namespace TheEmptying.Core.Saves
             {
                 string definitionId = reader.ReadString();
                 long tick = reader.ReadLong();
+                int chainDepth = reader.ReadInt();
                 bool isTyped = reader.ReadBool();
 
                 if (isTyped)
@@ -64,12 +66,12 @@ namespace TheEmptying.Core.Saves
                     }
 
                     ISimEvent typedEvent = serializer.Read(reader);
-                    result.Add(new PostedEvent(definitionId, tick, typedEvent, null));
+                    result.Add(new PostedEvent(definitionId, tick, typedEvent, null, chainDepth));
                 }
                 else
                 {
                     EventData eventData = EventDataSerializer.Read(reader);
-                    result.Add(new PostedEvent(definitionId, tick, null, eventData));
+                    result.Add(new PostedEvent(definitionId, tick, null, eventData, chainDepth));
                 }
             }
 

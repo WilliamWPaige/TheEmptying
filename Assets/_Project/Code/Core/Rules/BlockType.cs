@@ -1,12 +1,12 @@
 using System.Collections.Generic;
 using System.Linq;
+using TheEmptying.Core.Content;
 
 namespace TheEmptying.Core.Rules
 {
     /// <summary>
     /// Describes one kind of node a rule can use: its Id, category, kind, ports
-    /// and fields. Runtime behavior (what the block actually does) is added by
-    /// prompt 2.2; this is metadata only.
+    /// and fields, plus how it runs.
     /// </summary>
     public abstract class BlockType
     {
@@ -44,6 +44,36 @@ namespace TheEmptying.Core.Rules
         public virtual IEnumerable<string> GetPostedEventDefinitionIds(IReadOnlyDictionary<string, RuleFieldValueSource> fieldValues)
         {
             return Enumerable.Empty<string>();
+        }
+
+        /// <summary>
+        /// Only meaningful for Kind == Trigger: how this rule activates. Called
+        /// once, when the RuleRunner activates the rule, with the trigger
+        /// node's compiled fields.
+        /// </summary>
+        public virtual RuleTriggerDescriptor DescribeTrigger(IReadOnlyDictionary<string, CompiledFieldValue> fields, SettingsRegistry settings)
+        {
+            return null;
+        }
+
+        /// <summary>
+        /// Only meaningful for Kind == Value: computes this node's single
+        /// output value from its (already-resolved) inputs. The caller caches
+        /// the result for the rest of the current execution step.
+        /// </summary>
+        public virtual RuleValue ComputeValue(IRuleNodeContext context)
+        {
+            return default;
+        }
+
+        /// <summary>
+        /// Only meaningful for Kind == Action or Flow: runs one step. Returns
+        /// the execution output port name to follow next, or null to end this
+        /// path.
+        /// </summary>
+        public virtual string Execute(IRuleNodeContext context)
+        {
+            return null;
         }
     }
 }
