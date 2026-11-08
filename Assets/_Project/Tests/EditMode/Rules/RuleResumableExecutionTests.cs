@@ -139,6 +139,45 @@ namespace TheEmptying.Tests.EditMode.Rules
         }
 
         [Test]
+        public void Wait_WiredAmount_ResumesOnTheWiredDuration()
+        {
+            var sink = new TickRecordingLogSink();
+            var rule = Rule("rule.wait_wired", new List<RuleNode>
+            {
+                Node("trigger", "block.trigger.on_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("go") }),
+                Node("math", "block.value.math", new Dictionary<string, RuleFieldValueSource> { ["operator"] = Lit("add"), ["a"] = Lit(2.0), ["b"] = Lit(1.0) }),
+                Node("wait", "block.flow.wait", new Dictionary<string, RuleFieldValueSource> { ["unit"] = Lit("hours") }),
+                Node("log", "block.action.write_log_line", new Dictionary<string, RuleFieldValueSource> { ["text"] = Lit("resumed") })
+            }, new List<RuleConnection>
+            {
+                Conn("trigger", "then", "wait", "exec"),
+                Conn("math", "result", "wait", "amount"),
+                Conn("wait", "then", "log", "exec")
+            });
+
+            (Simulation sim, _, RuleCompileReport report) = Build(logSink: sink, extraEvents: new[] { new EventDefinition("go", EventVisibility.Public, 0, 0, "x") }, rules: rule);
+            Assert.IsFalse(report.HasErrors, string.Join("\n", report.Errors));
+            sink.CurrentTick = () => sim.Clock.CurrentTick;
+
+            sim.Events.Post("go", sim.Clock.CurrentTick);
+            sim.Step();
+
+            long expectedResumeTick = sim.Clock.CurrentTick + (3 * CalendarConstants.TicksPerHour);
+
+            while (sim.Clock.CurrentTick < expectedResumeTick - 1)
+            {
+                sim.Step();
+            }
+
+            Assert.AreEqual(0, sink.Entries.Count, "should not resume before the wired amount (3 hours) is due");
+
+            sim.Step();
+
+            Assert.AreEqual(1, sink.Entries.Count);
+            Assert.AreEqual(expectedResumeTick, sink.Entries[0].Tick);
+        }
+
+        [Test]
         public void WaitInsideSequenceFirstBranch_LaterOutputsStillRunAfterResume_InOrder()
         {
             var sink = new TestLogSink();

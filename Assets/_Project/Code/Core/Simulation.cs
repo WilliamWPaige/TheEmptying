@@ -43,12 +43,9 @@ namespace TheEmptying.Core
 
         /// <summary>
         /// Activates and runs compiled rules. Null until SimulationBuilder (or
-        /// a test building one by hand) builds it. Public, not internal set,
-        /// since a hand-built Simulation (bypassing SimulationBuilder, as
-        /// rule-runner tests do for fine control) must still be able to wire
-        /// its own RuleRunner in so Step's resume hook finds it.
+        /// a test building one by hand, via InternalsVisibleTo) builds it.
         /// </summary>
-        public RuleRunner RuleRunner { get; set; }
+        public RuleRunner RuleRunner { get; internal set; }
 
         /// <summary>Named flags and counters, owned by an entity or by the kingdom (EntityId.None).</summary>
         public MemoryStore Memory { get; }
@@ -104,6 +101,7 @@ namespace TheEmptying.Core
             TickBoundaries boundaries = Clock.Tick();
             long tick = Clock.CurrentTick;
 
+            RuleRunner?.ProcessQuestionAnswers(tick);
             RuleRunner?.ResumeDueInstances(tick);
 
             if (boundaries.NewHour)
@@ -128,6 +126,17 @@ namespace TheEmptying.Core
 
             Scheduler.RunTick(tick);
             Events.DeliverPending();
+        }
+
+        /// <summary>Records a player's answer to a pending question. Applied at the start of the next tick, before paused instances resume.</summary>
+        public string AnswerQuestion(long questionId, int choiceNumber)
+        {
+            if (RuleRunner == null)
+            {
+                return $"Question {questionId} does not exist (it may already have been answered or withdrawn).";
+            }
+
+            return RuleRunner.QueueAnswer(questionId, choiceNumber);
         }
 
         /// <summary>A stable FNV-1a hash over the serialized bytes of every core and module section, in a fixed (ordinal Id) order.</summary>
@@ -163,6 +172,8 @@ namespace TheEmptying.Core
         private void RegisterRuleDefinitions()
         {
             EventDefinitions.Register(new EventDefinition(WriteHeraldLineActionBlockType.EventDefinitionId, EventVisibility.Public, 0f, 5f, "A herald line was posted by a rule."));
+            EventDefinitions.Register(new EventDefinition(RuleRunner.QuestionAskedEventId, EventVisibility.Witnessed, 0f, 2f, "A question was asked of the player."));
+            EventDefinitions.Register(new EventDefinition(RuleRunner.QuestionAnsweredEventId, EventVisibility.Witnessed, 0f, 2f, "A pending question was answered."));
         }
     }
 }

@@ -9,6 +9,15 @@
             "maximum": 1000000,
             "category": "Rules",
             "description": "The most times a single rule may fire in one tick before further fires that tick are skipped and reported."
+        },
+        {
+            "id": "setting.rules.questions_pause_game",
+            "valueType": "Boolean",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 1,
+            "category": "Rules",
+            "description": "Whether an open question (asked by a rule) pauses the game until it is answered."
         }
     ]
 }

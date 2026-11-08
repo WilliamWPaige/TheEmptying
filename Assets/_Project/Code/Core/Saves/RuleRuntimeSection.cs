@@ -15,7 +15,12 @@ namespace TheEmptying.Core.Saves
     /// </summary>
     public static class RuleRuntimeSection
     {
-        public static byte[] Write(long nextInstanceId, IEnumerable<(string RuleId, long ResumeTick, RuleInstance Instance)> paused, TypedEventSerializerRegistry serializers)
+        public static byte[] Write(
+            long nextInstanceId,
+            IEnumerable<(string RuleId, long ResumeTick, RuleInstance Instance)> paused,
+            long nextQuestionId,
+            IEnumerable<PendingQuestion> questions,
+            TypedEventSerializerRegistry serializers)
         {
             using var stream = new MemoryStream();
             var writer = new SaveWriter(stream);
@@ -37,10 +42,41 @@ namespace TheEmptying.Core.Saves
                 WriteTriggeringEvent(writer, ruleId, instance.TriggeringEvent, serializers);
             }
 
+            writer.WriteLong(nextQuestionId);
+
+            List<PendingQuestion> questionList = questions.ToList();
+            writer.WriteInt(questionList.Count);
+
+            foreach (PendingQuestion question in questionList)
+            {
+                writer.WriteLong(question.QuestionId);
+                writer.WriteString(question.RuleId);
+                writer.WriteString(question.AskingNodeId);
+                writer.WriteString(question.Category);
+                writer.WriteString(question.Title);
+                writer.WriteString(question.Body);
+                writer.WriteStringList(question.ChoiceTexts);
+                writer.WriteInt(question.DefaultChoiceNumber);
+                writer.WriteLong(question.TimeoutTick);
+                writer.WriteLong(question.TickAsked);
+
+                bool hasInstance = question.Instance != null;
+                writer.WriteBool(hasInstance);
+
+                if (hasInstance)
+                {
+                    writer.WriteLong(question.Instance.InstanceId);
+                    writer.WriteInt(question.Instance.PostedEventChainDepth);
+                    WritePosition(writer, question.Instance.Position);
+                    WriteLocals(writer, question.Instance.Locals);
+                    WriteTriggeringEvent(writer, question.RuleId ?? "<adhoc question>", question.Instance.TriggeringEvent, serializers);
+                }
+            }
+
             return stream.ToArray();
         }
 
-        public static (long NextInstanceId, List<(string RuleId, long ResumeTick, RuleInstance Instance)> Paused) Read(byte[] data, TypedEventSerializerRegistry serializers)
+        public static (long NextInstanceId, List<(string RuleId, long ResumeTick, RuleInstance Instance)> Paused, long NextQuestionId, List<PendingQuestion> Questions) Read(byte[] data, TypedEventSerializerRegistry serializers)
         {
             using var stream = new MemoryStream(data);
             var reader = new SaveReader(stream);
@@ -71,7 +107,50 @@ namespace TheEmptying.Core.Saves
                 result.Add((ruleId, resumeTick, instance));
             }
 
-            return (nextInstanceId, result);
+            long nextQuestionId = reader.ReadLong();
+            int questionCount = reader.ReadInt();
+            var questions = new List<PendingQuestion>(questionCount);
+
+            for (int i = 0; i < questionCount; i++)
+            {
+                var question = new PendingQuestion
+                {
+                    QuestionId = reader.ReadLong(),
+                    RuleId = reader.ReadString(),
+                    AskingNodeId = reader.ReadString(),
+                    Category = reader.ReadString(),
+                    Title = reader.ReadString(),
+                    Body = reader.ReadString(),
+                    ChoiceTexts = reader.ReadStringList().ToArray(),
+                    DefaultChoiceNumber = reader.ReadInt(),
+                    TimeoutTick = reader.ReadLong(),
+                    TickAsked = reader.ReadLong()
+                };
+
+                bool hasInstance = reader.ReadBool();
+                if (hasInstance)
+                {
+                    long instanceId = reader.ReadLong();
+                    int postedEventChainDepth = reader.ReadInt();
+                    RuleExecutionPosition position = ReadPosition(reader);
+                    Dictionary<string, RuleValue> locals = ReadLocals(reader);
+                    PostedEvent triggeringEvent = ReadTriggeringEvent(reader, serializers);
+
+                    var instance = new RuleInstance(instanceId, question.RuleId, triggeringEvent, postedEventChainDepth);
+                    instance.Position.CurrentNodeId = position.CurrentNodeId;
+                    instance.Position.ContinuationStack.AddRange(position.ContinuationStack);
+                    foreach (KeyValuePair<string, RuleValue> local in locals)
+                    {
+                        instance.Locals[local.Key] = local.Value;
+                    }
+
+                    question.Instance = instance;
+                }
+
+                questions.Add(question);
+            }
+
+            return (nextInstanceId, result, nextQuestionId, questions);
         }
 
         private static void WritePosition(SaveWriter writer, RuleExecutionPosition position)

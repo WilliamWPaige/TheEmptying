@@ -16,6 +16,7 @@ namespace TheEmptying.Core.Rules
     public static class RuleCompiler
     {
         private static readonly Dictionary<string, RuleFieldValueSource> EmptyFields = new Dictionary<string, RuleFieldValueSource>();
+        private static readonly HashSet<string> EmptyWiredPorts = new HashSet<string>(StringComparer.Ordinal);
 
         public static (RuleRegistry Registry, RuleCompileReport Report) Compile(
             ContentDatabase database,
@@ -135,6 +136,7 @@ namespace TheEmptying.Core.Rules
             var execOutgoingCount = new Dictionary<(string Node, string Port), int>();
             var dataIncomingCount = new Dictionary<(string Node, string Port), int>();
             var connectedDataInputs = new HashSet<(string Node, string Port)>();
+            var wiredExecOutputsByNode = new Dictionary<string, HashSet<string>>();
 
             foreach (RuleConnection connection in rule.Connections ?? Enumerable.Empty<RuleConnection>())
             {
@@ -190,6 +192,14 @@ namespace TheEmptying.Core.Rules
                         errors.Add(new RuleCompileProblem(ruleId, connection.FromNode, $"Execution output '{connection.FromPort}' already connects to another input; it may only connect to one."));
                         continue;
                     }
+
+                    if (!wiredExecOutputsByNode.TryGetValue(connection.FromNode, out HashSet<string> wiredPorts))
+                    {
+                        wiredPorts = new HashSet<string>(StringComparer.Ordinal);
+                        wiredExecOutputsByNode[connection.FromNode] = wiredPorts;
+                    }
+
+                    wiredPorts.Add(connection.FromPort);
                 }
 
                 if (toPort.Kind == PortKind.Data)
@@ -320,6 +330,12 @@ namespace TheEmptying.Core.Rules
                             errors.Add(new RuleCompileProblem(ruleId, nodeId, $"Posts event '{posted}', which is not registered."));
                         }
                     }
+                }
+
+                ISet<string> wiredExecOutputs = wiredExecOutputsByNode.TryGetValue(nodeId, out HashSet<string> wired) ? wired : EmptyWiredPorts;
+                foreach (string message in blockType.ValidateNode(rawFields, wiredExecOutputs) ?? Enumerable.Empty<string>())
+                {
+                    errors.Add(new RuleCompileProblem(ruleId, nodeId, message));
                 }
             }
 

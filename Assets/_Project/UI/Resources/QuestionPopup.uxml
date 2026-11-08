@@ -1,0 +1,11 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <Style src="QuestionPopup.uss" />
+    <ui:VisualElement name="question-popup-root" class="question-popup-root">
+        <ui:VisualElement name="question-popup-box" class="question-popup-box">
+            <ui:Label name="question-popup-counter" class="question-popup-counter" />
+            <ui:Label name="question-popup-title" class="question-popup-title" />
+            <ui:Label name="question-popup-body" class="question-popup-body" />
+            <ui:VisualElement name="question-popup-choices" class="question-popup-choices" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

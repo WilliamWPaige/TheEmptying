@@ -71,8 +71,9 @@ namespace TheEmptying.Core.Saves
 
             if (sections.TryGetValue(RuleRuntimeId, out SaveSectionData ruleRuntime) && simulation.RuleRunner != null)
             {
-                (long nextInstanceId, var paused) = RuleRuntimeSection.Read(ruleRuntime.Data, eventSerializers);
+                (long nextInstanceId, var paused, long nextQuestionId, var questions) = RuleRuntimeSection.Read(ruleRuntime.Data, eventSerializers);
                 simulation.RuleRunner.RestorePausedState(nextInstanceId, paused);
+                simulation.RuleRunner.RestoreQuestions(nextQuestionId, questions);
             }
 
             if (sections.TryGetValue(MemoryId, out SaveSectionData memory))
@@ -89,10 +90,17 @@ namespace TheEmptying.Core.Saves
                 var writer = new SaveWriter(stream);
                 writer.WriteLong(1);
                 writer.WriteInt(0);
+                writer.WriteLong(1);
+                writer.WriteInt(0);
                 return stream.ToArray();
             }
 
-            return RuleRuntimeSection.Write(simulation.RuleRunner.NextInstanceId, simulation.RuleRunner.PausedInstances, eventSerializers);
+            return RuleRuntimeSection.Write(
+                simulation.RuleRunner.NextInstanceId,
+                simulation.RuleRunner.PausedInstances,
+                simulation.RuleRunner.NextQuestionId,
+                simulation.RuleRunner.PendingQuestionsForSave,
+                eventSerializers);
         }
 
         private static byte[] WriteClock(Simulation sim)

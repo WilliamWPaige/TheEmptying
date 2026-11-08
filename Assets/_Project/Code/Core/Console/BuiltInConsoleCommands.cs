@@ -136,6 +136,19 @@ namespace TheEmptying.Core.Console
                 return lines.Count == 0 ? $"{label}: no flags or counters." : string.Join("\n", lines);
             }));
 
+            commands.Register(new ConsoleCommand("questions", "Lists pending questions, oldest first.", args => FormatQuestions(simulation)));
+
+            commands.Register(new ConsoleCommand("answer", "answer <questionId> <choiceNumber> - answers a pending question.", args =>
+            {
+                if (args.Length != 2 || !ConsoleArgs.TryParseInt(args[0], out int questionIdInt) || !ConsoleArgs.TryParseInt(args[1], out int choiceNumber))
+                {
+                    return "Usage: answer <questionId> <choiceNumber>";
+                }
+
+                string rejection = simulation.AnswerQuestion(questionIdInt, choiceNumber);
+                return rejection ?? $"Answer to question {questionIdInt} queued (choice {choiceNumber}).";
+            }));
+
             commands.Register(new ConsoleCommand("save", "save <name> - saves the game.", args =>
                 args.Length == 1 ? presentation.Save(args[0]) : "Usage: save <name>"));
 
@@ -187,6 +200,17 @@ namespace TheEmptying.Core.Console
             return definitions.Count == 0
                 ? "(no settings declared)"
                 : string.Join("\n", definitions.Select(d => $"{d.Id} = {simulation.Settings.Get(d.Id)} [{d.Minimum}..{d.Maximum}] ({d.Category})"));
+        }
+
+        private static string FormatQuestions(Simulation simulation)
+        {
+            if (simulation.RuleRunner == null || simulation.RuleRunner.PendingQuestions.Count == 0)
+            {
+                return "(no pending questions)";
+            }
+
+            return string.Join("\n", simulation.RuleRunner.PendingQuestions.Select(q =>
+                $"#{q.QuestionId} [{q.Category}] {q.Title}: {string.Join(", ", q.Choices.Select(c => $"{c.ChoiceNumber}) {c.Text}"))} (default {q.DefaultChoiceNumber})"));
         }
 
         private static string FormatEntities(Simulation simulation)

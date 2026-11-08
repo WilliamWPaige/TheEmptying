@@ -22,6 +22,9 @@ namespace TheEmptying.Core.Rules
     public sealed class RuleRunner
     {
         public const string MaxFiresPerTickSettingId = "setting.rules.max_fires_per_tick";
+        public const string QuestionsPauseGameSettingId = "setting.rules.questions_pause_game";
+        public const string QuestionAskedEventId = "event.question_asked";
+        public const string QuestionAnsweredEventId = "event.question_answered";
         public const int MaxChainDepth = 10;
         internal const int MaxStepsPerInstance = 10000;
 
@@ -66,6 +69,11 @@ namespace TheEmptying.Core.Rules
         private readonly List<RuleRuntimeReport> _reports = new List<RuleRuntimeReport>();
         private readonly List<PausedEntry> _paused = new List<PausedEntry>();
 
+        private readonly List<PendingQuestion> _pendingQuestions = new List<PendingQuestion>();
+        private readonly List<IQuestionDelegate> _questionDelegates = new List<IQuestionDelegate>();
+        private readonly List<(long QuestionId, int ChoiceNumber)> _queuedAnswers = new List<(long, int)>();
+        private long _nextQuestionId = 1;
+
         private readonly Dictionary<string, int> _firesThisTick = new Dictionary<string, int>();
         private long _firesTickStamp = long.MinValue;
         private long _nextInstanceId = 1;
@@ -93,6 +101,24 @@ namespace TheEmptying.Core.Rules
         /// <summary>For saving: every currently paused instance, in instance Id order.</summary>
         internal IEnumerable<(string RuleId, long ResumeTick, RuleInstance Instance)> PausedInstances =>
             _paused.OrderBy(p => p.Instance.InstanceId).Select(p => (p.RuleId, p.ResumeTick, p.Instance));
+
+        /// <summary>Every pending question, oldest first, for the console and the presentation popup.</summary>
+        public IReadOnlyList<QuestionInfo> PendingQuestions => _pendingQuestions.OrderBy(q => q.QuestionId).Select(q => q.ToInfo()).ToList();
+
+        /// <summary>Whether a player's answer is queued, waiting for the next Step() to apply it. The presentation uses this to force a tick through even while otherwise paused or blocked, so an answer is never stuck.</summary>
+        public bool HasQueuedAnswers => _queuedAnswers.Count > 0;
+
+        /// <summary>For saving: the question Id counter.</summary>
+        internal long NextQuestionId => _nextQuestionId;
+
+        /// <summary>For saving: every pending question, in question Id order.</summary>
+        internal IEnumerable<PendingQuestion> PendingQuestionsForSave => _pendingQuestions.OrderBy(q => q.QuestionId);
+
+        /// <summary>Registers a delegate that may answer questions on the player's behalf. Tried in Category order (then registration order).</summary>
+        public void RegisterQuestionDelegate(IQuestionDelegate questionDelegate)
+        {
+            _questionDelegates.Add(questionDelegate ?? throw new ArgumentNullException(nameof(questionDelegate)));
+        }
 
         public RuleRunner(
             RuleRegistry registry,
@@ -408,6 +434,12 @@ namespace TheEmptying.Core.Rules
                         PauseInstance(instance, activated.Rule.Id, wait.ResumeTick);
                         return;
 
+                    case AskExecutionResult ask:
+                        // position.CurrentNodeId stays null: which output to resume on
+                        // isn't known until the question is answered.
+                        HandleAsk(instance, activated, nodeId, ask, _currentTick());
+                        return;
+
                     default:
                         position.CurrentNodeId = null;
                         break;
@@ -507,6 +539,217 @@ namespace TheEmptying.Core.Rules
             return true;
         }
 
+        /// <summary>
+        /// Called once, at the start of each tick, before ResumeDueInstances:
+        /// applies every queued player answer (in question Id order), then
+        /// resolves any question whose timeout has run out, picking its
+        /// default choice.
+        /// </summary>
+        public void ProcessQuestionAnswers(long tick)
+        {
+            if (_queuedAnswers.Count > 0)
+            {
+                List<(long QuestionId, int ChoiceNumber)> answers = _queuedAnswers.OrderBy(a => a.QuestionId).ToList();
+                _queuedAnswers.Clear();
+
+                foreach ((long questionId, int choiceNumber) in answers)
+                {
+                    PendingQuestion question = _pendingQuestions.FirstOrDefault(q => q.QuestionId == questionId);
+                    if (question != null)
+                    {
+                        ResolveQuestion(question, choiceNumber, QuestionAnsweredBy.Player, tick);
+                    }
+                }
+            }
+
+            if (_pendingQuestions.Count == 0)
+            {
+                return;
+            }
+
+            List<PendingQuestion> timedOut = _pendingQuestions
+                .Where(q => q.TimeoutTick > 0 && q.TimeoutTick <= tick)
+                .OrderBy(q => q.QuestionId)
+                .ToList();
+
+            foreach (PendingQuestion question in timedOut)
+            {
+                ResolveQuestion(question, question.DefaultChoiceNumber, QuestionAnsweredBy.Timeout, tick);
+            }
+        }
+
+        /// <summary>
+        /// Queues a player's answer for ProcessQuestionAnswers to apply at the
+        /// start of the next tick. Returns a rejection message (and queues
+        /// nothing) if the question doesn't exist or the choice is empty.
+        /// </summary>
+        public string QueueAnswer(long questionId, int choiceNumber)
+        {
+            PendingQuestion question = _pendingQuestions.FirstOrDefault(q => q.QuestionId == questionId);
+            if (question == null)
+            {
+                return $"Question {questionId} does not exist (it may already have been answered or withdrawn).";
+            }
+
+            if (choiceNumber < 1 || choiceNumber > 4 || string.IsNullOrEmpty(question.ChoiceTexts[choiceNumber - 1]))
+            {
+                return $"Choice {choiceNumber} is empty for question {questionId}.";
+            }
+
+            _queuedAnswers.Add((questionId, choiceNumber));
+            return null;
+        }
+
+        private void HandleAsk(RuleInstance instance, ActivatedRule activated, string nodeId, AskExecutionResult ask, long tick)
+        {
+            PendingQuestion question = AskQuestion(activated.Rule.Id, nodeId, instance, ask.Category, ask.Title, ask.Body, ask.ChoiceTexts, ask.DefaultChoiceNumber, ask.TimeoutTicks, tick);
+            TryResolveImmediatelyOrEnqueue(question, tick);
+        }
+
+        /// <summary>For presentation smoke tests: asks a question not tied to any rule instance.</summary>
+        public long AskAdHocQuestion(string category, string title, string body, string[] choiceTexts, int defaultChoiceNumber, double timeoutHours = 0)
+        {
+            long tick = _currentTick();
+            long timeoutTicks = timeoutHours > 0 ? (long)Math.Round(timeoutHours * CalendarConstants.TicksPerHour, MidpointRounding.AwayFromZero) : 0;
+
+            PendingQuestion question = AskQuestion(null, null, null, category, title, body, choiceTexts, defaultChoiceNumber, timeoutTicks, tick);
+            TryResolveImmediatelyOrEnqueue(question, tick);
+            return question.QuestionId;
+        }
+
+        private PendingQuestion AskQuestion(string ruleId, string askingNodeId, RuleInstance instance, string category, string title, string body, string[] choiceTexts, int defaultChoiceNumber, long timeoutTicks, long tick)
+        {
+            return new PendingQuestion
+            {
+                QuestionId = _nextQuestionId++,
+                RuleId = ruleId,
+                AskingNodeId = askingNodeId,
+                Instance = instance,
+                Category = category ?? string.Empty,
+                Title = title ?? string.Empty,
+                Body = body ?? string.Empty,
+                ChoiceTexts = (string[])(choiceTexts ?? new string[4]).Clone(),
+                DefaultChoiceNumber = defaultChoiceNumber,
+                TimeoutTick = timeoutTicks > 0 ? tick + timeoutTicks : 0,
+                TickAsked = tick
+            };
+        }
+
+        /// <summary>Posts "event.question_asked", then gives each registered delegate a chance to answer before the question reaches the player.</summary>
+        private void TryResolveImmediatelyOrEnqueue(PendingQuestion question, long tick)
+        {
+            PostQuestionAskedEvent(question, tick);
+
+            foreach (IQuestionDelegate questionDelegate in _questionDelegates.OrderBy(d => d.Category, StringComparer.Ordinal))
+            {
+                if (questionDelegate.TryAnswer(question.ToInfo(), out int choiceNumber) &&
+                    choiceNumber >= 1 && choiceNumber <= 4 &&
+                    !string.IsNullOrEmpty(question.ChoiceTexts[choiceNumber - 1]))
+                {
+                    ResolveQuestion(question, choiceNumber, QuestionAnsweredBy.Delegate, tick);
+                    return;
+                }
+            }
+
+            _pendingQuestions.Add(question);
+        }
+
+        private void ResolveQuestion(PendingQuestion question, int choiceNumber, QuestionAnsweredBy answeredBy, long tick)
+        {
+            _pendingQuestions.Remove(question);
+            PostQuestionAnsweredEvent(question, choiceNumber, answeredBy, tick);
+
+            if (question.Instance == null)
+            {
+                return;
+            }
+
+            if (!_activated.TryGetValue(question.RuleId, out ActivatedRule activated) || !activated.IsActive)
+            {
+                Report(question.RuleId, question.AskingNodeId, $"Question {question.QuestionId} was answered but rule '{question.RuleId}' is switched off or no longer exists; the instance was dropped.", tick);
+                return;
+            }
+
+            question.Instance.Position.CurrentNodeId = ResolveNext(activated, question.AskingNodeId, $"choice{choiceNumber}");
+            RunInstanceGuarded(question.Instance, activated, tick);
+        }
+
+        private void PostQuestionAskedEvent(PendingQuestion question, long tick)
+        {
+            if (!_eventDefinitions.IsRegistered(QuestionAskedEventId))
+            {
+                return;
+            }
+
+            EventData data = new EventData()
+                .SetDouble("questionId", question.QuestionId)
+                .SetString("ruleId", question.RuleId ?? string.Empty)
+                .SetString("category", question.Category ?? string.Empty);
+
+            _events.Post(QuestionAskedEventId, tick, data);
+        }
+
+        private void PostQuestionAnsweredEvent(PendingQuestion question, int choiceNumber, QuestionAnsweredBy answeredBy, long tick)
+        {
+            if (!_eventDefinitions.IsRegistered(QuestionAnsweredEventId))
+            {
+                return;
+            }
+
+            EventData data = new EventData()
+                .SetDouble("questionId", question.QuestionId)
+                .SetString("ruleId", question.RuleId ?? string.Empty)
+                .SetString("category", question.Category ?? string.Empty)
+                .SetDouble("choice", choiceNumber)
+                .SetString("answeredBy", answeredBy.ToString());
+
+            _events.Post(QuestionAnsweredEventId, tick, data);
+        }
+
+        /// <summary>Withdraws (and reports) every pending question belonging to a rule that was just switched off.</summary>
+        private void WithdrawQuestionsForRule(string ruleId, long tick)
+        {
+            List<PendingQuestion> toWithdraw = _pendingQuestions.Where(q => q.RuleId == ruleId).OrderBy(q => q.QuestionId).ToList();
+            foreach (PendingQuestion question in toWithdraw)
+            {
+                _pendingQuestions.Remove(question);
+                Report(ruleId, question.AskingNodeId, $"Question {question.QuestionId} was withdrawn because rule '{ruleId}' was switched off.", tick);
+            }
+        }
+
+        /// <summary>For loading: restores the question Id counter and every pending question, dropping (and reporting) any whose rule or node no longer exists.</summary>
+        internal void RestoreQuestions(long nextQuestionId, IEnumerable<PendingQuestion> questions)
+        {
+            _nextQuestionId = nextQuestionId;
+            _pendingQuestions.Clear();
+
+            foreach (PendingQuestion question in questions)
+            {
+                if (question.RuleId != null)
+                {
+                    if (!_activated.TryGetValue(question.RuleId, out ActivatedRule activated))
+                    {
+                        Report(question.RuleId, question.AskingNodeId, $"Saved pending question {question.QuestionId} references rule '{question.RuleId}', which no longer exists; it was withdrawn.", _currentTick());
+                        continue;
+                    }
+
+                    if (question.AskingNodeId != null && !activated.Rule.Nodes.ContainsKey(question.AskingNodeId))
+                    {
+                        Report(question.RuleId, question.AskingNodeId, $"Saved pending question {question.QuestionId}'s rule '{question.RuleId}' changed shape (the asking node no longer exists); it was withdrawn.", _currentTick());
+                        continue;
+                    }
+
+                    if (question.Instance != null && !PositionNodesExist(activated, question.Instance.Position))
+                    {
+                        Report(question.RuleId, question.AskingNodeId, $"Saved pending question {question.QuestionId}'s rule '{question.RuleId}' changed shape; it was withdrawn.", _currentTick());
+                        continue;
+                    }
+                }
+
+                _pendingQuestions.Add(question);
+            }
+        }
+
         internal void Log(string message) => _logSink.Log(message);
 
         internal void PostRuleEvent(string eventDefinitionId, IReadOnlyList<(string Name, RuleValue Value)> parameters, RuleInstance instance)
@@ -566,6 +809,7 @@ namespace TheEmptying.Core.Rules
 
             activated.IsActive = false;
             activated.Deactivate?.Invoke();
+            WithdrawQuestionsForRule(activated.Rule.Id, _currentTick());
         }
 
         private void Report(string ruleId, string nodeId, string message, long tick)

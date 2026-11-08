@@ -15,6 +15,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
         public override IReadOnlyList<PortDefinition> Ports { get; } = new[]
         {
             new PortDefinition("exec", PortDirection.Input, PortKind.Execution),
+            new PortDefinition("amount", PortDirection.Input, PortKind.Data, RuleDataType.Number),
             new PortDefinition("then", PortDirection.Output, PortKind.Execution)
         };
 

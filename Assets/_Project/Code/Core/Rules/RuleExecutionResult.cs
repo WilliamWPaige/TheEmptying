@@ -15,6 +15,14 @@ namespace TheEmptying.Core.Rules
 
         /// <summary>Pause the instance until resumeTick, then continue from resumePortName's target.</summary>
         public static RuleExecutionResult Wait(long resumeTick, string resumePortName) => new WaitExecutionResult(resumeTick, resumePortName);
+
+        /// <summary>
+        /// Pause the instance waiting for an answer. choiceTexts is exactly 4
+        /// entries (one per choice1..choice4 output port); an empty entry means
+        /// that choice is unused. timeoutTicks is relative (0 means no limit).
+        /// </summary>
+        public static RuleExecutionResult Ask(string category, string title, string body, string[] choiceTexts, int defaultChoiceNumber, long timeoutTicks) =>
+            new AskExecutionResult(category, title, body, choiceTexts, defaultChoiceNumber, timeoutTicks);
     }
 
     internal sealed class EndExecutionResult : RuleExecutionResult
@@ -50,6 +58,31 @@ namespace TheEmptying.Core.Rules
         {
             ResumeTick = resumeTick;
             ResumePortName = resumePortName;
+        }
+    }
+
+    internal sealed class AskExecutionResult : RuleExecutionResult
+    {
+        public string Category { get; }
+        public string Title { get; }
+        public string Body { get; }
+
+        /// <summary>Exactly 4 entries (choice1..choice4); an empty entry means that choice is unused.</summary>
+        public string[] ChoiceTexts { get; }
+
+        public int DefaultChoiceNumber { get; }
+
+        /// <summary>Relative ticks from "now"; 0 means no time limit.</summary>
+        public long TimeoutTicks { get; }
+
+        public AskExecutionResult(string category, string title, string body, string[] choiceTexts, int defaultChoiceNumber, long timeoutTicks)
+        {
+            Category = category;
+            Title = title;
+            Body = body;
+            ChoiceTexts = choiceTexts;
+            DefaultChoiceNumber = defaultChoiceNumber;
+            TimeoutTicks = timeoutTicks;
         }
     }
 }

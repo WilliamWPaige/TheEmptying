@@ -6,6 +6,7 @@ using System.Text;
 using TheEmptying.Core;
 using TheEmptying.Core.Console;
 using TheEmptying.Core.Modules;
+using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
@@ -50,6 +51,14 @@ namespace TheEmptying.Presentation
         private VisualElement _hudPanel;
         private Label _dateLabel;
         private Label _speedLabel;
+
+        private VisualElement _questionPopupRoot;
+        private Label _questionPopupCounter;
+        private Label _questionPopupTitle;
+        private Label _questionPopupBody;
+        private VisualElement _questionPopupChoices;
+        private readonly List<Action> _questionPopupChoiceActions = new List<Action>();
+        private long _questionPopupShownQuestionId = -1;
 
         private VisualElement _consoleRoot;
         private ScrollView _consoleLog;
@@ -156,6 +165,33 @@ namespace TheEmptying.Presentation
             }
         }
 
+        /// <summary>For tests: whether the question popup is currently shown.</summary>
+        public bool IsQuestionPopupOpen => _questionPopupRoot.style.display == DisplayStyle.Flex;
+
+        /// <summary>For tests: the currently shown question's title and body.</summary>
+        public string QuestionPopupTitle => _questionPopupTitle.text;
+        public string QuestionPopupBody => _questionPopupBody.text;
+
+        /// <summary>For tests: how many choice buttons the popup currently shows.</summary>
+        public int QuestionPopupChoiceCount => _questionPopupChoices.childCount;
+
+        /// <summary>For tests: runs the same action a real click on one of the popup's choice buttons would.</summary>
+        public void ClickQuestionPopupChoiceForTesting(int choiceNumber)
+        {
+            if (choiceNumber < 1 || choiceNumber > _questionPopupChoiceActions.Count)
+            {
+                return;
+            }
+
+            _questionPopupChoiceActions[choiceNumber - 1]();
+        }
+
+        /// <summary>For tests: asks a question not tied to any rule, to exercise the popup without authoring rule content at runtime.</summary>
+        public long AskTestQuestionForTesting(string title, string body, string[] choiceTexts, int defaultChoiceNumber)
+        {
+            return _simulation.RuleRunner.AskAdHocQuestion("question.test", title, body, choiceTexts, defaultChoiceNumber);
+        }
+
         private void Awake()
         {
             ResolveFolders();
@@ -169,7 +205,20 @@ namespace TheEmptying.Presentation
 
         private void Update()
         {
-            if (_paused)
+            RefreshQuestionPopup();
+
+            // A queued answer must be drained even while paused or blocked for
+            // a question, or it would never get applied (Step is what applies
+            // it) and the popup would stay stuck forever.
+            if (_simulation.RuleRunner != null && _simulation.RuleRunner.HasQueuedAnswers)
+            {
+                _simulation.Step();
+                RefreshHud();
+                RefreshQuestionPopup();
+                return;
+            }
+
+            if (_paused || IsBlockedByPendingQuestion())
             {
                 return;
             }
@@ -188,6 +237,14 @@ namespace TheEmptying.Presentation
             {
                 RefreshHud();
             }
+        }
+
+        /// <summary>True while any question is pending and the pause setting is on - the clock driver does not advance, and the player can't unpause, until it is answered.</summary>
+        private bool IsBlockedByPendingQuestion()
+        {
+            return _simulation.RuleRunner != null &&
+                   _simulation.RuleRunner.PendingQuestions.Count > 0 &&
+                   _simulation.Settings.Get(RuleRunner.QuestionsPauseGameSettingId) != 0;
         }
 
         private void OnDestroy()
@@ -275,7 +332,86 @@ namespace TheEmptying.Presentation
 
             BuildHud(root);
             BuildConsole(root);
+            BuildQuestionPopup(root);
         }
+
+        private void BuildQuestionPopup(VisualElement root)
+        {
+            var asset = Resources.Load<VisualTreeAsset>("QuestionPopup");
+            if (asset == null)
+            {
+                Debug.LogError("[TheEmptying] Could not load QuestionPopup from Resources. The question popup will not render.");
+                return;
+            }
+
+            asset.CloneTree(root);
+
+            _questionPopupRoot = root.Q<VisualElement>("question-popup-root");
+            _questionPopupCounter = root.Q<Label>("question-popup-counter");
+            _questionPopupTitle = root.Q<Label>("question-popup-title");
+            _questionPopupBody = root.Q<Label>("question-popup-body");
+            _questionPopupChoices = root.Q<VisualElement>("question-popup-choices");
+
+            _questionPopupRoot.style.display = DisplayStyle.None;
+        }
+
+        /// <summary>Shows the oldest pending question, if any; otherwise hides the popup. Rebuilds the choice buttons only when the question being shown actually changes.</summary>
+        private void RefreshQuestionPopup()
+        {
+            if (_questionPopupRoot == null)
+            {
+                return;
+            }
+
+            IReadOnlyList<QuestionInfo> pending = _simulation.RuleRunner?.PendingQuestions;
+            if (pending == null || pending.Count == 0)
+            {
+                _questionPopupRoot.style.display = DisplayStyle.None;
+                _questionPopupShownQuestionId = -1;
+                return;
+            }
+
+            QuestionInfo question = pending[0];
+            if (question.QuestionId == _questionPopupShownQuestionId)
+            {
+                return;
+            }
+
+            _questionPopupShownQuestionId = question.QuestionId;
+
+            _questionPopupCounter.text = pending.Count > 1 ? $"1 of {pending.Count}" : string.Empty;
+            _questionPopupTitle.text = question.Title;
+            _questionPopupBody.text = question.Body;
+
+            _questionPopupChoices.Clear();
+            _questionPopupChoiceActions.Clear();
+            foreach ((int choiceNumber, string text) in question.Choices)
+            {
+                var button = new Button { text = text };
+                button.AddToClassList("question-popup-choice-button");
+                void OnClick() => OnQuestionPopupChoiceClicked(question.QuestionId, choiceNumber);
+                button.clicked += OnClick;
+                _questionPopupChoiceActions.Add(OnClick);
+                _questionPopupChoices.Add(button);
+            }
+
+            _questionPopupRoot.style.display = DisplayStyle.Flex;
+        }
+
+        private void OnQuestionPopupChoiceClicked(long questionId, int choiceNumber)
+        {
+            string rejection = _simulation.AnswerQuestion(questionId, choiceNumber);
+            if (rejection != null)
+            {
+                AppendLog(rejection, Color.yellow);
+            }
+
+            // The popup keeps showing this question until Update() drains the
+            // queued answer on the next frame (Step is what actually applies
+            // it and removes the question from the pending list).
+        }
+
+        #endregion
 
         private void BuildHud(VisualElement root)
         {
@@ -317,8 +453,6 @@ namespace TheEmptying.Presentation
             _dateLabel.text = _simulation.Clock.CurrentDate.ToString();
             _speedLabel.text = _paused ? "Paused" : $"{(int)_speed}x";
         }
-
-        #endregion
 
         #region Console
 
@@ -660,6 +794,12 @@ namespace TheEmptying.Presentation
 
         public void SetPaused(bool paused)
         {
+            if (!paused && IsBlockedByPendingQuestion())
+            {
+                // Can't unpause while a question is pending and the pause setting is on.
+                return;
+            }
+
             _paused = paused;
             RefreshHud();
         }

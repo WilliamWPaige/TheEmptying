@@ -47,6 +47,18 @@ namespace TheEmptying.Core.Rules
         }
 
         /// <summary>
+        /// Extra compile-time checks beyond the generic port/wire/type checks
+        /// (e.g. Ask Player's choice-count and default-choice checks). Called
+        /// once per node with its raw field values and the names of its
+        /// execution OUTPUT ports that have an outgoing wire. Return one
+        /// message per error; empty default means "nothing extra to check".
+        /// </summary>
+        public virtual IEnumerable<string> ValidateNode(IReadOnlyDictionary<string, RuleFieldValueSource> fieldValues, ISet<string> wiredExecutionOutputPorts)
+        {
+            return Enumerable.Empty<string>();
+        }
+
+        /// <summary>
         /// Only meaningful for Kind == Trigger: how this rule activates. Called
         /// once, when the RuleRunner activates the rule, with the trigger
         /// node's compiled fields.
