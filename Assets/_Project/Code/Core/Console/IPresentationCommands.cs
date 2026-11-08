@@ -15,5 +15,8 @@ namespace TheEmptying.Core.Console
 
         string Save(string name);
         string Load(string name);
+        string ListSaves();
+
+        string SetLogFilter(string mode);
     }
 }

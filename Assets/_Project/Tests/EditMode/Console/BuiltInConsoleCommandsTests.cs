@@ -130,6 +130,62 @@ namespace TheEmptying.Tests.EditMode.Console
         }
 
         [Test]
+        public void Speed_WithWrongArguments_PrintsItsOwnUsageLine_NotTheFullHelpList()
+        {
+            var simulation = new Simulation(1);
+            BuiltInConsoleCommands.RegisterAll(simulation, new FakePresentationCommands());
+
+            string result = simulation.Commands.Execute("speed");
+
+            Assert.AreEqual("Usage: speed <1|2|3>", result);
+        }
+
+        [Test]
+        public void UnknownCommand_PrintsTheUnknownCommandMessage_NotTheFullHelpList()
+        {
+            var simulation = new Simulation(1);
+            BuiltInConsoleCommands.RegisterAll(simulation, new FakePresentationCommands());
+
+            string result = simulation.Commands.Execute("zzz");
+
+            Assert.AreEqual("Unknown command: zzz. Type help for the list.", result);
+        }
+
+        [Test]
+        public void Logs_WithWrongArguments_PrintsItsOwnUsageLine()
+        {
+            var simulation = new Simulation(1);
+            BuiltInConsoleCommands.RegisterAll(simulation, new FakePresentationCommands());
+
+            string result = simulation.Commands.Execute("logs bogus");
+
+            Assert.AreEqual("Usage: logs <on|off|errors>", result);
+        }
+
+        [Test]
+        public void Logs_WithAValidMode_PassesTheLowercasedModeToPresentation()
+        {
+            var simulation = new Simulation(1);
+            var presentation = new FakePresentationCommands();
+            BuiltInConsoleCommands.RegisterAll(simulation, presentation);
+
+            simulation.Commands.Execute("logs ERRORS");
+
+            Assert.AreEqual("errors", presentation.LastLogFilterMode);
+        }
+
+        [Test]
+        public void Saves_DelegatesToPresentation()
+        {
+            var simulation = new Simulation(1);
+            BuiltInConsoleCommands.RegisterAll(simulation, new FakePresentationCommands());
+
+            string result = simulation.Commands.Execute("saves");
+
+            Assert.AreEqual("(fake saves list)", result);
+        }
+
+        [Test]
         public void DisabledModule_CommandsAreRemoved()
         {
             var module = new CommandModule { ThrowAfterRegistering = true };

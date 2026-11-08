@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace TheEmptying.Core.Saves
@@ -13,5 +14,6 @@ namespace TheEmptying.Core.Saves
         public long Population { get; set; }
         public ulong WorldSeed { get; set; }
         public List<SaveSourceInfo> Sources { get; set; } = new List<SaveSourceInfo>();
+        public DateTime SavedAtUtc { get; set; }
     }
 }

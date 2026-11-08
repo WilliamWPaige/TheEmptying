@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using System.Text;
 using TheEmptying.Core;
 using TheEmptying.Core.Console;
 using TheEmptying.Core.Modules;
@@ -26,6 +27,14 @@ namespace TheEmptying.Presentation
         private const ulong FixedWorldSeed = 1;
         private const double RealSecondsPerDay = 720; // 12 real minutes per in-game day at 1x.
         private const int MaxTicksPerFrame = 200;
+        private const int MaxLogLines = 500;
+
+        private enum LogFilterMode
+        {
+            Off,
+            ErrorsAndWarnings,
+            All
+        }
 
         private Simulation _simulation;
         private double _accumulatedRealSeconds;
@@ -41,9 +50,12 @@ namespace TheEmptying.Presentation
         private VisualElement _consoleRoot;
         private ScrollView _consoleLog;
         private TextField _consoleInput;
+        private VisualElement _consoleInputTextBox;
         private readonly List<string> _commandHistory = new List<string>();
         private int _historyIndex;
         private bool _consoleOpen;
+
+        private LogFilterMode _logFilterMode = Application.isEditor ? LogFilterMode.All : LogFilterMode.Off;
 
         private string _coreContentFolder;
         private string _modsFolder;
@@ -70,6 +82,27 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: the input line's current text.</summary>
         public string ConsoleInputValue => _consoleInput.value;
 
+        /// <summary>For tests: the resolved colors of the input's inner text box, to check they contrast.</summary>
+        public Color ConsoleInputTextColor => _consoleInputTextBox.resolvedStyle.color;
+        public Color ConsoleInputBackgroundColor => _consoleInputTextBox.resolvedStyle.backgroundColor;
+
+        /// <summary>For tests: every line currently in the console log, with its resolved color.</summary>
+        public IEnumerable<(string Text, Color Color)> ConsoleLogEntries =>
+            _consoleLog.contentContainer.Children().OfType<Label>().Select(l => (l.text, l.resolvedStyle.color));
+
+        /// <summary>For tests: runs a command exactly as typing it and pressing Enter would, returning its result text.</summary>
+        public string RunConsoleCommandForTesting(string input)
+        {
+            _consoleInput.SetValueWithoutNotify(input);
+            return RunConsoleInput();
+        }
+
+        /// <summary>For tests: the simulation's current living entity count.</summary>
+        public int EntityCountForTesting => _simulation.Entities.Count;
+
+        /// <summary>For tests: the simulation's current state hash.</summary>
+        public ulong StateHashForTesting => _simulation.ComputeStateHash();
+
         /// <summary>For tests: appends throwaway lines to the log without going through a real command.</summary>
         public void AppendLogLinesForTesting(int count)
         {
@@ -82,9 +115,12 @@ namespace TheEmptying.Presentation
         private void Awake()
         {
             ResolveFolders();
-            BuildSimulation();
+            StartupReport report = BuildSimulation();
             BuildUi();
             WireInput();
+
+            Application.logMessageReceived += OnUnityLogMessage;
+            AppendLog($"Startup report:\n{report}");
         }
 
         private void Update()
@@ -112,6 +148,7 @@ namespace TheEmptying.Presentation
 
         private void OnDestroy()
         {
+            Application.logMessageReceived -= OnUnityLogMessage;
             _actions?.Disable();
         }
 
@@ -139,7 +176,7 @@ namespace TheEmptying.Presentation
             return sources;
         }
 
-        private void BuildSimulation()
+        private StartupReport BuildSimulation()
         {
             List<string> sources = ResolveSourceFolders();
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, Array.Empty<IModule>(), ErrorMode.Development);
@@ -148,6 +185,7 @@ namespace TheEmptying.Presentation
             BuiltInConsoleCommands.RegisterAll(_simulation, this);
 
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
+            return report;
         }
 
         #endregion
@@ -276,11 +314,33 @@ namespace TheEmptying.Presentation
                 {
                     flexShrink = 0,
                     height = 32,
-                    marginTop = 4,
-                    color = Color.white,
-                    backgroundColor = new Color(1f, 1f, 1f, 0.12f)
+                    marginTop = 4
                 }
             };
+
+            // The default theme styles the TextField's inner text box (the
+            // "unity-text-input" element), overriding colors set on the outer
+            // TextField itself; style that inner element directly so typed
+            // text is actually readable.
+            _consoleInputTextBox = _consoleInput.Q("unity-text-input");
+            if (_consoleInputTextBox != null)
+            {
+                _consoleInputTextBox.style.color = Color.white;
+                _consoleInputTextBox.style.backgroundColor = new Color(0f, 0f, 0f, 0.6f);
+                var borderColor = new Color(1f, 1f, 1f, 0.35f);
+                _consoleInputTextBox.style.borderTopWidth = 1;
+                _consoleInputTextBox.style.borderBottomWidth = 1;
+                _consoleInputTextBox.style.borderLeftWidth = 1;
+                _consoleInputTextBox.style.borderRightWidth = 1;
+                _consoleInputTextBox.style.borderTopColor = borderColor;
+                _consoleInputTextBox.style.borderBottomColor = borderColor;
+                _consoleInputTextBox.style.borderLeftColor = borderColor;
+                _consoleInputTextBox.style.borderRightColor = borderColor;
+            }
+            else
+            {
+                Debug.LogError("[TheEmptying] Could not find the console input's inner text box ('unity-text-input'); typed text may be unreadable.");
+            }
 
             _consoleRoot.Add(_consoleLog);
             _consoleRoot.Add(_consoleInput);
@@ -321,21 +381,24 @@ namespace TheEmptying.Presentation
             }
         }
 
-        private void RunConsoleInput()
+        /// <summary>Runs whatever's currently typed, as if Enter had been pressed. Returns the command's result text (null if the input was blank).</summary>
+        private string RunConsoleInput()
         {
             string input = _consoleInput.value;
             if (string.IsNullOrWhiteSpace(input))
             {
-                return;
+                return null;
             }
 
             _commandHistory.Add(input);
             _historyIndex = _commandHistory.Count;
 
             AppendLog($"> {input}");
-            AppendLog(_simulation.Commands.Execute(input));
+            string result = _simulation.Commands.Execute(input);
+            AppendLog(result);
 
             _consoleInput.SetValueWithoutNotify(string.Empty);
+            return result;
         }
 
         private void RecallHistory(int direction)
@@ -349,19 +412,62 @@ namespace TheEmptying.Presentation
             _consoleInput.SetValueWithoutNotify(_commandHistory[_historyIndex]);
         }
 
-        private void AppendLog(string text)
+        private void AppendLog(string text) => AppendLog(text, Color.white);
+
+        private void AppendLog(string text, Color color)
         {
             var label = new Label(text)
             {
                 style =
                 {
                     position = Position.Relative,
-                    color = Color.white,
+                    color = color,
                     whiteSpace = WhiteSpace.Normal
                 }
             };
             _consoleLog.Add(label);
+
+            // Cap the log so it can't grow without limit; drop the oldest lines first.
+            while (_consoleLog.contentContainer.childCount > MaxLogLines)
+            {
+                _consoleLog.contentContainer.RemoveAt(0);
+            }
+
             _consoleLog.ScrollTo(label);
+        }
+
+        /// <summary>Mirrors Unity's own log messages into the console, color-coded and prefixed with the in-game time, subject to the current log filter.</summary>
+        private void OnUnityLogMessage(string message, string stackTrace, LogType type)
+        {
+            if (_logFilterMode == LogFilterMode.Off)
+            {
+                return;
+            }
+
+            bool isProblem = type == LogType.Warning || type == LogType.Error || type == LogType.Exception || type == LogType.Assert;
+            if (_logFilterMode == LogFilterMode.ErrorsAndWarnings && !isProblem)
+            {
+                return;
+            }
+
+            Color color = Color.white;
+            string text = message;
+
+            if (type == LogType.Warning)
+            {
+                color = Color.yellow;
+            }
+            else if (isProblem)
+            {
+                color = new Color(1f, 0.35f, 0.35f);
+                string firstStackLine = string.IsNullOrEmpty(stackTrace) ? null : stackTrace.Split('\n')[0].TrimEnd('\r');
+                if (!string.IsNullOrEmpty(firstStackLine))
+                {
+                    text = $"{text}\n{firstStackLine}";
+                }
+            }
+
+            AppendLog($"[{_simulation.Clock.CurrentDate}] {text}", color);
         }
 
         /// <summary>The single entry point for opening/closing the console, so the input action and the PlayMode test both go through the same code.</summary>
@@ -444,11 +550,12 @@ namespace TheEmptying.Presentation
                 {
                     KingdomName = "Kingdom",
                     Population = _simulation.Entities.Count,
-                    Sources = SourceManifestReader.ReadAll(ResolveSourceFolders())
+                    Sources = SourceManifestReader.ReadAll(ResolveSourceFolders()),
+                    SavedAtUtc = DateTime.UtcNow
                 };
 
                 GameSave.Save(_simulation, headerInfo, stream);
-                return $"Saved to '{path}'.";
+                return $"Saved to '{path}' ({_simulation.Clock.CurrentDate}).";
             }
             catch (Exception ex)
             {
@@ -458,21 +565,100 @@ namespace TheEmptying.Presentation
 
         public string Load(string name)
         {
+            string path = Path.Combine(_savesFolder, name + ".sav");
+            if (!File.Exists(path))
+            {
+                return $"No save named '{name}'.\nAvailable saves:\n{ListSaves()}";
+            }
+
             try
             {
-                string path = Path.Combine(_savesFolder, name + ".sav");
+                SaveHeader header;
+                using (var headerStream = File.OpenRead(path))
+                {
+                    header = SaveFile.ReadHeader(headerStream);
+                }
+
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), Array.Empty<IModule>(), ErrorMode.Development);
 
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this);
 
-                string differences = report.SourceDifferences.Count == 0 ? "no source differences." : string.Join("\n", report.SourceDifferences);
-                return $"Loaded '{path}'.\n{differences}";
+                var sb = new StringBuilder();
+                sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");
+
+                var warnings = new List<string>(report.SourceDifferences);
+                warnings.AddRange(report.NewerSectionVersions);
+                if (report.ModulesStartingFresh.Count > 0)
+                {
+                    warnings.Add($"Modules starting fresh: {string.Join(", ", report.ModulesStartingFresh)}");
+                }
+
+                if (warnings.Count > 0)
+                {
+                    sb.Append("\nWarnings:");
+                    foreach (string warning in warnings)
+                    {
+                        sb.Append("\n  ").Append(warning);
+                    }
+                }
+
+                return sb.ToString();
             }
             catch (Exception ex)
             {
                 return $"Load failed: {ex.Message}";
+            }
+        }
+
+        public string ListSaves()
+        {
+            if (!Directory.Exists(_savesFolder))
+            {
+                return "(no saves)";
+            }
+
+            string[] files = Directory.GetFiles(_savesFolder, "*.sav").OrderBy(f => f, StringComparer.Ordinal).ToArray();
+            if (files.Length == 0)
+            {
+                return "(no saves)";
+            }
+
+            var lines = new List<string>();
+            foreach (string file in files)
+            {
+                string name = Path.GetFileNameWithoutExtension(file);
+                try
+                {
+                    using var stream = File.OpenRead(file);
+                    SaveHeader header = SaveFile.ReadHeader(stream);
+                    lines.Add($"{name} - saved {header.SavedAtUtc:yyyy-MM-dd HH:mm:ss} UTC, in-game date {header.InGameDate}");
+                }
+                catch (Exception ex)
+                {
+                    lines.Add($"{name} - unreadable ({ex.Message})");
+                }
+            }
+
+            return string.Join("\n", lines);
+        }
+
+        public string SetLogFilter(string mode)
+        {
+            switch (mode)
+            {
+                case "on":
+                    _logFilterMode = LogFilterMode.All;
+                    return "Logs on.";
+                case "off":
+                    _logFilterMode = LogFilterMode.Off;
+                    return "Logs off.";
+                case "errors":
+                    _logFilterMode = LogFilterMode.ErrorsAndWarnings;
+                    return "Logs limited to errors and warnings.";
+                default:
+                    return "Usage: logs <on|off|errors>";
             }
         }
 

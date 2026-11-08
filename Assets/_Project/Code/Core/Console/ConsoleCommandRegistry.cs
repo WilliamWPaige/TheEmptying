@@ -42,9 +42,14 @@ namespace TheEmptying.Core.Console
         public string Execute(string input)
         {
             string[] tokens = Tokenize(input);
-            if (tokens.Length == 0 || !_commands.TryGetValue(tokens[0], out ConsoleCommand command))
+            if (tokens.Length == 0)
             {
                 return HelpText();
+            }
+
+            if (!_commands.TryGetValue(tokens[0], out ConsoleCommand command))
+            {
+                return $"Unknown command: {tokens[0]}. Type help for the list.";
             }
 
             var args = new string[tokens.Length - 1];

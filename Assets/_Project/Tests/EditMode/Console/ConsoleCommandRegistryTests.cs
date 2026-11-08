@@ -23,7 +23,7 @@ namespace TheEmptying.Tests.EditMode.Console
         }
 
         [Test]
-        public void Execute_UnknownCommand_ReturnsTheHelpList()
+        public void Execute_UnknownCommand_ReturnsTheUnknownCommandMessage_NotTheFullHelpList()
         {
             var registry = new ConsoleCommandRegistry();
             registry.Register(new ConsoleCommand("help", "lists commands", args => registry.HelpText()));
@@ -31,8 +31,7 @@ namespace TheEmptying.Tests.EditMode.Console
 
             string result = registry.Execute("nonsense");
 
-            StringAssert.Contains("help", result);
-            StringAssert.Contains("date", result);
+            Assert.AreEqual("Unknown command: nonsense. Type help for the list.", result);
         }
 
         [Test]

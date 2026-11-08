@@ -118,6 +118,19 @@ namespace TheEmptying.Core.Console
 
             commands.Register(new ConsoleCommand("load", "load <name> - loads a save.", args =>
                 args.Length == 1 ? presentation.Load(args[0]) : "Usage: load <name>"));
+
+            commands.Register(new ConsoleCommand("saves", "Lists available saves with their saved-at and in-game dates.", args => presentation.ListSaves()));
+
+            commands.Register(new ConsoleCommand("logs", "logs <on|off|errors> - controls whether Unity log messages appear in the console.", args =>
+            {
+                string mode = args.Length == 1 ? args[0].ToLowerInvariant() : null;
+                if (mode != "on" && mode != "off" && mode != "errors")
+                {
+                    return "Usage: logs <on|off|errors>";
+                }
+
+                return presentation.SetLogFilter(mode);
+            }));
         }
 
         private static string FormatModules(Simulation simulation)

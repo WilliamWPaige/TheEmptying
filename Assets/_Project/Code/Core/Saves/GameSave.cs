@@ -23,7 +23,8 @@ namespace TheEmptying.Core.Saves
                 CurrentTick = simulation.Clock.CurrentTick,
                 Population = headerInfo.Population,
                 WorldSeed = simulation.Random.WorldSeed,
-                Sources = headerInfo.Sources
+                Sources = headerInfo.Sources,
+                SavedAtUtc = headerInfo.SavedAtUtc
             };
 
             List<SaveSectionData> sections = CoreSections.WriteAll(simulation, simulation.Settings, simulation.EventSerializers);

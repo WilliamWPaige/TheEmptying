@@ -9,6 +9,7 @@ namespace TheEmptying.Tests.EditMode.Console
         public int Speed { get; private set; } = 1;
         public string LastSavedName { get; private set; }
         public string LastLoadedName { get; private set; }
+        public string LastLogFilterMode { get; private set; }
 
         public void SetPaused(bool paused) => IsPaused = paused;
         public void SetSpeed(int speed) => Speed = speed;
@@ -23,6 +24,14 @@ namespace TheEmptying.Tests.EditMode.Console
         {
             LastLoadedName = name;
             return $"Loaded '{name}'.";
+        }
+
+        public string ListSaves() => "(fake saves list)";
+
+        public string SetLogFilter(string mode)
+        {
+            LastLogFilterMode = mode;
+            return $"Logs: {mode}.";
         }
     }
 }

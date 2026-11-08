@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 
 namespace TheEmptying.Core.Saves
@@ -8,5 +9,8 @@ namespace TheEmptying.Core.Saves
         public string KingdomName { get; set; }
         public long Population { get; set; }
         public List<SaveSourceInfo> Sources { get; set; } = new List<SaveSourceInfo>();
+
+        /// <summary>Real-world wall-clock time the save was made, supplied by the presentation layer.</summary>
+        public DateTime SavedAtUtc { get; set; }
     }
 }
