@@ -5,3 +5,9 @@ using System.Runtime.CompilerServices;
 // RuleRunner into Simulation.RuleRunner (internal set) to do it.
 [assembly: InternalsVisibleTo("TheEmptying.Tests.EditMode")]
 [assembly: InternalsVisibleTo("TheEmptying.Tests.PlayMode")]
+
+// Editor tooling (the rule canvas) needs to build a BlockRegistry the same
+// way SimulationBuilder does - construct a Simulation and run its
+// declaration phase only, with no content loaded and no modules
+// initialized - which needs the internal Simulation(seed, errorMode) ctor.
+[assembly: InternalsVisibleTo("TheEmptying.Editor")]

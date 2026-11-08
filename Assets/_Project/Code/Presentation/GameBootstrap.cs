@@ -10,7 +10,6 @@ using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
-using TheEmptying.Modules.DemoHunger;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
@@ -59,6 +58,14 @@ namespace TheEmptying.Presentation
         private VisualElement _questionPopupChoices;
         private readonly List<Action> _questionPopupChoiceActions = new List<Action>();
         private long _questionPopupShownQuestionId = -1;
+
+        /// <summary>
+        /// Questions the player has already clicked a choice for, but whose
+        /// answer hasn't been applied yet (that happens at the start of the
+        /// next real tick). The popup treats these as already resolved; an id
+        /// is dropped once it leaves RuleRunner.PendingQuestions.
+        /// </summary>
+        private readonly HashSet<long> _answeredQuestionIds = new HashSet<long>();
 
         private VisualElement _consoleRoot;
         private ScrollView _consoleLog;
@@ -189,7 +196,7 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: asks a question not tied to any rule, to exercise the popup without authoring rule content at runtime.</summary>
         public long AskTestQuestionForTesting(string title, string body, string[] choiceTexts, int defaultChoiceNumber)
         {
-            return _simulation.RuleRunner.AskAdHocQuestion("question.test", title, body, choiceTexts, defaultChoiceNumber);
+            return _simulation.RuleRunner.AskQuestion("question.test", title, body, choiceTexts, defaultChoiceNumber);
         }
 
         private void Awake()
@@ -206,17 +213,6 @@ namespace TheEmptying.Presentation
         private void Update()
         {
             RefreshQuestionPopup();
-
-            // A queued answer must be drained even while paused or blocked for
-            // a question, or it would never get applied (Step is what applies
-            // it) and the popup would stay stuck forever.
-            if (_simulation.RuleRunner != null && _simulation.RuleRunner.HasQueuedAnswers)
-            {
-                _simulation.Step();
-                RefreshHud();
-                RefreshQuestionPopup();
-                return;
-            }
 
             if (_paused || IsBlockedByPendingQuestion())
             {
@@ -239,12 +235,22 @@ namespace TheEmptying.Presentation
             }
         }
 
-        /// <summary>True while any question is pending and the pause setting is on - the clock driver does not advance, and the player can't unpause, until it is answered.</summary>
+        /// <summary>
+        /// True while any question is pending AND NOT YET ANSWERED and the
+        /// pause setting is on - the clock driver does not advance, and the
+        /// player can't unpause, until every pending question has an answer.
+        /// Once an answer is queued (AnswerQuestion), the question no longer
+        /// counts as blocking even though it isn't applied until the next
+        /// real tick runs ProcessQuestionAnswers.
+        /// </summary>
         private bool IsBlockedByPendingQuestion()
         {
-            return _simulation.RuleRunner != null &&
-                   _simulation.RuleRunner.PendingQuestions.Count > 0 &&
-                   _simulation.Settings.Get(RuleRunner.QuestionsPauseGameSettingId) != 0;
+            if (_simulation.RuleRunner == null || _simulation.Settings.Get(RuleRunner.QuestionsPauseGameSettingId) == 0)
+            {
+                return false;
+            }
+
+            return _simulation.RuleRunner.PendingQuestions.Any(q => !_answeredQuestionIds.Contains(q.QuestionId));
         }
 
         private void OnDestroy()
@@ -277,13 +283,10 @@ namespace TheEmptying.Presentation
             return sources;
         }
 
-        /// <summary>Every module the game knows how to run, regardless of whether its manifest enables it. A new instance each call, since modules hold per-game state.</summary>
-        private static IModule[] CreateModules() => new IModule[] { new DemoHungerModule() };
-
         private StartupReport BuildSimulation()
         {
             List<string> sources = ResolveSourceFolders();
-            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, CreateModules(), ErrorMode.Development, logSink: this);
+            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this);
             _simulation = simulation;
 
             BuiltInConsoleCommands.RegisterAll(_simulation, this);
@@ -355,7 +358,12 @@ namespace TheEmptying.Presentation
             _questionPopupRoot.style.display = DisplayStyle.None;
         }
 
-        /// <summary>Shows the oldest pending question, if any; otherwise hides the popup. Rebuilds the choice buttons only when the question being shown actually changes.</summary>
+        /// <summary>
+        /// Shows the oldest pending-and-unanswered question, if any; otherwise
+        /// hides the popup. Rebuilds the choice buttons only when the question
+        /// being shown actually changes. Also drops any answered-question id
+        /// that has finally left the pending list (its answer was applied).
+        /// </summary>
         private void RefreshQuestionPopup()
         {
             if (_questionPopupRoot == null)
@@ -363,15 +371,18 @@ namespace TheEmptying.Presentation
                 return;
             }
 
-            IReadOnlyList<QuestionInfo> pending = _simulation.RuleRunner?.PendingQuestions;
-            if (pending == null || pending.Count == 0)
+            IReadOnlyList<QuestionInfo> allPending = _simulation.RuleRunner?.PendingQuestions ?? Array.Empty<QuestionInfo>();
+            _answeredQuestionIds.RemoveWhere(id => !allPending.Any(q => q.QuestionId == id));
+
+            List<QuestionInfo> unanswered = allPending.Where(q => !_answeredQuestionIds.Contains(q.QuestionId)).ToList();
+            if (unanswered.Count == 0)
             {
                 _questionPopupRoot.style.display = DisplayStyle.None;
                 _questionPopupShownQuestionId = -1;
                 return;
             }
 
-            QuestionInfo question = pending[0];
+            QuestionInfo question = unanswered[0];
             if (question.QuestionId == _questionPopupShownQuestionId)
             {
                 return;
@@ -379,7 +390,7 @@ namespace TheEmptying.Presentation
 
             _questionPopupShownQuestionId = question.QuestionId;
 
-            _questionPopupCounter.text = pending.Count > 1 ? $"1 of {pending.Count}" : string.Empty;
+            _questionPopupCounter.text = unanswered.Count > 1 ? $"1 of {unanswered.Count}" : string.Empty;
             _questionPopupTitle.text = question.Title;
             _questionPopupBody.text = question.Body;
 
@@ -404,11 +415,13 @@ namespace TheEmptying.Presentation
             if (rejection != null)
             {
                 AppendLog(rejection, Color.yellow);
+                return;
             }
 
-            // The popup keeps showing this question until Update() drains the
-            // queued answer on the next frame (Step is what actually applies
-            // it and removes the question from the pending list).
+            // The popup stops showing this question immediately; the answer
+            // itself is applied at the start of the next real tick.
+            _answeredQuestionIds.Add(questionId);
+            _questionPopupShownQuestionId = -1;
         }
 
         #endregion
@@ -850,7 +863,7 @@ namespace TheEmptying.Presentation
                 }
 
                 using var stream = File.OpenRead(path);
-                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), CreateModules(), ErrorMode.Development, logSink: this);
+                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this);
 
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this);

@@ -8,7 +8,7 @@ namespace TheEmptying.Core.Rules
     /// with no rule behind it has none) and the node that asked, so an answer
     /// can resolve which execution output to continue from.
     /// </summary>
-    public sealed class PendingQuestion
+    internal sealed class PendingQuestion
     {
         public long QuestionId;
         public string RuleId;

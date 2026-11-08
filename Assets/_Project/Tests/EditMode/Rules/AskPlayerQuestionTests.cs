@@ -29,7 +29,6 @@ namespace TheEmptying.Tests.EditMode.Rules
 
         private sealed class FirstChoiceDelegate : IQuestionDelegate
         {
-            public string Category => "0";
             public bool TryAnswer(QuestionInfo question, out int choiceNumber)
             {
                 choiceNumber = question.Choices[0].ChoiceNumber;

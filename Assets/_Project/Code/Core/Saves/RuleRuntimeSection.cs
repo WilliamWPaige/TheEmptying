@@ -15,7 +15,7 @@ namespace TheEmptying.Core.Saves
     /// </summary>
     public static class RuleRuntimeSection
     {
-        public static byte[] Write(
+        internal static byte[] Write(
             long nextInstanceId,
             IEnumerable<(string RuleId, long ResumeTick, RuleInstance Instance)> paused,
             long nextQuestionId,
@@ -76,7 +76,7 @@ namespace TheEmptying.Core.Saves
             return stream.ToArray();
         }
 
-        public static (long NextInstanceId, List<(string RuleId, long ResumeTick, RuleInstance Instance)> Paused, long NextQuestionId, List<PendingQuestion> Questions) Read(byte[] data, TypedEventSerializerRegistry serializers)
+        internal static (long NextInstanceId, List<(string RuleId, long ResumeTick, RuleInstance Instance)> Paused, long NextQuestionId, List<PendingQuestion> Questions) Read(byte[] data, TypedEventSerializerRegistry serializers)
         {
             using var stream = new MemoryStream(data);
             var reader = new SaveReader(stream);

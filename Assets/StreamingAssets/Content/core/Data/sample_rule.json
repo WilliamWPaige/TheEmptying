@@ -1,0 +1,49 @@
+{
+    "type": "rule",
+    "items": [
+        {
+            "id": "rule.sample_canvas_preview",
+            "name": "Sample: Canvas Preview",
+            "description": "A sample rule for previewing the node canvas (prompt 2.5). Disabled so it never runs in a normal game.",
+            "enabled": false,
+            "nodes": [
+                { "id": "trigger", "blockType": "block.trigger.on_new_day", "x": 40, "y": 60, "fields": {} },
+                {
+                    "id": "ask",
+                    "blockType": "block.flow.ask_player",
+                    "x": 320,
+                    "y": 40,
+                    "fields": {
+                        "title": "Sample Question",
+                        "body": "This is a sample question for previewing the canvas.",
+                        "choice1": "Yes",
+                        "choice2": "No",
+                        "defaultChoice": 1
+                    }
+                },
+                {
+                    "id": "logYes",
+                    "blockType": "block.action.write_log_line",
+                    "x": 640,
+                    "y": 0,
+                    "fields": { "text": "Chose yes" }
+                },
+                {
+                    "id": "logNo",
+                    "blockType": "block.action.write_log_line",
+                    "x": 640,
+                    "y": 140,
+                    "fields": { "text": "Chose no" }
+                },
+                { "id": "stop", "blockType": "block.flow.stop", "x": 940, "y": 60, "fields": {} }
+            ],
+            "connections": [
+                { "fromNode": "trigger", "fromPort": "then", "toNode": "ask", "toPort": "exec" },
+                { "fromNode": "ask", "fromPort": "choice1", "toNode": "logYes", "toPort": "exec" },
+                { "fromNode": "ask", "fromPort": "choice2", "toNode": "logNo", "toPort": "exec" },
+                { "fromNode": "logYes", "fromPort": "then", "toNode": "stop", "toPort": "exec" },
+                { "fromNode": "logNo", "fromPort": "then", "toNode": "stop", "toPort": "exec" }
+            ]
+        }
+    ]
+}

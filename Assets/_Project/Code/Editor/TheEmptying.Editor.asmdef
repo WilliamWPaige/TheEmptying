@@ -1,0 +1,20 @@
+{
+    "name": "TheEmptying.Editor",
+    "rootNamespace": "TheEmptying.Editor",
+    "references": [
+        "TheEmptying.Core",
+        "TheEmptying.Presentation",
+        "Newtonsoft.Json"
+    ],
+    "includePlatforms": [
+        "Editor"
+    ],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

@@ -105,16 +105,13 @@ namespace TheEmptying.Core.Rules
         /// <summary>Every pending question, oldest first, for the console and the presentation popup.</summary>
         public IReadOnlyList<QuestionInfo> PendingQuestions => _pendingQuestions.OrderBy(q => q.QuestionId).Select(q => q.ToInfo()).ToList();
 
-        /// <summary>Whether a player's answer is queued, waiting for the next Step() to apply it. The presentation uses this to force a tick through even while otherwise paused or blocked, so an answer is never stuck.</summary>
-        public bool HasQueuedAnswers => _queuedAnswers.Count > 0;
-
         /// <summary>For saving: the question Id counter.</summary>
         internal long NextQuestionId => _nextQuestionId;
 
         /// <summary>For saving: every pending question, in question Id order.</summary>
         internal IEnumerable<PendingQuestion> PendingQuestionsForSave => _pendingQuestions.OrderBy(q => q.QuestionId);
 
-        /// <summary>Registers a delegate that may answer questions on the player's behalf. Tried in Category order (then registration order).</summary>
+        /// <summary>Registers a delegate that may answer questions on the player's behalf. Tried in registration order.</summary>
         public void RegisterQuestionDelegate(IQuestionDelegate questionDelegate)
         {
             _questionDelegates.Add(questionDelegate ?? throw new ArgumentNullException(nameof(questionDelegate)));
@@ -606,8 +603,8 @@ namespace TheEmptying.Core.Rules
             TryResolveImmediatelyOrEnqueue(question, tick);
         }
 
-        /// <summary>For presentation smoke tests: asks a question not tied to any rule instance.</summary>
-        public long AskAdHocQuestion(string category, string title, string body, string[] choiceTexts, int defaultChoiceNumber, double timeoutHours = 0)
+        /// <summary>Asks a question not tied to any rule instance - for modules that need to ask the player something outside the rule system.</summary>
+        public long AskQuestion(string category, string title, string body, string[] choiceTexts, int defaultChoiceNumber, double timeoutHours = 0)
         {
             long tick = _currentTick();
             long timeoutTicks = timeoutHours > 0 ? (long)Math.Round(timeoutHours * CalendarConstants.TicksPerHour, MidpointRounding.AwayFromZero) : 0;
@@ -635,12 +632,12 @@ namespace TheEmptying.Core.Rules
             };
         }
 
-        /// <summary>Posts "event.question_asked", then gives each registered delegate a chance to answer before the question reaches the player.</summary>
+        /// <summary>Posts "event.question_asked", then gives each registered delegate (in registration order) a chance to answer before the question reaches the player.</summary>
         private void TryResolveImmediatelyOrEnqueue(PendingQuestion question, long tick)
         {
             PostQuestionAskedEvent(question, tick);
 
-            foreach (IQuestionDelegate questionDelegate in _questionDelegates.OrderBy(d => d.Category, StringComparer.Ordinal))
+            foreach (IQuestionDelegate questionDelegate in _questionDelegates)
             {
                 if (questionDelegate.TryAnswer(question.ToInfo(), out int choiceNumber) &&
                     choiceNumber >= 1 && choiceNumber <= 4 &&
