@@ -163,7 +163,7 @@ namespace TheEmptying.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator RunningManyCommands_ScrollsTheLogToTheBottom()
+        public IEnumerator RunningManyCommandsWithoutYielding_StillEndsScrolledToTheBottom()
         {
             yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
 
@@ -172,16 +172,55 @@ namespace TheEmptying.Tests.PlayMode
 
             yield return null; // let the initial layout settle
 
-            for (int i = 0; i < 50; i++)
+            for (int i = 0; i < 20; i++)
             {
                 bootstrap.RunConsoleCommandForTesting("help");
-                yield return null; // let each command's deferred scroll resolve
             }
 
-            yield return null; // one more settle frame
+            // Layout may take a few frames to settle; don't assume exactly one.
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
 
             Assert.That(bootstrap.ConsoleLogScrollOffsetY, Is.EqualTo(bootstrap.ConsoleLogMaxScrollOffsetY).Within(1f),
-                "After running commands, the log should be scrolled all the way to the bottom.");
+                "After running 20 commands back-to-back with no yields between them, the log should still end up scrolled to the bottom.");
+        }
+
+        [UnityTest]
+        public IEnumerator RunningASingleLongOutputCommand_ScrollsTheLogToTheBottom()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            bootstrap.RunConsoleCommandForTesting("help");
+            yield return null;
+
+            Assert.That(bootstrap.ConsoleLogScrollOffsetY, Is.EqualTo(bootstrap.ConsoleLogMaxScrollOffsetY).Within(1f),
+                "After a single command with long output, the log should be scrolled to the bottom.");
+        }
+
+        [UnityTest]
+        public IEnumerator ConsoleAndHud_DoNotOverlap_AndTheConsoleBackgroundIsOpaque()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            bootstrap.ToggleConsole();
+            yield return null;
+
+            Assert.LessOrEqual(bootstrap.HudLayout.yMax, bootstrap.ConsoleRootLayout.yMin + 0.5f,
+                "The console's top edge should be at or below the HUD's bottom edge.");
+            Assert.AreEqual(1f, bootstrap.ConsoleBackgroundColor.a, 0.001f,
+                "The console's background should be fully opaque.");
         }
 
         [UnityTest]

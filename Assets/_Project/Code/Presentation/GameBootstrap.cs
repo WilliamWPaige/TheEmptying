@@ -28,6 +28,8 @@ namespace TheEmptying.Presentation
         private const double RealSecondsPerDay = 720; // 12 real minutes per in-game day at 1x.
         private const int MaxTicksPerFrame = 200;
         private const int MaxLogLines = 500;
+        private const float ConsoleGapBelowHud = 8f;
+        private static readonly Color ConsoleBackgroundColorValue = new Color(0.05f, 0.05f, 0.06f, 1f);
 
         private enum LogFilterMode
         {
@@ -44,6 +46,7 @@ namespace TheEmptying.Presentation
         private InputActionAsset _actions;
 
         private UIDocument _uiDocument;
+        private VisualElement _hudPanel;
         private Label _dateLabel;
         private Label _speedLabel;
 
@@ -54,6 +57,7 @@ namespace TheEmptying.Presentation
         private readonly List<string> _commandHistory = new List<string>();
         private int _historyIndex;
         private bool _consoleOpen;
+        private bool _scrollLogToBottomPending;
 
         private LogFilterMode _logFilterMode = Application.isEditor ? LogFilterMode.All : LogFilterMode.Off;
 
@@ -70,10 +74,14 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: whether the console is currently open.</summary>
         public bool IsConsoleOpen => _consoleOpen;
 
-        /// <summary>For tests: the resolved layout (post-layout-pass) of the console root, the output log, and the input line.</summary>
+        /// <summary>For tests: the resolved layout (post-layout-pass) of the HUD, the console root, the output log, and the input line.</summary>
+        public Rect HudLayout => _hudPanel.layout;
         public Rect ConsoleRootLayout => _consoleRoot.layout;
         public Rect ConsoleLogLayout => _consoleLog.layout;
         public Rect ConsoleInputLayout => _consoleInput.layout;
+
+        /// <summary>For tests: the console root's resolved background color.</summary>
+        public Color ConsoleBackgroundColor => _consoleRoot.resolvedStyle.backgroundColor;
 
         /// <summary>For tests: the log's full scrollable content height versus its visible viewport height.</summary>
         public float ConsoleLogContentHeight => _consoleLog.contentContainer.layout.height;
@@ -232,6 +240,10 @@ namespace TheEmptying.Presentation
             root.style.right = 0;
             root.style.top = 0;
             root.style.bottom = 0;
+            // Column flow, rather than absolute positioning for every child, means
+            // the console is placed after wherever the HUD actually ends up, so
+            // the two can never overlap regardless of the HUD's real height.
+            root.style.flexDirection = FlexDirection.Column;
 
             BuildHud(root);
             BuildConsole(root);
@@ -239,13 +251,15 @@ namespace TheEmptying.Presentation
 
         private void BuildHud(VisualElement root)
         {
-            var panel = new VisualElement
+            _hudPanel = new VisualElement
             {
                 style =
                 {
-                    position = Position.Absolute,
-                    top = 8,
-                    left = 8,
+                    // The column root stretches children to its full width by
+                    // default; opt this one back out so it just hugs its labels.
+                    alignSelf = Align.FlexStart,
+                    marginTop = 8,
+                    marginLeft = 8,
                     flexDirection = FlexDirection.Row,
                     paddingLeft = 8,
                     paddingRight = 8,
@@ -258,9 +272,9 @@ namespace TheEmptying.Presentation
             _dateLabel = new Label { style = { color = Color.white, marginRight = 16 } };
             _speedLabel = new Label { style = { color = Color.white } };
 
-            panel.Add(_dateLabel);
-            panel.Add(_speedLabel);
-            root.Add(panel);
+            _hudPanel.Add(_dateLabel);
+            _hudPanel.Add(_speedLabel);
+            root.Add(_hudPanel);
 
             RefreshHud();
         }
@@ -286,14 +300,13 @@ namespace TheEmptying.Presentation
             {
                 style =
                 {
-                    position = Position.Absolute,
-                    left = 0,
-                    right = 0,
-                    top = 0,
+                    // Normal flow, placed right after the HUD in the column root,
+                    // plus a small gap, so the two never overlap.
+                    marginTop = ConsoleGapBelowHud,
                     width = Length.Percent(100),
                     height = Length.Percent(40),
                     overflow = Overflow.Hidden,
-                    backgroundColor = new Color(0f, 0f, 0f, 0.9f),
+                    backgroundColor = ConsoleBackgroundColorValue,
                     flexDirection = FlexDirection.Column,
                     paddingLeft = 8,
                     paddingRight = 8,
@@ -318,6 +331,11 @@ namespace TheEmptying.Presentation
             // (normally supplied by the theme) doesn't apply; set it explicitly so
             // log content can never draw outside the scroll view, theme or no theme.
             _consoleLog.contentViewport.style.overflow = Overflow.Hidden;
+
+            // The content container's size only becomes real once a layout pass
+            // has actually measured the newly added line(s); retry the pending
+            // scroll-to-bottom request right when that happens.
+            _consoleLog.contentContainer.RegisterCallback<GeometryChangedEvent>(_ => TryScrollLogToBottomNow());
 
             _consoleInput = new TextField
             {
@@ -463,17 +481,38 @@ namespace TheEmptying.Presentation
             // it doesn't yank them away from older lines they scrolled up to read.
             if (forceScrollToBottom || wasAtBottom)
             {
-                ScrollConsoleLogToBottom();
+                RequestScrollLogToBottom();
             }
         }
 
-        /// <summary>The newly added line's height isn't resolved until after the next layout pass, so scrolling to the new bottom has to wait a step too.</summary>
-        private void ScrollConsoleLogToBottom()
+        /// <summary>
+        /// Flags that the log should end up at the true bottom, then tries right
+        /// away (in case the content's size already reflects it). The content
+        /// container's own GeometryChangedEvent handler (wired once in
+        /// BuildConsole) retries whenever a layout pass actually changes its
+        /// size, which is when a just-added line's height first becomes real -
+        /// including when several lines were added in the same frame.
+        /// </summary>
+        private void RequestScrollLogToBottom()
         {
-            _consoleLog.schedule.Execute(() =>
+            _scrollLogToBottomPending = true;
+            TryScrollLogToBottomNow();
+        }
+
+        private void TryScrollLogToBottomNow()
+        {
+            if (!_scrollLogToBottomPending)
             {
-                _consoleLog.scrollOffset = new Vector2(_consoleLog.scrollOffset.x, _consoleLog.contentContainer.layout.height);
-            });
+                return;
+            }
+
+            // The scroller's own highValue isn't reliably in sync with the content
+            // container's real size at this point; computing the maximum directly
+            // from the resolved layout (the same formula IsConsoleLogScrolledToBottom
+            // uses) is what actually reflects the true bottom.
+            float maxScroll = Mathf.Max(0f, _consoleLog.contentContainer.layout.height - _consoleLog.contentViewport.layout.height);
+            _consoleLog.scrollOffset = new Vector2(_consoleLog.scrollOffset.x, maxScroll);
+            _scrollLogToBottomPending = false;
         }
 
         private bool IsConsoleLogScrolledToBottom()
