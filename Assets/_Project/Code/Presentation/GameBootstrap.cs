@@ -57,7 +57,10 @@ namespace TheEmptying.Presentation
         private readonly List<string> _commandHistory = new List<string>();
         private int _historyIndex;
         private bool _consoleOpen;
-        private bool _scrollLogToBottomPending;
+
+        // Sticky-bottom state: on by default, stays on while the log follows new
+        // output, and turns off only when the player scrolls away on their own.
+        private bool _stickToBottom = true;
 
         private LogFilterMode _logFilterMode = Application.isEditor ? LogFilterMode.All : LogFilterMode.Off;
 
@@ -102,6 +105,10 @@ namespace TheEmptying.Presentation
         public float ConsoleLogScrollOffsetY => _consoleLog.scrollOffset.y;
         public float ConsoleLogMaxScrollOffsetY => Mathf.Max(0f, _consoleLog.contentContainer.layout.height - _consoleLog.contentViewport.layout.height);
 
+        /// <summary>For tests: the scrollbar thumb's own value and range, to check it's in sync with the real content.</summary>
+        public float ConsoleLogScrollerValue => _consoleLog.verticalScroller.value;
+        public float ConsoleLogScrollerHighValue => _consoleLog.verticalScroller.highValue;
+
         /// <summary>For tests: whether the console input (or its inner text box) currently has focus.</summary>
         public bool IsConsoleInputFocused =>
             _consoleInput.panel != null &&
@@ -114,6 +121,23 @@ namespace TheEmptying.Presentation
         {
             _consoleInput.SetValueWithoutNotify(input);
             return RunConsoleInput();
+        }
+
+        /// <summary>For tests: submits the input through a real KeyDownEvent dispatched at the input field, the same path the Enter key uses in real play, not a direct method call.</summary>
+        public void SubmitConsoleInputViaEnterKeyForTesting(string text)
+        {
+            _consoleInput.SetValueWithoutNotify(text);
+            using (KeyDownEvent evt = KeyDownEvent.GetPooled('\n', KeyCode.Return, EventModifiers.None))
+            {
+                _consoleInput.SendEvent(evt);
+            }
+        }
+
+        /// <summary>For tests: moves the view away from the bottom, then runs the exact same "did the player just scroll" check a real wheel or scrollbar pointer event would trigger - not a backdoor flag flip, but faking a precise low-level input event (exact position, pointer id, etc.) to merely reach that same check is far more fragile than this is useful.</summary>
+        public void ScrollConsoleLogUpForTesting()
+        {
+            _consoleLog.verticalScroller.value = Mathf.Max(_consoleLog.verticalScroller.lowValue, _consoleLog.verticalScroller.value - 300f);
+            ScheduleUserScrollCheck();
         }
 
         /// <summary>For tests: the simulation's current living entity count.</summary>
@@ -332,10 +356,21 @@ namespace TheEmptying.Presentation
             // log content can never draw outside the scroll view, theme or no theme.
             _consoleLog.contentViewport.style.overflow = Overflow.Hidden;
 
-            // The content container's size only becomes real once a layout pass
-            // has actually measured the newly added line(s); retry the pending
-            // scroll-to-bottom request right when that happens.
-            _consoleLog.contentContainer.RegisterCallback<GeometryChangedEvent>(_ => TryScrollLogToBottomNow());
+            // Either the content growing (new lines) or the viewport resizing can
+            // change how much there is to scroll; re-apply the sticky scroll on both.
+            _consoleLog.contentContainer.RegisterCallback<GeometryChangedEvent>(_ => OnConsoleLogGeometryChanged());
+            _consoleLog.contentViewport.RegisterCallback<GeometryChangedEvent>(_ => OnConsoleLogGeometryChanged());
+
+            // Detecting "the player scrolled" from the scrollbar's own value-changed
+            // notification doesn't work: that notification isn't synchronous with our
+            // own writes to it, so under rapid repeated scroll-to-bottom calls our own
+            // writes get misread as the player scrolling away. Instead, react to the
+            // actual input that only ever comes from the player - wheel, and any
+            // pointer interaction with the scrollbar itself (thumb drag, track click,
+            // arrow buttons) - never something our own code raises.
+            _consoleLog.RegisterCallback<WheelEvent>(_ => ScheduleUserScrollCheck(), TrickleDown.TrickleDown);
+            _consoleLog.verticalScroller.RegisterCallback<PointerDownEvent>(_ => ScheduleUserScrollCheck(), TrickleDown.TrickleDown);
+            _consoleLog.verticalScroller.RegisterCallback<PointerUpEvent>(_ => ScheduleUserScrollCheck(), TrickleDown.TrickleDown);
 
             _consoleInput = new TextField
             {
@@ -422,11 +457,13 @@ namespace TheEmptying.Presentation
             _commandHistory.Add(input);
             _historyIndex = _commandHistory.Count;
 
-            // Running a command always jumps the log to the bottom, even if the
-            // player had scrolled up to read older lines.
-            AppendLog($"> {input}", Color.white, forceScrollToBottom: true);
+            // Running a command always resumes following the log to the bottom,
+            // even if the player had scrolled up to read older lines.
+            _stickToBottom = true;
+
+            AppendLog($"> {input}");
             string result = _simulation.Commands.Execute(input);
-            AppendLog(result, Color.white, forceScrollToBottom: true);
+            AppendLog(result);
 
             _consoleInput.SetValueWithoutNotify(string.Empty);
             RefocusConsoleInput();
@@ -451,14 +488,10 @@ namespace TheEmptying.Presentation
             _consoleInput.schedule.Execute(() => _consoleInput.Focus());
         }
 
-        private void AppendLog(string text) => AppendLog(text, Color.white, forceScrollToBottom: false);
+        private void AppendLog(string text) => AppendLog(text, Color.white);
 
-        private void AppendLog(string text, Color color) => AppendLog(text, color, forceScrollToBottom: false);
-
-        private void AppendLog(string text, Color color, bool forceScrollToBottom)
+        private void AppendLog(string text, Color color)
         {
-            bool wasAtBottom = IsConsoleLogScrolledToBottom();
-
             var label = new Label(text)
             {
                 style =
@@ -476,49 +509,57 @@ namespace TheEmptying.Presentation
                 _consoleLog.contentContainer.RemoveAt(0);
             }
 
-            // Running a command always follows to the bottom; a log line arriving
-            // on its own only follows if the player was already at the bottom, so
-            // it doesn't yank them away from older lines they scrolled up to read.
-            if (forceScrollToBottom || wasAtBottom)
-            {
-                RequestScrollLogToBottom();
-            }
+            // No scroll attempt here: the content container's size isn't real
+            // until a layout pass actually measures the line(s) just added, which
+            // is exactly what OnConsoleLogGeometryChanged below reacts to. Trying
+            // eagerly here would read stale (or, for a line added before any
+            // layout pass has ever run, uninitialized) sizes.
         }
 
         /// <summary>
-        /// Flags that the log should end up at the true bottom, then tries right
-        /// away (in case the content's size already reflects it). The content
-        /// container's own GeometryChangedEvent handler (wired once in
-        /// BuildConsole) retries whenever a layout pass actually changes its
-        /// size, which is when a just-added line's height first becomes real -
-        /// including when several lines were added in the same frame.
+        /// Either the content growing or the viewport resizing changes how much
+        /// there is to scroll. While stuck to the bottom, follow every such
+        /// change - this persists across every call (not a one-shot flag), so it
+        /// keeps retrying for as long as new content keeps arriving in the same
+        /// frame, and is never left stale by an early attempt.
         /// </summary>
-        private void RequestScrollLogToBottom()
+        private void OnConsoleLogGeometryChanged()
         {
-            _scrollLogToBottomPending = true;
-            TryScrollLogToBottomNow();
-        }
-
-        private void TryScrollLogToBottomNow()
-        {
-            if (!_scrollLogToBottomPending)
+            if (!_stickToBottom)
             {
                 return;
             }
 
-            // The scroller's own highValue isn't reliably in sync with the content
-            // container's real size at this point; computing the maximum directly
-            // from the resolved layout (the same formula IsConsoleLogScrolledToBottom
-            // uses) is what actually reflects the true bottom.
-            float maxScroll = Mathf.Max(0f, _consoleLog.contentContainer.layout.height - _consoleLog.contentViewport.layout.height);
-            _consoleLog.scrollOffset = new Vector2(_consoleLog.scrollOffset.x, maxScroll);
-            _scrollLogToBottomPending = false;
+            // Defer one step so the ScrollView has had its own chance to
+            // recompute the scroller's range for the new size before we read it.
+            _consoleLog.schedule.Execute(ApplyStickyScrollToBottom);
         }
 
-        private bool IsConsoleLogScrolledToBottom()
+        private void ApplyStickyScrollToBottom()
         {
-            float maxScroll = Mathf.Max(0f, _consoleLog.contentContainer.layout.height - _consoleLog.contentViewport.layout.height);
-            return _consoleLog.scrollOffset.y >= maxScroll - 1f;
+            if (!_stickToBottom)
+            {
+                return;
+            }
+
+            // Move the scroller itself (the ScrollView's own mechanism), not just
+            // the content offset, so the visible thumb always matches.
+            _consoleLog.verticalScroller.value = _consoleLog.verticalScroller.highValue;
+        }
+
+        /// <summary>
+        /// Wheel or a pointer interaction with the scrollbar just happened; check
+        /// where that leaves the view. Landing back at the bottom resumes
+        /// sticking; anything else turns it off so incoming lines don't yank the
+        /// player back down while they're reading history.
+        /// </summary>
+        private void ScheduleUserScrollCheck()
+        {
+            _consoleLog.schedule.Execute(() =>
+            {
+                float highValue = _consoleLog.verticalScroller.highValue;
+                _stickToBottom = _consoleLog.verticalScroller.value >= highValue - 1f;
+            });
         }
 
         /// <summary>Mirrors Unity's own log messages into the console, color-coded and prefixed with the in-game time, subject to the current log filter.</summary>

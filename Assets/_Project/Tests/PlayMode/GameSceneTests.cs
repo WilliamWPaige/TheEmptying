@@ -162,8 +162,19 @@ namespace TheEmptying.Tests.PlayMode
             Assert.IsTrue(found, "Expected the warning to appear in the console log, colored yellow.");
         }
 
+        /// <summary>The three checks that matter together: the content is actually scrolled to its true bottom, the scrollbar thumb matches, and the scrollbar's own range is in sync with the real content size.</summary>
+        private static void AssertScrollerIsAtTheTrueBottom(GameBootstrap bootstrap)
+        {
+            Assert.That(bootstrap.ConsoleLogScrollOffsetY, Is.EqualTo(bootstrap.ConsoleLogMaxScrollOffsetY).Within(1f),
+                "The log's scroll offset should be at the true maximum.");
+            Assert.That(bootstrap.ConsoleLogScrollerValue, Is.EqualTo(bootstrap.ConsoleLogScrollerHighValue).Within(1f),
+                "The scrollbar's value should equal its own high value, i.e. the thumb should be at the bottom.");
+            Assert.That(bootstrap.ConsoleLogScrollerHighValue, Is.EqualTo(bootstrap.ConsoleLogMaxScrollOffsetY).Within(1f),
+                "The scrollbar's range should be in sync with the real scrollable content size.");
+        }
+
         [UnityTest]
-        public IEnumerator RunningManyCommandsWithoutYielding_StillEndsScrolledToTheBottom()
+        public IEnumerator PressingEnterForHelpTwice_EndsWithTheScrollerTrulyAtTheBottom()
         {
             yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
 
@@ -172,6 +183,39 @@ namespace TheEmptying.Tests.PlayMode
 
             yield return null; // let the initial layout settle
 
+            bootstrap.ToggleConsole();
+            yield return null;
+
+            bootstrap.SubmitConsoleInputViaEnterKeyForTesting("help");
+            yield return null;
+            bootstrap.SubmitConsoleInputViaEnterKeyForTesting("help");
+
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+
+            AssertScrollerIsAtTheTrueBottom(bootstrap);
+        }
+
+        [UnityTest]
+        public IEnumerator RunningManyCommandsViaEnterKeyWithoutYielding_StillEndsAtTheTrueBottom()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            bootstrap.ToggleConsole();
+            yield return null;
+
+            // A real player's Enter presses are already covered by the test
+            // above and by ScrollingUp_StopsFollowing below; this one is a pure
+            // volume/no-yield stress test, so it drives commands directly rather
+            // than firing 20 real KeyDownEvents back-to-back (which runs into an
+            // unrelated event-pooling limit in UI Toolkit at that volume).
             for (int i = 0; i < 20; i++)
             {
                 bootstrap.RunConsoleCommandForTesting("help");
@@ -183,12 +227,40 @@ namespace TheEmptying.Tests.PlayMode
                 yield return null;
             }
 
-            Assert.That(bootstrap.ConsoleLogScrollOffsetY, Is.EqualTo(bootstrap.ConsoleLogMaxScrollOffsetY).Within(1f),
-                "After running 20 commands back-to-back with no yields between them, the log should still end up scrolled to the bottom.");
+            AssertScrollerIsAtTheTrueBottom(bootstrap);
         }
 
         [UnityTest]
-        public IEnumerator RunningASingleLongOutputCommand_ScrollsTheLogToTheBottom()
+        public IEnumerator RunningManyCommandsAt4KResolution_StillEndsAtTheTrueBottom()
+        {
+            Screen.SetResolution(3840, 2160, false);
+            yield return null; // let the resolution change take effect
+
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            bootstrap.ToggleConsole();
+            yield return null;
+
+            for (int i = 0; i < 20; i++)
+            {
+                bootstrap.RunConsoleCommandForTesting("help");
+            }
+
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+
+            AssertScrollerIsAtTheTrueBottom(bootstrap);
+        }
+
+        [UnityTest]
+        public IEnumerator ScrollingUp_StopsFollowing_AndRunningACommandResumesIt()
         {
             yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
 
@@ -197,11 +269,44 @@ namespace TheEmptying.Tests.PlayMode
 
             yield return null; // let the initial layout settle
 
-            bootstrap.RunConsoleCommandForTesting("help");
+            bootstrap.ToggleConsole();
             yield return null;
 
-            Assert.That(bootstrap.ConsoleLogScrollOffsetY, Is.EqualTo(bootstrap.ConsoleLogMaxScrollOffsetY).Within(1f),
-                "After a single command with long output, the log should be scrolled to the bottom.");
+            // Build up enough content to actually be scrollable.
+            for (int i = 0; i < 5; i++)
+            {
+                bootstrap.SubmitConsoleInputViaEnterKeyForTesting("help");
+            }
+
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+
+            bootstrap.ScrollConsoleLogUpForTesting();
+            yield return null;
+
+            float scrollAfterScrollingUp = bootstrap.ConsoleLogScrollOffsetY;
+            Assert.Less(scrollAfterScrollingUp, bootstrap.ConsoleLogMaxScrollOffsetY - 1f,
+                "Sanity check: scrolling up should have actually moved away from the bottom.");
+
+            const string marker = "1.8g test warning marker";
+            LogAssert.Expect(LogType.Warning, marker);
+            Debug.LogWarning(marker);
+            yield return null;
+            yield return null;
+
+            Assert.AreEqual(scrollAfterScrollingUp, bootstrap.ConsoleLogScrollOffsetY, 1f,
+                "A Unity log line arriving while scrolled up should not move the view.");
+
+            bootstrap.SubmitConsoleInputViaEnterKeyForTesting("help");
+
+            for (int i = 0; i < 5; i++)
+            {
+                yield return null;
+            }
+
+            AssertScrollerIsAtTheTrueBottom(bootstrap);
         }
 
         [UnityTest]
