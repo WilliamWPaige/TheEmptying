@@ -1,0 +1,6 @@
+{
+    "type": "module_manifest",
+    "items": [
+        { "id": "module.demo_hunger", "version": 1, "dependencies": [], "enabled": true }
+    ]
+}

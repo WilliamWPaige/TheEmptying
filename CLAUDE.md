@@ -134,6 +134,22 @@ Check `Logs/playmode-results.xml` and `Logs/playmode-run.log` the same way.
 
 The in-game console and inspector are part of the core. When you add a module, add console commands and inspector panels for its data where useful.
 
+## Module checklist
+
+What a new module needs, based on what the milestone-1 demo module (`module.demo_hunger`, deleted in milestone 3) needed to prove the framework end to end:
+
+- **Folder and assembly definition.** `Code/Modules/<Name>/` with its own `.asmdef`, referencing `TheEmptying.Core` and only the modules it declares as dependencies.
+- **A manifest in data, not code.** A `module_manifest` item (id, version, dependencies, enabled) in a `Data/*.json` file in the core content source (or a mod, to override it). A module with no matching manifest in the data is a build error; a manifest with no matching module code is too.
+- **`IModule`**: `Id`, `Version`, `Dependencies`, `Initialize(ModuleContext)`, `Shutdown()`. Add `IModuleDeclaration` only if the module needs to register its own content type or declare something before content loads; settings and event definitions normally belong in data instead (see below).
+- **Settings and events belong in data.** Declare a setting as a `setting_definition` content item and an event as an `event_definition` content item, not in code. Read a setting's live value with `context.Settings.Get(id)` inside the system that needs it every time it runs — never cache the value once, since the player (or a test) can change it mid-game.
+- **Entities and module data.** Store per-entity data in an `EntityTable<T>` created with `new EntityTable<T>(context.Entities)`. Only create entities on a new game (`if (!context.IsLoading)`); on a load, the table is repopulated by `Read`.
+- **Scheduling.** Register scheduled systems with `context.RegisterSystem(...)`. For per-entity work, use `BucketedWork` with the tick itself (not a module-local counter) as the run number, so the bucket and importance-tier schedule lines up exactly the same whether the game ran straight through or was saved and loaded partway.
+- **Saving**: implement `ISaveableModule` (`Write`/`Read`). Write exactly what's needed to reconstruct the module's `EntityTable` (and anything derived from it, like an index lookup) on `Read` — a save/load round trip must reproduce the exact same state hash.
+- **Inspection**: implement `IInspectableModule.Inspect(EntityId)` for the "inspect" console command and the inspector.
+- **Console commands**: register with `context.RegisterCommand(...)`. A command with wrong or missing arguments returns its own "Usage: ..." line, not the full help list.
+- **Events**: post through `context.Events`. A data event (`EventData`, posted by definition ID) saves itself automatically if it's still pending at save time; a typed `ISimEvent` struct needs a registered `ITypedEventSerializer` to be saveable at all.
+- **Tests**: edit-mode tests named after the module, including a save-and-load round trip. If the module reads a setting or contributes to the state hash, also test determinism: the same seed gives the same hash, and an interrupted run (save, load, continue) matches an unbroken run of the same length.
+
 ## How we work
 
 - One task per prompt. Do what the prompt asks, nothing more. If you notice something else that needs doing, list it at the end instead of doing it.

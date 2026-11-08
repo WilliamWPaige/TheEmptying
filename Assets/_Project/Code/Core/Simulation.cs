@@ -54,9 +54,9 @@ namespace TheEmptying.Core
             EventDefinitions = new EventDefinitionRegistry();
             Events = new EventBus(EventDefinitions);
             Commands = new ConsoleCommandRegistry();
-            Modules = new ModuleHost(Events, Scheduler, Entities, EventDefinitions, Random, () => Clock.CurrentTick, errorMode, Commands);
             ContentTypes = new ContentTypeRegistry();
             Settings = new SettingsRegistry();
+            Modules = new ModuleHost(Events, Scheduler, Entities, EventDefinitions, Random, () => Clock.CurrentTick, errorMode, Commands, Settings);
             EventSerializers = new TypedEventSerializerRegistry();
             Content = new ContentDatabase();
 

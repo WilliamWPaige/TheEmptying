@@ -1,0 +1,14 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.demo_hunger.decay_per_hour",
+            "valueType": "Number",
+            "default": 2,
+            "minimum": 0,
+            "maximum": 20,
+            "category": "Demo",
+            "description": "How much hunger the demo hunger module's people lose per in-game hour."
+        }
+    ]
+}

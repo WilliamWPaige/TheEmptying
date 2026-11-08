@@ -26,6 +26,7 @@ namespace TheEmptying.Core.Modules
         private readonly RandomService _random;
         private readonly Func<long> _currentTick;
         private readonly ConsoleCommandRegistry _commands;
+        private readonly SettingsRegistry _settings;
 
         private readonly Dictionary<string, IModule> _modules = new Dictionary<string, IModule>();
         private readonly Dictionary<string, ModuleManifest> _manifests = new Dictionary<string, ModuleManifest>();
@@ -55,7 +56,8 @@ namespace TheEmptying.Core.Modules
             RandomService random,
             Func<long> currentTick,
             ErrorMode errorMode = ErrorMode.Development,
-            ConsoleCommandRegistry commands = null)
+            ConsoleCommandRegistry commands = null,
+            SettingsRegistry settings = null)
         {
             _events = events ?? throw new ArgumentNullException(nameof(events));
             _scheduler = scheduler ?? throw new ArgumentNullException(nameof(scheduler));
@@ -64,6 +66,7 @@ namespace TheEmptying.Core.Modules
             _random = random ?? throw new ArgumentNullException(nameof(random));
             _currentTick = currentTick ?? throw new ArgumentNullException(nameof(currentTick));
             _commands = commands ?? new ConsoleCommandRegistry();
+            _settings = settings ?? new SettingsRegistry();
             ErrorMode = errorMode;
         }
 
@@ -184,7 +187,7 @@ namespace TheEmptying.Core.Modules
                     continue;
                 }
 
-                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, _commands, HandleModuleFailure, isLoading);
+                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, _commands, _settings, HandleModuleFailure, isLoading);
                 _contexts[id] = context;
 
                 try

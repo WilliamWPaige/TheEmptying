@@ -1,0 +1,12 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.demo_hunger.starving",
+            "visibility": "Witnessed",
+            "reportingScore": 5,
+            "notabilityScore": 3,
+            "description": "A person's hunger has dropped below the starving threshold."
+        }
+    ]
+}

@@ -3,6 +3,7 @@
     "rootNamespace": "TheEmptying.Tests.EditMode",
     "references": [
         "TheEmptying.Core",
+        "TheEmptying.Modules.DemoHunger",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

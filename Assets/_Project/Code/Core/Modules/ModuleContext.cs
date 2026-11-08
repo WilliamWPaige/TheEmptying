@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using TheEmptying.Core.Console;
+using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Randomness;
@@ -31,6 +32,9 @@ namespace TheEmptying.Core.Modules
         public SimRandom Random { get; }
         public ConsoleCommandRegistry Commands { get; }
 
+        /// <summary>Current setting values (declared from data or by a module). Read-only here; settings change through the "set" console command.</summary>
+        public SettingsRegistry Settings { get; }
+
         /// <summary>True when this Initialize is part of a load, not a new game. Modules must not run new-game setup when this is true.</summary>
         public bool IsLoading { get; }
 
@@ -42,6 +46,7 @@ namespace TheEmptying.Core.Modules
             EventDefinitionRegistry eventDefinitions,
             RandomService randomService,
             ConsoleCommandRegistry commands,
+            SettingsRegistry settings,
             Action<string, string, Exception> onFailure,
             bool isLoading)
         {
@@ -52,6 +57,7 @@ namespace TheEmptying.Core.Modules
             EventDefinitions = eventDefinitions;
             Random = randomService.GetStream(moduleId);
             Commands = commands;
+            Settings = settings;
             _onFailure = onFailure;
             IsLoading = isLoading;
         }

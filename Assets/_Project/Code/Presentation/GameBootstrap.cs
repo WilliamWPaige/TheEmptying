@@ -9,6 +9,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.DemoHunger;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
@@ -219,10 +220,13 @@ namespace TheEmptying.Presentation
             return sources;
         }
 
+        /// <summary>Every module the game knows how to run, regardless of whether its manifest enables it. A new instance each call, since modules hold per-game state.</summary>
+        private static IModule[] CreateModules() => new IModule[] { new DemoHungerModule() };
+
         private StartupReport BuildSimulation()
         {
             List<string> sources = ResolveSourceFolders();
-            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, Array.Empty<IModule>(), ErrorMode.Development);
+            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, CreateModules(), ErrorMode.Development);
             _simulation = simulation;
 
             BuiltInConsoleCommands.RegisterAll(_simulation, this);
@@ -706,7 +710,7 @@ namespace TheEmptying.Presentation
                 }
 
                 using var stream = File.OpenRead(path);
-                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), Array.Empty<IModule>(), ErrorMode.Development);
+                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), CreateModules(), ErrorMode.Development);
 
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this);

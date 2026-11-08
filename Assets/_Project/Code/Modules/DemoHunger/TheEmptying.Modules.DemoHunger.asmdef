@@ -1,0 +1,16 @@
+{
+    "name": "TheEmptying.Modules.DemoHunger",
+    "rootNamespace": "TheEmptying.Modules.DemoHunger",
+    "references": [
+        "TheEmptying.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}
