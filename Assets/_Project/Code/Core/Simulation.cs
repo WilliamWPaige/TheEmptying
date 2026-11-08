@@ -6,6 +6,7 @@ using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
+using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Scheduling;
 using TheEmptying.Core.Timekeeping;
@@ -29,8 +30,14 @@ namespace TheEmptying.Core
         public TypedEventSerializerRegistry EventSerializers { get; }
         public ConsoleCommandRegistry Commands { get; }
 
+        /// <summary>Every registered block type. Modules register their blocks during the declaration phase; the core registers its own too.</summary>
+        public BlockRegistry Blocks { get; }
+
         /// <summary>The loaded content database. Empty until SimulationBuilder loads content; a Simulation built from code-supplied manifests alone has no content.</summary>
         public ContentDatabase Content { get; internal set; }
+
+        /// <summary>Every rule that compiled without errors. Empty until SimulationBuilder compiles rules.</summary>
+        public RuleRegistry Rules { get; internal set; }
 
         /// <summary>
         /// Sections from a loaded save whose module is currently missing or
@@ -56,9 +63,11 @@ namespace TheEmptying.Core
             Commands = new ConsoleCommandRegistry();
             ContentTypes = new ContentTypeRegistry();
             Settings = new SettingsRegistry();
+            Blocks = new BlockRegistry();
             Modules = new ModuleHost(Events, Scheduler, Entities, EventDefinitions, Random, () => Clock.CurrentTick, errorMode, Commands, Settings);
             EventSerializers = new TypedEventSerializerRegistry();
             Content = new ContentDatabase();
+            Rules = new RuleRegistry();
 
             RegisterCalendarDefinitions();
             CalendarEventSerializers.RegisterAll(EventSerializers);
@@ -69,7 +78,7 @@ namespace TheEmptying.Core
             : this(worldSeed, errorMode)
         {
             Modules.ValidateAndOrder(modules ?? Array.Empty<ModuleRegistration>());
-            Modules.RunDeclarationPhase(ContentTypes, Settings);
+            Modules.RunDeclarationPhase(ContentTypes, Settings, Blocks);
             Modules.InitializeModules(isLoading);
         }
 

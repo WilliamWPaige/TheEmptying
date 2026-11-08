@@ -1,20 +1,23 @@
 using System;
 using TheEmptying.Core.Events;
+using TheEmptying.Core.Rules;
 
 namespace TheEmptying.Core.Content
 {
-    /// <summary>The core's own content types: event definitions, module manifests and setting definitions.</summary>
+    /// <summary>The core's own content types: event definitions, module manifests, setting definitions and rules.</summary>
     public static class BuiltInContentTypes
     {
         public const string EventDefinitionTypeName = "event_definition";
         public const string ModuleManifestTypeName = "module_manifest";
         public const string SettingDefinitionTypeName = "setting_definition";
+        public const string RuleTypeName = "rule";
 
         public static void RegisterAll(ContentTypeRegistry registry)
         {
             registry.Register(new ContentTypeDefinition(EventDefinitionTypeName, typeof(EventDefinitionContent), ValidateEventDefinition));
             registry.Register(new ContentTypeDefinition(ModuleManifestTypeName, typeof(ModuleManifestContent), ValidateModuleManifest));
             registry.Register(new ContentTypeDefinition(SettingDefinitionTypeName, typeof(SettingDefinition), ValidateSettingDefinition));
+            registry.Register(new ContentTypeDefinition(RuleTypeName, typeof(RuleDefinition)));
         }
 
         /// <summary>Registers every loaded event_definition content item into the EventDefinitionRegistry. The four calendar definitions stay registered in code.</summary>

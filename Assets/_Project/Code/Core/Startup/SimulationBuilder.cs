@@ -2,14 +2,16 @@ using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
+using TheEmptying.Core.Rules;
 
 namespace TheEmptying.Core.Startup
 {
     /// <summary>
     /// Runs the full startup pipeline in one place: bootstrap manifests from
     /// data, create and order the Simulation, declare, load and validate
-    /// content, register content-defined event definitions and settings, then
-    /// initialize modules. New games and loads both go through this.
+    /// content, register content-defined event definitions and settings,
+    /// compile rules, then initialize modules. New games and loads both go
+    /// through this.
     /// </summary>
     public static class SimulationBuilder
     {
@@ -32,7 +34,7 @@ namespace TheEmptying.Core.Startup
 
             // 3. Run the declaration phase (built-in content types must exist first).
             BuiltInContentTypes.RegisterAll(simulation.ContentTypes);
-            simulation.Modules.RunDeclarationPhase(simulation.ContentTypes, simulation.Settings);
+            simulation.Modules.RunDeclarationPhase(simulation.ContentTypes, simulation.Settings, simulation.Blocks);
 
             // 4. Load and validate all content.
             var loader = new ContentLoader(simulation.ContentTypes, errorMode);
@@ -43,10 +45,14 @@ namespace TheEmptying.Core.Startup
             BuiltInContentTypes.RegisterEventDefinitionsFrom(database, simulation.EventDefinitions);
             BuiltInContentTypes.DeclareSettingsFrom(database, simulation.Settings);
 
-            // 6. Initialize modules.
+            // 6. Compile rules (after content loads, before modules initialize).
+            (RuleRegistry ruleRegistry, RuleCompileReport ruleReport) = RuleCompiler.Compile(database, simulation.Blocks, simulation.Settings, simulation.EventDefinitions, errorMode);
+            simulation.Rules = ruleRegistry;
+
+            // 7. Initialize modules.
             simulation.Modules.InitializeModules(isLoading);
 
-            var report = new StartupReport(simulation.Modules.DisabledReasons, contentReport);
+            var report = new StartupReport(simulation.Modules.DisabledReasons, contentReport, ruleReport);
             return (simulation, report);
         }
     }

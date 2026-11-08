@@ -6,6 +6,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Randomness;
+using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Scheduling;
 
@@ -132,8 +133,8 @@ namespace TheEmptying.Core.Modules
             ValidateAndOrder(registrations);
         }
 
-        /// <summary>Phase 2: each enabled module, in dependency order, can register content types and declare settings.</summary>
-        public void RunDeclarationPhase(ContentTypeRegistry contentTypes, SettingsRegistry settings)
+        /// <summary>Phase 2: each enabled module, in dependency order, can register content types, declare settings and register block types.</summary>
+        public void RunDeclarationPhase(ContentTypeRegistry contentTypes, SettingsRegistry settings, BlockRegistry blocks = null)
         {
             if (_order == null)
             {
@@ -147,6 +148,8 @@ namespace TheEmptying.Core.Modules
 
             _declared = true;
 
+            BlockRegistry blockRegistry = blocks ?? new BlockRegistry();
+
             foreach (string id in _order)
             {
                 if (!_activeModuleIds.Contains(id))
@@ -159,7 +162,7 @@ namespace TheEmptying.Core.Modules
                     continue;
                 }
 
-                var context = new ModuleDeclarationContext(id, contentTypes, settings);
+                var context = new ModuleDeclarationContext(id, contentTypes, settings, blockRegistry);
 
                 try
                 {

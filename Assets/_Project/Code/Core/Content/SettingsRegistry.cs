@@ -43,6 +43,11 @@ namespace TheEmptying.Core.Content
 
         public bool IsDeclared(string id) => _definitions.ContainsKey(id);
 
+        public bool TryGetDefinition(string id, out SettingDefinition definition)
+        {
+            return _definitions.TryGetValue(id, out definition);
+        }
+
         public double Get(string id)
         {
             if (!_values.TryGetValue(id, out double value))

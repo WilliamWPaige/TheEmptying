@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
 using TheEmptying.Core.Modules;
@@ -68,6 +69,29 @@ namespace TheEmptying.Tests.EditMode.Startup
             (Simulation loaded, _) = GameSave.Load(stream, sources, new IModule[] { loadedCounter });
 
             Assert.AreEqual(originalHash, loaded.ComputeStateHash());
+        }
+
+        [Test]
+        public void Build_CompilesRules_ErrorsAppearInStartupReport_RegistryOnSimulation()
+        {
+            using var core = new TempContentSource("core");
+            core.WriteDataFile("rules.json", @"{
+                ""type"": ""rule"",
+                ""items"": [
+                    {
+                        ""id"": ""rule.bad"",
+                        ""enabled"": true,
+                        ""nodes"": [ { ""id"": ""n1"", ""blockType"": ""block.does_not_exist"" } ],
+                        ""connections"": []
+                    }
+                ]
+            }");
+
+            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(1, new[] { core.FolderPath }, null, ErrorMode.Release);
+
+            Assert.IsNotNull(simulation.Rules);
+            Assert.IsFalse(simulation.Rules.TryGet("rule.bad", out _));
+            Assert.IsTrue(report.RuleErrors.Any(e => e.RuleId == "rule.bad"));
         }
 
         [Test]
