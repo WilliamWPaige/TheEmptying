@@ -22,7 +22,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
 
         public override IReadOnlyList<FieldDefinition> Fields { get; } = new[]
         {
-            new FieldDefinition("event", RuleDataType.Text, string.Empty),
+            new FieldDefinition("event", RuleDataType.Text, string.Empty, pickerKind: FieldPickerKind.EventId),
             new FieldDefinition("param1Name", RuleDataType.Text, string.Empty),
             new FieldDefinition("param2Name", RuleDataType.Text, string.Empty),
             new FieldDefinition("param3Name", RuleDataType.Text, string.Empty)

@@ -22,7 +22,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
         public override IReadOnlyList<FieldDefinition> Fields { get; } = new[]
         {
             new FieldDefinition("amount", RuleDataType.Number, 1.0, allowsSettingReference: true),
-            new FieldDefinition("unit", RuleDataType.Text, "hours")
+            new FieldDefinition("unit", RuleDataType.Text, "hours", allowedValues: new[] { "minutes", "hours", "days" })
         };
 
         public override RuleExecutionResult Execute(IRuleNodeContext context)

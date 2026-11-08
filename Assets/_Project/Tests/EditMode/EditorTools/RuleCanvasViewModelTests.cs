@@ -257,6 +257,42 @@ namespace TheEmptying.Tests.EditMode.EditorTools
             Assert.AreEqual(1000.0, c.Y, 0.001);
         }
 
+        // --- Port and wire hit tests ---
+
+        [Test]
+        public void HitTestPort_FindsThePortClosestToThePoint_WithinRadius()
+        {
+            var rule = Rule("r", new List<RuleNode> { Node("log", "block.action.write_log_line", 0, 0) });
+            var vm = new RuleCanvasViewModel(rule, Blocks());
+            NodeViewModel log = vm.Nodes[0];
+            PortViewModel execPort = log.InputPorts.First(p => p.Name == "exec");
+            Vector2 execCanvasPoint = log.Position + execPort.LocalOffset;
+
+            var hit = vm.HitTestPort(execCanvasPoint, 8f);
+            Assert.IsNotNull(hit);
+            Assert.AreEqual("exec", hit.Value.Port.Name);
+
+            var miss = vm.HitTestPort(execCanvasPoint + new Vector2(500, 500), 8f);
+            Assert.IsNull(miss);
+        }
+
+        [Test]
+        public void HitTestWire_FindsAWireNearItsStraightLine()
+        {
+            var rule = Rule("r", new List<RuleNode>
+            {
+                Node("trigger", "block.trigger.on_event", 0, 0, new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("go") }),
+                Node("log", "block.action.write_log_line", 300, 0)
+            }, new List<RuleConnection> { Conn("trigger", "then", "log", "exec") });
+            var vm = new RuleCanvasViewModel(rule, Blocks());
+
+            WireViewModel wire = vm.Wires[0];
+            Vector2 midpoint = Vector2.Lerp(wire.FromAnchor, wire.ToAnchor, 0.5f);
+
+            Assert.AreSame(wire, vm.HitTestWire(midpoint, 5f));
+            Assert.IsNull(vm.HitTestWire(midpoint + new Vector2(0, 500), 5f));
+        }
+
         // --- Missing blocks ---
 
         [Test]
@@ -285,7 +321,33 @@ namespace TheEmptying.Tests.EditMode.EditorTools
             CollectionAssert.Contains(missing.OutputPorts.Select(p => p.Name), "exec_out");
             Assert.IsTrue(missing.Ports.All(p => p.IsInferred));
 
+            PortViewModel execIn = missing.InputPorts.First(p => p.Name == "exec_in");
+            PortViewModel execOut = missing.OutputPorts.First(p => p.Name == "exec_out");
+            Assert.AreEqual(PortKind.Execution, execIn.Kind, "its kind should come from the known neighbor (trigger's 'then' output) at the other end of the wire.");
+            Assert.AreEqual(PortKind.Execution, execOut.Kind, "its kind should come from the known neighbor (log's 'exec' input) at the other end of the wire.");
+
             Assert.AreEqual(2, vm.Wires.Count, "both connections touching the missing node should still resolve to a drawable wire.");
+        }
+
+        [Test]
+        public void MissingBlockNode_BetweenTwoMissingNodes_PortKindIsUnknown()
+        {
+            var rule = Rule("r", new List<RuleNode>
+            {
+                Node("missingA", "block.unknown.a", 0, 0),
+                Node("missingB", "block.unknown.b", 200, 0)
+            }, new List<RuleConnection>
+            {
+                Conn("missingA", "out", "missingB", "in")
+            });
+
+            var vm = new RuleCanvasViewModel(rule, Blocks());
+
+            NodeViewModel missingA = vm.Nodes.First(n => n.Node.Id == "missingA");
+            PortViewModel outPort = missingA.OutputPorts.First(p => p.Name == "out");
+
+            Assert.AreEqual(PortKind.Data, outPort.Kind, "with no known neighbor, the kind falls back to the unknown default.");
+            Assert.IsNull(outPort.DataType, "with no known neighbor, the data type is unknown (wildcard).");
         }
 
         // --- Smoke: builds without errors ---

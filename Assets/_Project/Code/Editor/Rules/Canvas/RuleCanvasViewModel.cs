@@ -60,10 +60,17 @@ namespace TheEmptying.Editor.Rules.Canvas
             _nodes.Clear();
             _nodesById.Clear();
 
+            var blockTypesById = new Dictionary<string, BlockType>();
             foreach (RuleNode node in Rule.Nodes ?? Enumerable.Empty<RuleNode>())
             {
                 Blocks.TryGet(node.BlockTypeId, out BlockType blockType);
-                IReadOnlyList<PortViewModel> inferredPorts = blockType == null ? InferPorts(node.Id) : null;
+                blockTypesById[node.Id] = blockType;
+            }
+
+            foreach (RuleNode node in Rule.Nodes ?? Enumerable.Empty<RuleNode>())
+            {
+                BlockType blockType = blockTypesById[node.Id];
+                IReadOnlyList<PortViewModel> inferredPorts = blockType == null ? InferPorts(node.Id, blockTypesById) : null;
                 var nodeView = new NodeViewModel(node, blockType, inferredPorts);
                 _nodes.Add(nodeView);
                 _nodesById[node.Id] = nodeView;
@@ -89,8 +96,14 @@ namespace TheEmptying.Editor.Rules.Canvas
             }
         }
 
-        /// <summary>A missing-block node still draws its wires: guesses each connected port's name and direction straight from the rule's connections, with an unknown (wildcard, visually distinct) data type.</summary>
-        private List<PortViewModel> InferPorts(string nodeId)
+        /// <summary>
+        /// A missing-block node still draws its wires: guesses each connected
+        /// port's name and direction straight from the rule's connections. A
+        /// port's kind and data type come from the known block at the other
+        /// end of its wire; only when both ends are missing does it fall back
+        /// to an unknown (wildcard, visually distinct) data type.
+        /// </summary>
+        private List<PortViewModel> InferPorts(string nodeId, IReadOnlyDictionary<string, BlockType> blockTypesById)
         {
             var seen = new HashSet<(string Name, PortDirection Direction)>();
             var ports = new List<PortViewModel>();
@@ -99,16 +112,32 @@ namespace TheEmptying.Editor.Rules.Canvas
             {
                 if (connection.FromNode == nodeId && seen.Add((connection.FromPort, PortDirection.Output)))
                 {
-                    ports.Add(new PortViewModel(connection.FromPort, PortDirection.Output, PortKind.Data, null, isInferred: true));
+                    (PortKind kind, RuleDataType? dataType) = ResolveNeighborPort(blockTypesById, connection.ToNode, connection.ToPort, PortDirection.Input);
+                    ports.Add(new PortViewModel(connection.FromPort, PortDirection.Output, kind, dataType, isInferred: true));
                 }
 
                 if (connection.ToNode == nodeId && seen.Add((connection.ToPort, PortDirection.Input)))
                 {
-                    ports.Add(new PortViewModel(connection.ToPort, PortDirection.Input, PortKind.Data, null, isInferred: true));
+                    (PortKind kind, RuleDataType? dataType) = ResolveNeighborPort(blockTypesById, connection.FromNode, connection.FromPort, PortDirection.Output);
+                    ports.Add(new PortViewModel(connection.ToPort, PortDirection.Input, kind, dataType, isInferred: true));
                 }
             }
 
             return ports;
+        }
+
+        private static (PortKind Kind, RuleDataType? DataType) ResolveNeighborPort(IReadOnlyDictionary<string, BlockType> blockTypesById, string neighborNodeId, string neighborPortName, PortDirection neighborDirection)
+        {
+            if (blockTypesById.TryGetValue(neighborNodeId, out BlockType neighborBlockType) && neighborBlockType != null)
+            {
+                PortDefinition neighborPort = neighborBlockType.FindPort(neighborPortName, neighborDirection);
+                if (neighborPort != null)
+                {
+                    return (neighborPort.Kind, neighborPort.DataType);
+                }
+            }
+
+            return (PortKind.Data, null);
         }
 
         // --- Coordinates ---
@@ -237,6 +266,22 @@ namespace TheEmptying.Editor.Rules.Canvas
             _selectedNodeIds.Clear();
         }
 
+        /// <summary>Selects a node directly by Id (no hit test) - e.g. after a paste, or jumping to a node from the problems panel. No-op if the Id doesn't exist. additive adds to the current selection instead of replacing it.</summary>
+        public void SelectNodeById(string nodeId, bool additive)
+        {
+            if (!_nodesById.ContainsKey(nodeId))
+            {
+                return;
+            }
+
+            if (!additive)
+            {
+                _selectedNodeIds.Clear();
+            }
+
+            _selectedNodeIds.Add(nodeId);
+        }
+
         /// <summary>The topmost (last-drawn) node whose bounds contain canvasPoint, or null.</summary>
         public NodeViewModel HitTestNode(Vector2 canvasPoint)
         {
@@ -249,6 +294,61 @@ namespace TheEmptying.Editor.Rules.Canvas
             }
 
             return null;
+        }
+
+        /// <summary>The closest port within radius canvas units of canvasPoint (its node and the port), or null. Used to start/end a wire drag and for Alt-click-to-disconnect.</summary>
+        public (NodeViewModel Node, PortViewModel Port)? HitTestPort(Vector2 canvasPoint, float radius)
+        {
+            (NodeViewModel Node, PortViewModel Port)? best = null;
+            float bestDistanceSquared = radius * radius;
+
+            foreach (NodeViewModel node in _nodes)
+            {
+                foreach (PortViewModel port in node.Ports)
+                {
+                    float distanceSquared = (node.Position + port.LocalOffset - canvasPoint).sqrMagnitude;
+                    if (distanceSquared <= bestDistanceSquared)
+                    {
+                        bestDistanceSquared = distanceSquared;
+                        best = (node, port);
+                    }
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>The closest wire within radius canvas units of canvasPoint, approximated by distance to the straight segment between its two anchors (close enough for a gently-curved wire). Used to select and delete a wire.</summary>
+        public WireViewModel HitTestWire(Vector2 canvasPoint, float radius)
+        {
+            WireViewModel best = null;
+            float bestDistance = radius;
+
+            foreach (WireViewModel wire in _wires)
+            {
+                float distance = DistancePointToSegment(canvasPoint, wire.FromAnchor, wire.ToAnchor);
+                if (distance <= bestDistance)
+                {
+                    bestDistance = distance;
+                    best = wire;
+                }
+            }
+
+            return best;
+        }
+
+        private static float DistancePointToSegment(Vector2 point, Vector2 a, Vector2 b)
+        {
+            Vector2 ab = b - a;
+            float lengthSquared = ab.sqrMagnitude;
+            if (lengthSquared < 0.0001f)
+            {
+                return Vector2.Distance(point, a);
+            }
+
+            float t = Mathf.Clamp01(Vector2.Dot(point - a, ab) / lengthSquared);
+            Vector2 projected = a + t * ab;
+            return Vector2.Distance(point, projected);
         }
 
         // --- Dragging ---

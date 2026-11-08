@@ -19,7 +19,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
 
         public override IReadOnlyList<FieldDefinition> Fields { get; } = new[]
         {
-            new FieldDefinition("operator", RuleDataType.Text, "add"),
+            new FieldDefinition("operator", RuleDataType.Text, "add", allowedValues: new[] { "add", "subtract", "multiply", "divide", "min", "max" }),
             new FieldDefinition("a", RuleDataType.Number, 0.0, allowsSettingReference: true),
             new FieldDefinition("b", RuleDataType.Number, 0.0, allowsSettingReference: true)
         };

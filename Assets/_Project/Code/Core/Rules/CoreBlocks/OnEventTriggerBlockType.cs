@@ -19,7 +19,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
 
         public override IReadOnlyList<FieldDefinition> Fields { get; } = new[]
         {
-            new FieldDefinition("event", RuleDataType.Text, string.Empty)
+            new FieldDefinition("event", RuleDataType.Text, string.Empty, pickerKind: FieldPickerKind.EventId)
         };
 
         public override string GetTriggerEventDefinitionId(IReadOnlyDictionary<string, RuleFieldValueSource> fieldValues)

@@ -17,7 +17,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
 
         public override IReadOnlyList<FieldDefinition> Fields { get; } = new[]
         {
-            new FieldDefinition("setting", RuleDataType.Text, string.Empty)
+            new FieldDefinition("setting", RuleDataType.Text, string.Empty, pickerKind: FieldPickerKind.SettingId)
         };
 
         public override RuleValue ComputeValue(IRuleNodeContext context)
