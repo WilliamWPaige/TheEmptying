@@ -63,6 +63,22 @@ namespace TheEmptying.Presentation
         public Rect ConsoleLogLayout => _consoleLog.layout;
         public Rect ConsoleInputLayout => _consoleInput.layout;
 
+        /// <summary>For tests: the log's full scrollable content height versus its visible viewport height.</summary>
+        public float ConsoleLogContentHeight => _consoleLog.contentContainer.layout.height;
+        public float ConsoleLogViewportHeight => _consoleLog.contentViewport.layout.height;
+
+        /// <summary>For tests: the input line's current text.</summary>
+        public string ConsoleInputValue => _consoleInput.value;
+
+        /// <summary>For tests: appends throwaway lines to the log without going through a real command.</summary>
+        public void AppendLogLinesForTesting(int count)
+        {
+            for (int i = 0; i < count; i++)
+            {
+                AppendLog($"test line {i}");
+            }
+        }
+
         private void Awake()
         {
             ResolveFolders();
@@ -146,9 +162,12 @@ namespace TheEmptying.Presentation
         /// </summary>
         private void BuildUi()
         {
-            var panelSettings = ScriptableObject.CreateInstance<PanelSettings>();
-            panelSettings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
-            panelSettings.referenceResolution = new Vector2Int(1920, 1080);
+            var panelSettings = Resources.Load<PanelSettings>("GamePanelSettings");
+            if (panelSettings == null)
+            {
+                Debug.LogError("[TheEmptying] Could not load GamePanelSettings from Resources. UI will not render.");
+                return;
+            }
 
             _uiDocument = gameObject.AddComponent<UIDocument>();
             _uiDocument.panelSettings = panelSettings;
@@ -224,6 +243,7 @@ namespace TheEmptying.Presentation
                     top = 0,
                     width = Length.Percent(100),
                     height = Length.Percent(40),
+                    overflow = Overflow.Hidden,
                     backgroundColor = new Color(0f, 0f, 0f, 0.9f),
                     flexDirection = FlexDirection.Column,
                     paddingLeft = 8,
@@ -239,10 +259,16 @@ namespace TheEmptying.Presentation
                 {
                     flexGrow = 1,
                     minHeight = 80,
+                    overflow = Overflow.Hidden,
                     color = Color.white,
                     backgroundColor = new Color(1f, 1f, 1f, 0.05f)
                 }
             };
+
+            // Without a theme style sheet, the viewport's own default clipping rule
+            // (normally supplied by the theme) doesn't apply; set it explicitly so
+            // log content can never draw outside the scroll view, theme or no theme.
+            _consoleLog.contentViewport.style.overflow = Overflow.Hidden;
 
             _consoleInput = new TextField
             {
@@ -273,14 +299,24 @@ namespace TheEmptying.Presentation
                 case KeyCode.KeypadEnter:
                     RunConsoleInput();
                     evt.StopPropagation();
+                    evt.PreventDefault();
                     break;
                 case KeyCode.UpArrow:
                     RecallHistory(-1);
                     evt.StopPropagation();
+                    evt.PreventDefault();
                     break;
                 case KeyCode.DownArrow:
                     RecallHistory(1);
                     evt.StopPropagation();
+                    evt.PreventDefault();
+                    break;
+                case KeyCode.BackQuote:
+                case KeyCode.F1:
+                    // These toggle the console itself (via the Input System action,
+                    // handled separately); never let them type into the field.
+                    evt.StopPropagation();
+                    evt.PreventDefault();
                     break;
             }
         }
@@ -315,7 +351,15 @@ namespace TheEmptying.Presentation
 
         private void AppendLog(string text)
         {
-            var label = new Label(text) { style = { color = Color.white, whiteSpace = WhiteSpace.Normal } };
+            var label = new Label(text)
+            {
+                style =
+                {
+                    position = Position.Relative,
+                    color = Color.white,
+                    whiteSpace = WhiteSpace.Normal
+                }
+            };
             _consoleLog.Add(label);
             _consoleLog.ScrollTo(label);
         }
@@ -333,9 +377,19 @@ namespace TheEmptying.Presentation
 
             if (open)
             {
+                // Safety net: if the key that opened the console (or anything else)
+                // left a stray character in the field, start clean every time.
+                _consoleInput.SetValueWithoutNotify(string.Empty);
+
                 // Focusing the same frame display flips to Flex can run before the
                 // panel has a laid-out element to focus; deferring one step is reliable.
                 _consoleInput.schedule.Execute(() => _consoleInput.Focus());
+            }
+            else
+            {
+                // Release focus so the hidden field can't go on receiving and
+                // inserting keystrokes meant for toggling the console back open.
+                _consoleInput.Blur();
             }
         }
 
