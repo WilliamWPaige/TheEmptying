@@ -34,11 +34,10 @@ namespace TheEmptying.Presentation
 
         private InputActionAsset _actions;
 
-        private UIDocument _hudDocument;
+        private UIDocument _uiDocument;
         private Label _dateLabel;
         private Label _speedLabel;
 
-        private UIDocument _consoleDocument;
         private VisualElement _consoleRoot;
         private ScrollView _consoleLog;
         private TextField _consoleInput;
@@ -56,12 +55,19 @@ namespace TheEmptying.Presentation
         /// <summary>For the PlayMode smoke test: confirms the clock is actually advancing.</summary>
         public long CurrentTick => _simulation.Clock.CurrentTick;
 
+        /// <summary>For tests: whether the console is currently open.</summary>
+        public bool IsConsoleOpen => _consoleOpen;
+
+        /// <summary>For tests: the resolved layout (post-layout-pass) of the console root, the output log, and the input line.</summary>
+        public Rect ConsoleRootLayout => _consoleRoot.layout;
+        public Rect ConsoleLogLayout => _consoleLog.layout;
+        public Rect ConsoleInputLayout => _consoleInput.layout;
+
         private void Awake()
         {
             ResolveFolders();
             BuildSimulation();
-            BuildHud();
-            BuildConsole();
+            BuildUi();
             WireInput();
         }
 
@@ -130,19 +136,41 @@ namespace TheEmptying.Presentation
 
         #endregion
 
-        #region HUD
+        #region UI
 
-        private void BuildHud()
+        /// <summary>
+        /// One UIDocument hosts both the HUD and the console, so draw order
+        /// between them is just child order (the console is added after the
+        /// HUD, so it draws above it) instead of relying on separate panels'
+        /// sort order.
+        /// </summary>
+        private void BuildUi()
         {
             var panelSettings = ScriptableObject.CreateInstance<PanelSettings>();
             panelSettings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
             panelSettings.referenceResolution = new Vector2Int(1920, 1080);
 
-            var hudGo = new GameObject("HUD");
-            hudGo.transform.SetParent(transform);
-            _hudDocument = hudGo.AddComponent<UIDocument>();
-            _hudDocument.panelSettings = panelSettings;
+            _uiDocument = gameObject.AddComponent<UIDocument>();
+            _uiDocument.panelSettings = panelSettings;
 
+            // The root element's own Yoga style defaults to width/height: auto, which
+            // shrinks to fit its (non-absolute) children rather than filling the
+            // panel. Every percentage size below is resolved against this element,
+            // so it must be stretched to the panel's actual size first.
+            VisualElement root = _uiDocument.rootVisualElement;
+            root.style.flexGrow = 1;
+            root.style.position = Position.Absolute;
+            root.style.left = 0;
+            root.style.right = 0;
+            root.style.top = 0;
+            root.style.bottom = 0;
+
+            BuildHud(root);
+            BuildConsole(root);
+        }
+
+        private void BuildHud(VisualElement root)
+        {
             var panel = new VisualElement
             {
                 style =
@@ -164,7 +192,7 @@ namespace TheEmptying.Presentation
 
             panel.Add(_dateLabel);
             panel.Add(_speedLabel);
-            _hudDocument.rootVisualElement.Add(panel);
+            root.Add(panel);
 
             RefreshHud();
         }
@@ -184,17 +212,8 @@ namespace TheEmptying.Presentation
 
         #region Console
 
-        private void BuildConsole()
+        private void BuildConsole(VisualElement root)
         {
-            var panelSettings = ScriptableObject.CreateInstance<PanelSettings>();
-            panelSettings.scaleMode = PanelScaleMode.ScaleWithScreenSize;
-            panelSettings.referenceResolution = new Vector2Int(1920, 1080);
-
-            var consoleGo = new GameObject("Console");
-            consoleGo.transform.SetParent(transform);
-            _consoleDocument = consoleGo.AddComponent<UIDocument>();
-            _consoleDocument.panelSettings = panelSettings;
-
             _consoleRoot = new VisualElement
             {
                 style =
@@ -203,8 +222,9 @@ namespace TheEmptying.Presentation
                     left = 0,
                     right = 0,
                     top = 0,
-                    height = Length.Percent(50),
-                    backgroundColor = new Color(0f, 0f, 0f, 0.85f),
+                    width = Length.Percent(100),
+                    height = Length.Percent(40),
+                    backgroundColor = new Color(0f, 0f, 0f, 0.9f),
                     flexDirection = FlexDirection.Column,
                     paddingLeft = 8,
                     paddingRight = 8,
@@ -213,12 +233,32 @@ namespace TheEmptying.Presentation
                 }
             };
 
-            _consoleLog = new ScrollView { style = { flexGrow = 1 } };
-            _consoleInput = new TextField { style = { marginTop = 4 } };
+            _consoleLog = new ScrollView
+            {
+                style =
+                {
+                    flexGrow = 1,
+                    minHeight = 80,
+                    color = Color.white,
+                    backgroundColor = new Color(1f, 1f, 1f, 0.05f)
+                }
+            };
+
+            _consoleInput = new TextField
+            {
+                style =
+                {
+                    flexShrink = 0,
+                    height = 32,
+                    marginTop = 4,
+                    color = Color.white,
+                    backgroundColor = new Color(1f, 1f, 1f, 0.12f)
+                }
+            };
 
             _consoleRoot.Add(_consoleLog);
             _consoleRoot.Add(_consoleInput);
-            _consoleDocument.rootVisualElement.Add(_consoleRoot);
+            root.Add(_consoleRoot);
 
             _consoleInput.RegisterCallback<KeyDownEvent>(OnConsoleKeyDown, TrickleDown.TrickleDown);
 
@@ -280,6 +320,12 @@ namespace TheEmptying.Presentation
             _consoleLog.ScrollTo(label);
         }
 
+        /// <summary>The single entry point for opening/closing the console, so the input action and the PlayMode test both go through the same code.</summary>
+        public void ToggleConsole()
+        {
+            SetConsoleOpen(!_consoleOpen);
+        }
+
         private void SetConsoleOpen(bool open)
         {
             _consoleOpen = open;
@@ -287,7 +333,9 @@ namespace TheEmptying.Presentation
 
             if (open)
             {
-                _consoleInput.Focus();
+                // Focusing the same frame display flips to Flex can run before the
+                // panel has a laid-out element to focus; deferring one step is reliable.
+                _consoleInput.schedule.Execute(() => _consoleInput.Focus());
             }
         }
 
@@ -311,7 +359,7 @@ namespace TheEmptying.Presentation
             map.FindAction("SetSpeed1").performed += _ => { if (!_consoleOpen) SetSpeed(1); };
             map.FindAction("SetSpeed2").performed += _ => { if (!_consoleOpen) SetSpeed(2); };
             map.FindAction("SetSpeed3").performed += _ => { if (!_consoleOpen) SetSpeed(3); };
-            map.FindAction("ToggleConsole").performed += _ => SetConsoleOpen(!_consoleOpen);
+            map.FindAction("ToggleConsole").performed += _ => ToggleConsole();
 
             _actions.Enable();
         }
