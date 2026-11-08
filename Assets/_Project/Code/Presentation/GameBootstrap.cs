@@ -90,6 +90,17 @@ namespace TheEmptying.Presentation
         public IEnumerable<(string Text, Color Color)> ConsoleLogEntries =>
             _consoleLog.contentContainer.Children().OfType<Label>().Select(l => (l.text, l.resolvedStyle.color));
 
+        /// <summary>For tests: the log's current and maximum vertical scroll offset.</summary>
+        public float ConsoleLogScrollOffsetY => _consoleLog.scrollOffset.y;
+        public float ConsoleLogMaxScrollOffsetY => Mathf.Max(0f, _consoleLog.contentContainer.layout.height - _consoleLog.contentViewport.layout.height);
+
+        /// <summary>For tests: whether the console input (or its inner text box) currently has focus.</summary>
+        public bool IsConsoleInputFocused =>
+            _consoleInput.panel != null &&
+            _consoleInput.panel.focusController.focusedElement != null &&
+            (_consoleInput.panel.focusController.focusedElement == _consoleInput ||
+             _consoleInput.panel.focusController.focusedElement == _consoleInputTextBox);
+
         /// <summary>For tests: runs a command exactly as typing it and pressing Enter would, returning its result text.</summary>
         public string RunConsoleCommandForTesting(string input)
         {
@@ -393,11 +404,14 @@ namespace TheEmptying.Presentation
             _commandHistory.Add(input);
             _historyIndex = _commandHistory.Count;
 
-            AppendLog($"> {input}");
+            // Running a command always jumps the log to the bottom, even if the
+            // player had scrolled up to read older lines.
+            AppendLog($"> {input}", Color.white, forceScrollToBottom: true);
             string result = _simulation.Commands.Execute(input);
-            AppendLog(result);
+            AppendLog(result, Color.white, forceScrollToBottom: true);
 
             _consoleInput.SetValueWithoutNotify(string.Empty);
+            RefocusConsoleInput();
             return result;
         }
 
@@ -410,12 +424,23 @@ namespace TheEmptying.Presentation
 
             _historyIndex = Mathf.Clamp(_historyIndex + direction, 0, _commandHistory.Count - 1);
             _consoleInput.SetValueWithoutNotify(_commandHistory[_historyIndex]);
+            RefocusConsoleInput();
         }
 
-        private void AppendLog(string text) => AppendLog(text, Color.white);
-
-        private void AppendLog(string text, Color color)
+        /// <summary>Keeps the input ready to type into without clicking: deferred one step, since focusing the same frame the value changed isn't reliable.</summary>
+        private void RefocusConsoleInput()
         {
+            _consoleInput.schedule.Execute(() => _consoleInput.Focus());
+        }
+
+        private void AppendLog(string text) => AppendLog(text, Color.white, forceScrollToBottom: false);
+
+        private void AppendLog(string text, Color color) => AppendLog(text, color, forceScrollToBottom: false);
+
+        private void AppendLog(string text, Color color, bool forceScrollToBottom)
+        {
+            bool wasAtBottom = IsConsoleLogScrolledToBottom();
+
             var label = new Label(text)
             {
                 style =
@@ -433,7 +458,28 @@ namespace TheEmptying.Presentation
                 _consoleLog.contentContainer.RemoveAt(0);
             }
 
-            _consoleLog.ScrollTo(label);
+            // Running a command always follows to the bottom; a log line arriving
+            // on its own only follows if the player was already at the bottom, so
+            // it doesn't yank them away from older lines they scrolled up to read.
+            if (forceScrollToBottom || wasAtBottom)
+            {
+                ScrollConsoleLogToBottom();
+            }
+        }
+
+        /// <summary>The newly added line's height isn't resolved until after the next layout pass, so scrolling to the new bottom has to wait a step too.</summary>
+        private void ScrollConsoleLogToBottom()
+        {
+            _consoleLog.schedule.Execute(() =>
+            {
+                _consoleLog.scrollOffset = new Vector2(_consoleLog.scrollOffset.x, _consoleLog.contentContainer.layout.height);
+            });
+        }
+
+        private bool IsConsoleLogScrolledToBottom()
+        {
+            float maxScroll = Mathf.Max(0f, _consoleLog.contentContainer.layout.height - _consoleLog.contentViewport.layout.height);
+            return _consoleLog.scrollOffset.y >= maxScroll - 1f;
         }
 
         /// <summary>Mirrors Unity's own log messages into the console, color-coded and prefixed with the in-game time, subject to the current log filter.</summary>

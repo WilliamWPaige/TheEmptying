@@ -161,5 +161,47 @@ namespace TheEmptying.Tests.PlayMode
             bool found = bootstrap.ConsoleLogEntries.Any(e => e.Text.Contains(marker) && e.Color == Color.yellow);
             Assert.IsTrue(found, "Expected the warning to appear in the console log, colored yellow.");
         }
+
+        [UnityTest]
+        public IEnumerator RunningManyCommands_ScrollsTheLogToTheBottom()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            for (int i = 0; i < 50; i++)
+            {
+                bootstrap.RunConsoleCommandForTesting("help");
+                yield return null; // let each command's deferred scroll resolve
+            }
+
+            yield return null; // one more settle frame
+
+            Assert.That(bootstrap.ConsoleLogScrollOffsetY, Is.EqualTo(bootstrap.ConsoleLogMaxScrollOffsetY).Within(1f),
+                "After running commands, the log should be scrolled all the way to the bottom.");
+        }
+
+        [UnityTest]
+        public IEnumerator RunningACommand_KeepsTheInputFocusedAndEmpty()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            bootstrap.ToggleConsole();
+            yield return null;
+
+            bootstrap.RunConsoleCommandForTesting("help");
+            yield return null; // the refocus is deferred by one scheduled step
+
+            Assert.IsTrue(bootstrap.IsConsoleInputFocused, "Expected the input field to still have focus after running a command, with no click needed.");
+            Assert.AreEqual(string.Empty, bootstrap.ConsoleInputValue, "Expected the input field to be empty, ready for the next command.");
+        }
     }
 }
