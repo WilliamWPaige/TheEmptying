@@ -40,7 +40,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
             }
         }
 
-        public override string Execute(IRuleNodeContext context)
+        public override RuleExecutionResult Execute(IRuleNodeContext context)
         {
             string eventId = context.GetInput("event").AsText;
             var parameters = new List<(string Name, RuleValue Value)>();
@@ -63,7 +63,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
             }
 
             context.PostEvent(eventId, parameters);
-            return "then";
+            return RuleExecutionResult.Follow("then");
         }
     }
 }

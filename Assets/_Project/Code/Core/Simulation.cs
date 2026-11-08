@@ -4,6 +4,7 @@ using TheEmptying.Core.Console;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
+using TheEmptying.Core.Memory;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
 using TheEmptying.Core.Rules;
@@ -40,8 +41,17 @@ namespace TheEmptying.Core
         /// <summary>Every rule that compiled without errors. Empty until SimulationBuilder compiles rules.</summary>
         public RuleRegistry Rules { get; internal set; }
 
-        /// <summary>Activates and runs compiled rules. Null until SimulationBuilder builds it, after modules initialize.</summary>
-        public RuleRunner RuleRunner { get; internal set; }
+        /// <summary>
+        /// Activates and runs compiled rules. Null until SimulationBuilder (or
+        /// a test building one by hand) builds it. Public, not internal set,
+        /// since a hand-built Simulation (bypassing SimulationBuilder, as
+        /// rule-runner tests do for fine control) must still be able to wire
+        /// its own RuleRunner in so Step's resume hook finds it.
+        /// </summary>
+        public RuleRunner RuleRunner { get; set; }
+
+        /// <summary>Named flags and counters, owned by an entity or by the kingdom (EntityId.None).</summary>
+        public MemoryStore Memory { get; }
 
         /// <summary>
         /// Sections from a loaded save whose module is currently missing or
@@ -72,6 +82,7 @@ namespace TheEmptying.Core
             EventSerializers = new TypedEventSerializerRegistry();
             Content = new ContentDatabase();
             Rules = new RuleRegistry();
+            Memory = new MemoryStore(Entities);
 
             RegisterCalendarDefinitions();
             RegisterRuleDefinitions();
@@ -87,11 +98,13 @@ namespace TheEmptying.Core
             Modules.InitializeModules(isLoading);
         }
 
-        /// <summary>Runs exactly one tick: advance the clock, post calendar events, run the scheduler, deliver events.</summary>
+        /// <summary>Runs exactly one tick: advance the clock, resume due paused rule instances, post calendar events, run the scheduler, deliver events.</summary>
         public void Step()
         {
             TickBoundaries boundaries = Clock.Tick();
             long tick = Clock.CurrentTick;
+
+            RuleRunner?.ResumeDueInstances(tick);
 
             if (boundaries.NewHour)
             {

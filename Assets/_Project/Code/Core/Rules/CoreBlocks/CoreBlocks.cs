@@ -34,10 +34,17 @@ namespace TheEmptying.Core.Rules.CoreBlocks
             registry.Register(new BranchBlockType());
             registry.Register(new SequenceBlockType());
             registry.Register(new StopBlockType());
+            registry.Register(new WaitFlowBlockType());
 
             registry.Register(new PostEventActionBlockType());
             registry.Register(new WriteLogLineActionBlockType());
             registry.Register(new WriteHeraldLineActionBlockType());
+
+            registry.Register(new GetFlagBlockType());
+            registry.Register(new SetFlagBlockType());
+            registry.Register(new GetCounterBlockType());
+            registry.Register(new ChangeCounterBlockType());
+            registry.Register(new SetCounterBlockType());
         }
     }
 }

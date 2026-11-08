@@ -25,10 +25,10 @@ namespace TheEmptying.Core.Rules.CoreBlocks
             new FieldDefinition("text", RuleDataType.Text, string.Empty)
         };
 
-        public override string Execute(IRuleNodeContext context)
+        public override RuleExecutionResult Execute(IRuleNodeContext context)
         {
             context.Log(FormatText(context));
-            return "then";
+            return RuleExecutionResult.Follow("then");
         }
 
         internal static string FormatText(IRuleNodeContext context)

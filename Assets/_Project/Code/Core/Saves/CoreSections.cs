@@ -22,8 +22,10 @@ namespace TheEmptying.Core.Saves
         public const string EntitiesId = "core.entities";
         public const string SettingsId = "core.settings";
         public const string PendingEventsId = "core.pending_events";
+        public const string RuleRuntimeId = "core.rule_runtime";
+        public const string MemoryId = "core.memory";
 
-        public static readonly string[] AllIds = { ClockId, RandomId, EntitiesId, SettingsId, PendingEventsId };
+        public static readonly string[] AllIds = { ClockId, RandomId, EntitiesId, SettingsId, PendingEventsId, RuleRuntimeId, MemoryId };
 
         public static List<SaveSectionData> WriteAll(Simulation simulation, SettingsRegistry settings, TypedEventSerializerRegistry eventSerializers)
         {
@@ -33,7 +35,9 @@ namespace TheEmptying.Core.Saves
                 new SaveSectionData(RandomId, 1, WriteRandom(simulation)),
                 new SaveSectionData(EntitiesId, 1, WriteEntities(simulation)),
                 new SaveSectionData(SettingsId, 1, WriteSettings(settings)),
-                new SaveSectionData(PendingEventsId, 1, PendingEventsSection.Write(simulation.Events.ExportPending(), eventSerializers))
+                new SaveSectionData(PendingEventsId, 1, PendingEventsSection.Write(simulation.Events.ExportPending(), eventSerializers)),
+                new SaveSectionData(RuleRuntimeId, 1, WriteRuleRuntime(simulation, eventSerializers)),
+                new SaveSectionData(MemoryId, 1, MemorySection.Write(simulation.Memory))
             };
         }
 
@@ -64,6 +68,31 @@ namespace TheEmptying.Core.Saves
                 List<PostedEvent> events = PendingEventsSection.Read(pending.Data, eventSerializers);
                 simulation.Events.RestorePending(events);
             }
+
+            if (sections.TryGetValue(RuleRuntimeId, out SaveSectionData ruleRuntime) && simulation.RuleRunner != null)
+            {
+                (long nextInstanceId, var paused) = RuleRuntimeSection.Read(ruleRuntime.Data, eventSerializers);
+                simulation.RuleRunner.RestorePausedState(nextInstanceId, paused);
+            }
+
+            if (sections.TryGetValue(MemoryId, out SaveSectionData memory))
+            {
+                MemorySection.Read(memory.Data, simulation.Memory);
+            }
+        }
+
+        private static byte[] WriteRuleRuntime(Simulation simulation, TypedEventSerializerRegistry eventSerializers)
+        {
+            if (simulation.RuleRunner == null)
+            {
+                using var stream = new MemoryStream();
+                var writer = new SaveWriter(stream);
+                writer.WriteLong(1);
+                writer.WriteInt(0);
+                return stream.ToArray();
+            }
+
+            return RuleRuntimeSection.Write(simulation.RuleRunner.NextInstanceId, simulation.RuleRunner.PausedInstances, eventSerializers);
         }
 
         private static byte[] WriteClock(Simulation sim)

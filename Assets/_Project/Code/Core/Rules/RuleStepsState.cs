@@ -1,6 +1,6 @@
 namespace TheEmptying.Core.Rules
 {
-    /// <summary>Shared across one instance's whole run (including nested RunExecutionOutput sub-runs), so the step cap applies to the instance as a whole.</summary>
+    /// <summary>Lives only for one call to RuleRunner.RunFrom (one run segment, from a trigger or a resume to its next end or wait), so the step cap applies to that whole segment.</summary>
     internal sealed class RuleStepsState
     {
         public int Count;

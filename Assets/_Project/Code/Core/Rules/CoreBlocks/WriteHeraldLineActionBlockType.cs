@@ -35,12 +35,12 @@ namespace TheEmptying.Core.Rules.CoreBlocks
             yield return EventDefinitionId;
         }
 
-        public override string Execute(IRuleNodeContext context)
+        public override RuleExecutionResult Execute(IRuleNodeContext context)
         {
             string text = WriteLogLineActionBlockType.FormatText(context);
             context.Log(text);
             context.PostEvent(EventDefinitionId, new[] { ("text", RuleValue.Text(text)) });
-            return "then";
+            return RuleExecutionResult.Follow("then");
         }
     }
 }

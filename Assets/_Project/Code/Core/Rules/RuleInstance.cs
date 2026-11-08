@@ -5,12 +5,15 @@ using TheEmptying.Core.Events;
 namespace TheEmptying.Core.Rules
 {
     /// <summary>
-    /// One run of a rule: the triggering event (if any), local variables, and
-    /// the chain depth to stamp on any event this run posts. Lives only for
-    /// the duration of one synchronous run from trigger to completion.
+    /// One run of a rule: its Id, the triggering event (if any), local
+    /// variables, the chain depth to stamp on any event this run posts, and
+    /// its whole execution position. A fresh instance runs synchronously from
+    /// trigger to completion unless it waits, in which case its Position (and
+    /// everything else here) is exactly what gets saved and resumed.
     /// </summary>
     public sealed class RuleInstance
     {
+        public long InstanceId { get; }
         public string RuleId { get; }
 
         /// <summary>The event that triggered this run, or null for a schedule-triggered run.</summary>
@@ -19,10 +22,14 @@ namespace TheEmptying.Core.Rules
         /// <summary>The chain depth to stamp on any event this instance posts: the triggering event's depth plus 1, or 0 for a schedule-triggered run.</summary>
         public int PostedEventChainDepth { get; }
 
-        private readonly Dictionary<string, RuleValue> _locals = new Dictionary<string, RuleValue>();
+        public RuleExecutionPosition Position { get; } = new RuleExecutionPosition();
 
-        public RuleInstance(string ruleId, PostedEvent triggeringEvent, int postedEventChainDepth)
+        /// <summary>Internal: the save code (same assembly) restores these directly when loading a paused instance.</summary>
+        internal readonly Dictionary<string, RuleValue> Locals = new Dictionary<string, RuleValue>();
+
+        public RuleInstance(long instanceId, string ruleId, PostedEvent triggeringEvent, int postedEventChainDepth)
         {
+            InstanceId = instanceId;
             RuleId = ruleId;
             TriggeringEvent = triggeringEvent;
             PostedEventChainDepth = postedEventChainDepth;
@@ -30,12 +37,12 @@ namespace TheEmptying.Core.Rules
 
         public RuleValue GetLocal(string name, RuleDataType type)
         {
-            return _locals.TryGetValue(name, out RuleValue value) ? value : RuleValue.Default(type);
+            return Locals.TryGetValue(name, out RuleValue value) ? value : RuleValue.Default(type);
         }
 
         public void SetLocal(string name, RuleDataType type, RuleValue value)
         {
-            _locals[name] = value;
+            Locals[name] = value;
         }
 
         public bool TryGetEventParameter(string name, RuleDataType type, out RuleValue value)

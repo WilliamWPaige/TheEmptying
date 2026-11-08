@@ -23,9 +23,9 @@ namespace TheEmptying.Core.Rules.CoreBlocks
             new FieldDefinition("condition", RuleDataType.Bool, false)
         };
 
-        public override string Execute(IRuleNodeContext context)
+        public override RuleExecutionResult Execute(IRuleNodeContext context)
         {
-            return context.GetInput("condition").AsBool ? "true" : "false";
+            return RuleExecutionResult.Follow(context.GetInput("condition").AsBool ? "true" : "false");
         }
     }
 }

@@ -22,13 +22,11 @@ namespace TheEmptying.Core.Rules.CoreBlocks
 
         public override IReadOnlyList<FieldDefinition> Fields { get; } = Array.Empty<FieldDefinition>();
 
-        public override string Execute(IRuleNodeContext context)
+        private static readonly string[] OutputPorts = { "then1", "then2", "then3", "then4" };
+
+        public override RuleExecutionResult Execute(IRuleNodeContext context)
         {
-            context.RunExecutionOutput("then1");
-            context.RunExecutionOutput("then2");
-            context.RunExecutionOutput("then3");
-            context.RunExecutionOutput("then4");
-            return null;
+            return RuleExecutionResult.FollowInOrder(OutputPorts);
         }
     }
 }

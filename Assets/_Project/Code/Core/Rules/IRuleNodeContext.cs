@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TheEmptying.Core.Content;
+using TheEmptying.Core.Memory;
 using TheEmptying.Core.Randomness;
 
 namespace TheEmptying.Core.Rules
@@ -7,8 +8,8 @@ namespace TheEmptying.Core.Rules
     /// <summary>
     /// What a block's ComputeValue or Execute can do: read its own inputs
     /// (wire if connected, else field, settings read live), use the "rules"
-    /// random stream, log, post events, and read or write this instance's
-    /// local variables.
+    /// random stream, log, post events, read or write this instance's local
+    /// variables, and read or write flags and counters.
     /// </summary>
     public interface IRuleNodeContext
     {
@@ -20,6 +21,10 @@ namespace TheEmptying.Core.Rules
 
         SimRandom Random { get; }
         SettingsRegistry Settings { get; }
+        MemoryStore Memory { get; }
+
+        /// <summary>The current simulation tick. Used by Wait to compute its resume tick.</summary>
+        long CurrentTick { get; }
 
         void Log(string message);
 
@@ -30,8 +35,5 @@ namespace TheEmptying.Core.Rules
 
         /// <summary>Reads a named parameter from the instance's triggering event's data, if any.</summary>
         bool TryGetEventParameter(string name, RuleDataType type, out RuleValue value);
-
-        /// <summary>Runs the chain wired to a named execution output to completion, sharing this instance's step budget. Used by blocks like Sequence that run more than one branch.</summary>
-        void RunExecutionOutput(string portName);
     }
 }

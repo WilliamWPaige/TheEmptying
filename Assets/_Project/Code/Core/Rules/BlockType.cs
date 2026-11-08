@@ -68,12 +68,12 @@ namespace TheEmptying.Core.Rules
 
         /// <summary>
         /// Only meaningful for Kind == Action or Flow: runs one step. Returns
-        /// the execution output port name to follow next, or null to end this
-        /// path.
+        /// what the runner should do next: follow one output, follow several
+        /// in order (Sequence), wait, or end this path.
         /// </summary>
-        public virtual string Execute(IRuleNodeContext context)
+        public virtual RuleExecutionResult Execute(IRuleNodeContext context)
         {
-            return null;
+            return RuleExecutionResult.End;
         }
     }
 }

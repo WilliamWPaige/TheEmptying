@@ -33,12 +33,12 @@ namespace TheEmptying.Core.Rules.CoreBlocks
             };
         }
 
-        public override string Execute(IRuleNodeContext context)
+        public override RuleExecutionResult Execute(IRuleNodeContext context)
         {
             string name = context.GetInput("name").AsText;
             RuleValue value = context.GetInput("value");
             context.SetLocal(name, _type, value);
-            return "then";
+            return RuleExecutionResult.Follow("then");
         }
 
         private static object DefaultValueFor(RuleDataType type)

@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using TheEmptying.Core.Content;
+using TheEmptying.Core.Memory;
 using TheEmptying.Core.Randomness;
 
 namespace TheEmptying.Core.Rules
@@ -15,22 +16,22 @@ namespace TheEmptying.Core.Rules
         private readonly RuleRunner _runner;
         private readonly RuleInstance _instance;
         private readonly ActivatedRule _activated;
-        private readonly RuleStepsState _steps;
         private readonly Dictionary<string, RuleValue> _valueCache = new Dictionary<string, RuleValue>();
 
         private string _currentNodeId;
 
-        public RuleStepContext(RuleRunner runner, RuleInstance instance, ActivatedRule activated, string currentNodeId, RuleStepsState steps)
+        public RuleStepContext(RuleRunner runner, RuleInstance instance, ActivatedRule activated, string currentNodeId)
         {
             _runner = runner;
             _instance = instance;
             _activated = activated;
             _currentNodeId = currentNodeId;
-            _steps = steps;
         }
 
         public SimRandom Random => _runner.RandomStream;
         public SettingsRegistry Settings => _runner.Settings;
+        public MemoryStore Memory => _runner.Memory;
+        public long CurrentTick => _runner.CurrentTick;
 
         public RuleValue GetInput(string name)
         {
@@ -69,14 +70,6 @@ namespace TheEmptying.Core.Rules
         public bool TryGetEventParameter(string name, RuleDataType type, out RuleValue value)
         {
             return _instance.TryGetEventParameter(name, type, out value);
-        }
-
-        public void RunExecutionOutput(string portName)
-        {
-            if (_activated.ExecOutputTargets.TryGetValue((_currentNodeId, portName), out string nextNodeId))
-            {
-                _runner.RunFrom(nextNodeId, _instance, _activated, _steps);
-            }
         }
 
         private RuleValue ResolveNodeValue(string nodeId)

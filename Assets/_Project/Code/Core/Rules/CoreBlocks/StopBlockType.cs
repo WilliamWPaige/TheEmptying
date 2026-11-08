@@ -17,6 +17,6 @@ namespace TheEmptying.Core.Rules.CoreBlocks
 
         public override IReadOnlyList<FieldDefinition> Fields { get; } = Array.Empty<FieldDefinition>();
 
-        public override string Execute(IRuleNodeContext context) => null;
+        public override RuleExecutionResult Execute(IRuleNodeContext context) => RuleExecutionResult.End;
     }
 }

@@ -130,6 +130,49 @@ namespace TheEmptying.Tests.EditMode.Console
         }
 
         [Test]
+        public void Inspect_AlsoListsTheEntitysFlagsAndCounters()
+        {
+            var simulation = new Simulation(1);
+            BuiltInConsoleCommands.RegisterAll(simulation, new FakePresentationCommands());
+
+            EntityId id = simulation.Entities.Create(EntityKind.Person);
+            simulation.Memory.SetFlag(id, "known", true);
+            simulation.Memory.SetCounter(id, "visits", 3);
+
+            string result = simulation.Commands.Execute($"inspect {id}");
+
+            StringAssert.Contains("[memory] flag.known = true", result);
+            StringAssert.Contains("[memory] counter.visits = 3", result);
+        }
+
+        [Test]
+        public void Memory_ListsAnEntitysFlagsAndCounters()
+        {
+            var simulation = new Simulation(1);
+            BuiltInConsoleCommands.RegisterAll(simulation, new FakePresentationCommands());
+
+            EntityId id = simulation.Entities.Create(EntityKind.Person);
+            simulation.Memory.SetFlag(id, "known", true);
+
+            string result = simulation.Commands.Execute($"memory {id}");
+
+            StringAssert.Contains("flag.known = true", result);
+        }
+
+        [Test]
+        public void Memory_Kingdom_ListsKingdomOwnedFlagsAndCounters()
+        {
+            var simulation = new Simulation(1);
+            BuiltInConsoleCommands.RegisterAll(simulation, new FakePresentationCommands());
+
+            simulation.Memory.SetCounter(EntityId.None, "gold", 42);
+
+            string result = simulation.Commands.Execute("memory kingdom");
+
+            StringAssert.Contains("counter.gold = 42", result);
+        }
+
+        [Test]
         public void Speed_WithWrongArguments_PrintsItsOwnUsageLine_NotTheFullHelpList()
         {
             var simulation = new Simulation(1);

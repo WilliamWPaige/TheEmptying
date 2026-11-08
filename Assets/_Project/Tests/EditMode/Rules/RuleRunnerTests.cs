@@ -95,8 +95,9 @@ namespace TheEmptying.Tests.EditMode.Rules
 
             (RuleRegistry registry, RuleCompileReport compileReport) = RuleCompiler.Compile(database, simulation.Blocks, simulation.Settings, simulation.EventDefinitions, errorMode);
 
-            var runner = new RuleRunner(registry, simulation.Events, simulation.Scheduler, simulation.Random, simulation.Settings, simulation.EventDefinitions, logSink, errorMode, () => simulation.Clock.CurrentTick);
+            var runner = new RuleRunner(registry, simulation.Events, simulation.Scheduler, simulation.Random, simulation.Settings, simulation.EventDefinitions, simulation.Memory, logSink, errorMode, () => simulation.Clock.CurrentTick);
             runner.Activate();
+            simulation.RuleRunner = runner;
 
             return (simulation, runner, compileReport);
         }

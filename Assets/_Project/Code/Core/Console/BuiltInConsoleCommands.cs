@@ -110,7 +110,30 @@ namespace TheEmptying.Core.Console
                 }
 
                 List<string> lines = simulation.Modules.Inspect(id).ToList();
+                lines.AddRange(simulation.Memory.Describe(id).Select(line => $"[memory] {line}"));
                 return lines.Count == 0 ? $"{id}: no module has data for this entity." : string.Join("\n", lines);
+            }));
+
+            commands.Register(new ConsoleCommand("memory", "memory <entityId|kingdom> - lists an entity's (or the kingdom's) flags and counters.", args =>
+            {
+                if (args.Length != 1)
+                {
+                    return "Usage: memory <entityId|kingdom>";
+                }
+
+                EntityId owner;
+                if (string.Equals(args[0], "kingdom", StringComparison.OrdinalIgnoreCase))
+                {
+                    owner = EntityId.None;
+                }
+                else if (!EntityId.TryParse(args[0], out owner))
+                {
+                    return "Usage: memory <entityId|kingdom> (e.g. e12.3)";
+                }
+
+                List<string> lines = simulation.Memory.Describe(owner).ToList();
+                string label = owner.IsNone ? "kingdom" : owner.ToString();
+                return lines.Count == 0 ? $"{label}: no flags or counters." : string.Join("\n", lines);
             }));
 
             commands.Register(new ConsoleCommand("save", "save <name> - saves the game.", args =>

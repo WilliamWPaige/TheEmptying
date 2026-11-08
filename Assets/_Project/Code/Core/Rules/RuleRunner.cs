@@ -1,7 +1,9 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Events;
+using TheEmptying.Core.Memory;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
 using TheEmptying.Core.Scheduling;
@@ -12,8 +14,10 @@ namespace TheEmptying.Core.Rules
     /// <summary>
     /// Activates every compiled, enabled rule (event triggers subscribe through
     /// the event bus; time triggers register with the scheduler), and runs
-    /// instances when they fire. Created and activated by SimulationBuilder,
-    /// after modules initialize.
+    /// instances when they fire. An instance's whole position (current node
+    /// plus a continuation stack) is plain data on the RuleInstance itself, so
+    /// a Wait can pause it anywhere and PauseInstance below can save it as-is.
+    /// Created and activated by SimulationBuilder, after modules initialize.
     /// </summary>
     public sealed class RuleRunner
     {
@@ -43,6 +47,13 @@ namespace TheEmptying.Core.Rules
             public void Update(long tick) => _onFire();
         }
 
+        private sealed class PausedEntry
+        {
+            public string RuleId;
+            public long ResumeTick;
+            public RuleInstance Instance;
+        }
+
         private readonly RuleRegistry _registry;
         private readonly EventBus _events;
         private readonly Scheduler _scheduler;
@@ -53,9 +64,11 @@ namespace TheEmptying.Core.Rules
 
         private readonly Dictionary<string, ActivatedRule> _activated = new Dictionary<string, ActivatedRule>();
         private readonly List<RuleRuntimeReport> _reports = new List<RuleRuntimeReport>();
+        private readonly List<PausedEntry> _paused = new List<PausedEntry>();
 
         private readonly Dictionary<string, int> _firesThisTick = new Dictionary<string, int>();
         private long _firesTickStamp = long.MinValue;
+        private long _nextInstanceId = 1;
 
         private readonly RandomService _randomService;
         private SimRandom _randomStream;
@@ -69,8 +82,17 @@ namespace TheEmptying.Core.Rules
         internal SimRandom RandomStream => _randomStream ??= _randomService.GetStream("rules");
 
         internal SettingsRegistry Settings { get; }
+        internal MemoryStore Memory { get; }
+        internal long CurrentTick => _currentTick();
 
         public IReadOnlyList<RuleRuntimeReport> Reports => _reports;
+
+        /// <summary>For saving: the instance Id counter.</summary>
+        internal long NextInstanceId => _nextInstanceId;
+
+        /// <summary>For saving: every currently paused instance, in instance Id order.</summary>
+        internal IEnumerable<(string RuleId, long ResumeTick, RuleInstance Instance)> PausedInstances =>
+            _paused.OrderBy(p => p.Instance.InstanceId).Select(p => (p.RuleId, p.ResumeTick, p.Instance));
 
         public RuleRunner(
             RuleRegistry registry,
@@ -79,6 +101,7 @@ namespace TheEmptying.Core.Rules
             RandomService randomService,
             SettingsRegistry settings,
             EventDefinitionRegistry eventDefinitions,
+            MemoryStore memory,
             ILogSink logSink,
             ErrorMode errorMode,
             Func<long> currentTick)
@@ -89,6 +112,7 @@ namespace TheEmptying.Core.Rules
             _randomService = randomService ?? throw new ArgumentNullException(nameof(randomService));
             Settings = settings ?? throw new ArgumentNullException(nameof(settings));
             _eventDefinitions = eventDefinitions ?? throw new ArgumentNullException(nameof(eventDefinitions));
+            Memory = memory ?? throw new ArgumentNullException(nameof(memory));
             _logSink = logSink ?? NullLogSink.Instance;
             _errorMode = errorMode;
             _currentTick = currentTick ?? throw new ArgumentNullException(nameof(currentTick));
@@ -219,7 +243,8 @@ namespace TheEmptying.Core.Rules
                 return;
             }
 
-            var instance = new RuleInstance(activated.Rule.Id, posted, posted.ChainDepth + 1);
+            var instance = new RuleInstance(_nextInstanceId++, activated.Rule.Id, posted, posted.ChainDepth + 1);
+            instance.Position.CurrentNodeId = activated.TriggerNextNodeId;
             RunInstanceGuarded(instance, activated, tick);
         }
 
@@ -237,8 +262,37 @@ namespace TheEmptying.Core.Rules
                 return;
             }
 
-            var instance = new RuleInstance(activated.Rule.Id, null, 0);
+            var instance = new RuleInstance(_nextInstanceId++, activated.Rule.Id, null, 0);
+            instance.Position.CurrentNodeId = activated.TriggerNextNodeId;
             RunInstanceGuarded(instance, activated, tick);
+        }
+
+        /// <summary>
+        /// Resumes every instance due this tick or earlier, in instance Id
+        /// order, before scheduled systems run. Called by Simulation.Step at
+        /// the start of each tick.
+        /// </summary>
+        public void ResumeDueInstances(long tick)
+        {
+            if (_paused.Count == 0)
+            {
+                return;
+            }
+
+            List<PausedEntry> due = _paused.Where(p => p.ResumeTick <= tick).OrderBy(p => p.Instance.InstanceId).ToList();
+
+            foreach (PausedEntry entry in due)
+            {
+                _paused.Remove(entry);
+
+                if (!_activated.TryGetValue(entry.RuleId, out ActivatedRule activated) || !activated.IsActive)
+                {
+                    Report(entry.RuleId, null, $"Instance {entry.Instance.InstanceId} was due to resume but rule '{entry.RuleId}' is switched off or no longer exists; it was dropped.", tick);
+                    continue;
+                }
+
+                RunInstanceGuarded(entry.Instance, activated, tick);
+            }
         }
 
         private bool TryReserveFireSlot(string ruleId, long tick)
@@ -272,7 +326,7 @@ namespace TheEmptying.Core.Rules
             try
             {
                 var steps = new RuleStepsState();
-                RunFrom(activated.TriggerNextNodeId, instance, activated, steps);
+                RunFrom(instance, activated, steps);
             }
             catch (RuleNodeExecutionException ex)
             {
@@ -284,19 +338,34 @@ namespace TheEmptying.Core.Rules
             }
         }
 
-        /// <summary>Walks execution wires from startNodeId to completion. Shared across RunExecutionOutput sub-runs via the same RuleStepsState, so the step cap applies to the whole instance.</summary>
-        internal void RunFrom(string startNodeId, RuleInstance instance, ActivatedRule activated, RuleStepsState steps)
+        /// <summary>
+        /// Runs instance.Position forward until it ends or waits. Pure loop,
+        /// no recursion: a Sequence pushes a continuation frame instead of
+        /// calling back in, so the whole position stays plain data the entire
+        /// time and a Wait can snapshot it exactly as it stands.
+        /// </summary>
+        private void RunFrom(RuleInstance instance, ActivatedRule activated, RuleStepsState steps)
         {
-            string currentNodeId = startNodeId;
+            RuleExecutionPosition position = instance.Position;
 
-            while (currentNodeId != null)
+            while (true)
             {
+                if (position.CurrentNodeId == null)
+                {
+                    if (!TryAdvanceFromContinuation(position, activated))
+                    {
+                        return;
+                    }
+
+                    continue;
+                }
+
                 if (steps.Count >= MaxStepsPerInstance)
                 {
                     if (!steps.CapReported)
                     {
                         steps.CapReported = true;
-                        Report(activated.Rule.Id, currentNodeId, $"Rule '{activated.Rule.Id}' exceeded the maximum of {MaxStepsPerInstance} steps in one run; it was stopped.", _currentTick());
+                        Report(activated.Rule.Id, position.CurrentNodeId, $"Rule '{activated.Rule.Id}' exceeded the maximum of {MaxStepsPerInstance} steps in one run; it was stopped.", _currentTick());
                     }
 
                     return;
@@ -304,13 +373,16 @@ namespace TheEmptying.Core.Rules
 
                 steps.Count++;
 
-                CompiledRuleNode node = activated.Rule.Nodes[currentNodeId];
-                var context = new RuleStepContext(this, instance, activated, currentNodeId, steps);
+                string nodeId = position.CurrentNodeId;
+                position.CurrentNodeId = null;
 
-                string outputPort;
+                CompiledRuleNode node = activated.Rule.Nodes[nodeId];
+                var context = new RuleStepContext(this, instance, activated, nodeId);
+
+                RuleExecutionResult result;
                 try
                 {
-                    outputPort = node.BlockType.Execute(context);
+                    result = node.BlockType.Execute(context);
                 }
                 catch (RuleNodeExecutionException)
                 {
@@ -318,17 +390,121 @@ namespace TheEmptying.Core.Rules
                 }
                 catch (Exception ex)
                 {
-                    throw new RuleNodeExecutionException(currentNodeId, ex);
+                    throw new RuleNodeExecutionException(nodeId, ex);
                 }
 
-                string nextNodeId = null;
-                if (outputPort != null)
+                switch (result)
                 {
-                    activated.ExecOutputTargets.TryGetValue((currentNodeId, outputPort), out nextNodeId);
+                    case FollowExecutionResult follow:
+                        position.CurrentNodeId = ResolveNext(activated, nodeId, follow.PortName);
+                        break;
+
+                    case FollowInOrderExecutionResult followMany:
+                        PushContinuation(position, nodeId, followMany.PortNames);
+                        break;
+
+                    case WaitExecutionResult wait:
+                        position.CurrentNodeId = ResolveNext(activated, nodeId, wait.ResumePortName);
+                        PauseInstance(instance, activated.Rule.Id, wait.ResumeTick);
+                        return;
+
+                    default:
+                        position.CurrentNodeId = null;
+                        break;
+                }
+            }
+        }
+
+        private static bool TryAdvanceFromContinuation(RuleExecutionPosition position, ActivatedRule activated)
+        {
+            while (position.ContinuationStack.Count > 0)
+            {
+                RuleContinuationFrame frame = position.ContinuationStack[position.ContinuationStack.Count - 1];
+                if (frame.RemainingPorts.Count == 0)
+                {
+                    position.ContinuationStack.RemoveAt(position.ContinuationStack.Count - 1);
+                    continue;
                 }
 
-                currentNodeId = nextNodeId;
+                string portName = frame.RemainingPorts[0];
+                frame.RemainingPorts.RemoveAt(0);
+
+                string nextNodeId = ResolveNext(activated, frame.NodeId, portName);
+                if (nextNodeId != null)
+                {
+                    position.CurrentNodeId = nextNodeId;
+                    return true;
+                }
             }
+
+            return false;
+        }
+
+        private static void PushContinuation(RuleExecutionPosition position, string nodeId, IReadOnlyList<string> portNames)
+        {
+            if (portNames == null || portNames.Count == 0)
+            {
+                return;
+            }
+
+            position.ContinuationStack.Add(new RuleContinuationFrame(nodeId, new List<string>(portNames)));
+        }
+
+        private static string ResolveNext(ActivatedRule activated, string fromNodeId, string portName)
+        {
+            if (portName == null)
+            {
+                return null;
+            }
+
+            return activated.ExecOutputTargets.TryGetValue((fromNodeId, portName), out string next) ? next : null;
+        }
+
+        private void PauseInstance(RuleInstance instance, string ruleId, long resumeTick)
+        {
+            _paused.Add(new PausedEntry { RuleId = ruleId, ResumeTick = resumeTick, Instance = instance });
+        }
+
+        /// <summary>For loading: restores the instance Id counter and every paused instance, dropping (and reporting) any whose rule or node no longer exists.</summary>
+        internal void RestorePausedState(long nextInstanceId, IEnumerable<(string RuleId, long ResumeTick, RuleInstance Instance)> paused)
+        {
+            _nextInstanceId = nextInstanceId;
+            _paused.Clear();
+
+            foreach ((string ruleId, long resumeTick, RuleInstance instance) in paused)
+            {
+                if (!_activated.TryGetValue(ruleId, out ActivatedRule activated))
+                {
+                    Report(ruleId, null, $"Saved paused instance {instance.InstanceId} references rule '{ruleId}', which no longer exists; it was dropped.", resumeTick);
+                    continue;
+                }
+
+                if (!PositionNodesExist(activated, instance.Position))
+                {
+                    Report(ruleId, null, $"Saved paused instance {instance.InstanceId}'s rule '{ruleId}' changed shape (one of its nodes no longer exists); it was dropped.", resumeTick);
+                    continue;
+                }
+
+                _paused.Add(new PausedEntry { RuleId = ruleId, ResumeTick = resumeTick, Instance = instance });
+            }
+        }
+
+        private static bool PositionNodesExist(ActivatedRule activated, RuleExecutionPosition position)
+        {
+            if (position.CurrentNodeId != null && !activated.Rule.Nodes.ContainsKey(position.CurrentNodeId))
+            {
+                return false;
+            }
+
+            foreach (RuleContinuationFrame frame in position.ContinuationStack)
+            {
+                if (!activated.Rule.Nodes.ContainsKey(frame.NodeId))
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
 
         internal void Log(string message) => _logSink.Log(message);
