@@ -38,6 +38,7 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
         private readonly VisualElement _header;
         private readonly Label _title;
         private readonly VisualElement _portsAndFields;
+        private readonly VisualElement _selectionHalo;
         private readonly List<Action<RuleNode>> _fieldRefreshers = new List<Action<RuleNode>>();
 
         private bool _isSelected;
@@ -54,6 +55,25 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
             style.backgroundColor = new Color(0.16f, 0.16f, 0.18f, 0.97f);
             style.borderTopWidth = style.borderBottomWidth = style.borderLeftWidth = style.borderRightWidth = 1f;
             SetBorderColor(DefaultBorderColor);
+
+            // A separate, slightly larger hollow outline so selection (outer glow) and
+            // validation (the node's own border color) can both show at once.
+            _selectionHalo = new VisualElement
+            {
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    position = Position.Absolute,
+                    left = -3, top = -3, right = -3, bottom = -3,
+                    borderTopWidth = 2, borderBottomWidth = 2, borderLeftWidth = 2, borderRightWidth = 2,
+                    borderTopColor = RuleCanvasColors.SelectionHighlight,
+                    borderBottomColor = RuleCanvasColors.SelectionHighlight,
+                    borderLeftColor = RuleCanvasColors.SelectionHighlight,
+                    borderRightColor = RuleCanvasColors.SelectionHighlight,
+                    display = DisplayStyle.None
+                }
+            };
+            Add(_selectionHalo);
 
             _header = new VisualElement
             {
@@ -79,29 +99,25 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                 _portsAndFields.Add(BuildPortLabel(port));
             }
 
-            float fieldY = NodeViewModel.HeaderHeight + NodeViewModel.PortsTopPadding +
-                           Math.Max(node.InputPorts.Count, node.OutputPorts.Count) * NodeViewModel.PortRowHeight;
-
-            if (BlockFamilyCatalog.TryGetFamilyForBlockType(BlockFamilyCatalog.DetectFamilies(_model.Context.Blocks), node.Node.BlockTypeId, out BlockFamily family))
+            if (node.HasVariantDropdown)
             {
-                _portsAndFields.Add(BuildVariantDropdown(family, node.Node.BlockTypeId, fieldY));
-                fieldY += NodeViewModel.FieldRowHeight + 2f;
+                _portsAndFields.Add(BuildVariantDropdown(node.Family, node.Node.BlockTypeId, node.VariantDropdownY));
             }
 
             if (!node.IsMissing)
             {
-                foreach (FieldDefinition field in node.BlockType.Fields)
+                for (int i = 0; i < node.BlockType.Fields.Count; i++)
                 {
-                    _portsAndFields.Add(BuildFieldRow(field, node, fieldY));
-                    fieldY += NodeViewModel.FieldRowHeight + 2f;
+                    _portsAndFields.Add(BuildFieldRow(node.BlockType.Fields[i], node, node.FieldRowY[i]));
                 }
             }
             else
             {
+                int i = 0;
                 foreach ((string name, string displayValue) in node.FieldSummaries)
                 {
-                    _portsAndFields.Add(BuildReadOnlyLabel($"{name}: {displayValue}", fieldY));
-                    fieldY += NodeViewModel.FieldRowHeight;
+                    _portsAndFields.Add(BuildReadOnlyLabel($"{name}: {displayValue}", node.FieldRowY[i]));
+                    i++;
                 }
             }
 
@@ -162,7 +178,7 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                 style = { position = Position.Absolute, left = 4, top = y, width = NodeViewModel.Width - 8, height = NodeViewModel.FieldRowHeight + 4, flexDirection = FlexDirection.Row }
             };
 
-            var label = new Label(field.Name) { style = { fontSize = 9, color = new Color(0.7f, 0.7f, 0.7f), width = 44, overflow = Overflow.Hidden, unityTextAlign = TextAnchor.MiddleLeft } };
+            var label = new Label(field.Name) { style = { fontSize = 9, color = new Color(0.7f, 0.7f, 0.7f), width = node.LabelColumnWidth, overflow = Overflow.Hidden, unityTextAlign = TextAnchor.MiddleLeft } };
             row.Add(label);
 
             VisualElement typedControl = BuildTypedControl(field);
@@ -382,9 +398,11 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                 style =
                 {
                     position = Position.Absolute,
-                    top = port.LocalOffset.y - 7,
+                    top = NodeViewModel.PortLabelTop(port),
+                    height = NodeViewModel.PortLabelHeight,
                     fontSize = 9,
-                    color = new Color(0.85f, 0.85f, 0.85f)
+                    color = new Color(0.85f, 0.85f, 0.85f),
+                    unityTextAlign = isInput ? TextAnchor.MiddleLeft : TextAnchor.MiddleRight
                 }
             };
 
@@ -473,15 +491,19 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
 
         private void ApplyBorder()
         {
-            Color color = _isSelected ? RuleCanvasColors.SelectionHighlight
-                : _validationState == ValidationState.Error ? ErrorBorderColor
+            // The node's own border always reflects validation (red/yellow/default);
+            // selection is a separate outer halo, so a selected node with a warning
+            // still reads as both at once.
+            Color color = _validationState == ValidationState.Error ? ErrorBorderColor
                 : _validationState == ValidationState.Warning ? WarningBorderColor
                 : DefaultBorderColor;
 
-            float width = _isSelected || _validationState != ValidationState.None ? 2f : 1f;
+            float width = _validationState != ValidationState.None ? 2f : 1f;
 
             SetBorderColor(color);
             SetBorderWidth(width);
+
+            _selectionHalo.style.display = _isSelected ? DisplayStyle.Flex : DisplayStyle.None;
         }
 
         private void SetBorderColor(Color color)

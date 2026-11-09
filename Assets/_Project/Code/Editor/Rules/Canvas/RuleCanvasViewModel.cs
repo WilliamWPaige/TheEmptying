@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Rules;
+using TheEmptying.Editor.Rules.Editing;
 using UnityEngine;
 
 namespace TheEmptying.Editor.Rules.Canvas
@@ -60,6 +61,9 @@ namespace TheEmptying.Editor.Rules.Canvas
             _nodes.Clear();
             _nodesById.Clear();
 
+            IReadOnlyList<BlockFamily> families = BlockFamilyCatalog.DetectFamilies(Blocks);
+            float labelColumnWidth = NodeViewModel.ComputeLabelColumnWidth(Blocks);
+
             var blockTypesById = new Dictionary<string, BlockType>();
             foreach (RuleNode node in Rule.Nodes ?? Enumerable.Empty<RuleNode>())
             {
@@ -71,7 +75,13 @@ namespace TheEmptying.Editor.Rules.Canvas
             {
                 BlockType blockType = blockTypesById[node.Id];
                 IReadOnlyList<PortViewModel> inferredPorts = blockType == null ? InferPorts(node.Id, blockTypesById) : null;
-                var nodeView = new NodeViewModel(node, blockType, inferredPorts);
+                BlockFamily family = null;
+                if (blockType != null)
+                {
+                    BlockFamilyCatalog.TryGetFamilyForBlockType(families, blockType.Id, out family);
+                }
+
+                var nodeView = new NodeViewModel(node, blockType, inferredPorts, family, labelColumnWidth);
                 _nodes.Add(nodeView);
                 _nodesById[node.Id] = nodeView;
             }

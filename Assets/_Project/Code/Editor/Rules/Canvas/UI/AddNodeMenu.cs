@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using TheEmptying.Core.Rules;
 using TheEmptying.Editor.Rules.Editing;
 using UnityEditor.IMGUI.Controls;
@@ -14,24 +13,33 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
     /// in Unity's Graph Toolkit). A family (Get Local, Set Local, Read Event
     /// Parameter, ...) appears once; picking it adds the default (Number)
     /// variant, which the node's own type dropdown can then swap.
+    ///
+    /// The entry list comes from AddNodeMenuModel (plain, EditMode-tested)
+    /// and each dropdown item carries its entry directly (EntryDropdownItem),
+    /// so selection never goes through an id-to-block lookup table that
+    /// could go stale if AdvancedDropdown ever rebuilds its tree more than
+    /// once for the same Show() call.
     /// </summary>
     internal sealed class AddNodeMenu : AdvancedDropdown
     {
-        public event Action<BlockType> BlockTypeChosen;
+        public event Action<AddNodeMenuEntry> EntryChosen;
 
-        private readonly Dictionary<int, BlockType> _blockTypesById = new Dictionary<int, BlockType>();
-        private int _nextId = 1;
+        private sealed class EntryDropdownItem : AdvancedDropdownItem
+        {
+            public AddNodeMenuEntry Entry { get; }
 
-        private readonly BlockRegistry _blocks;
-        private readonly IReadOnlyList<BlockFamily> _families;
-        private readonly Func<BlockType, bool> _filter;
+            public EntryDropdownItem(AddNodeMenuEntry entry) : base(entry.DisplayName)
+            {
+                Entry = entry;
+            }
+        }
+
+        private readonly IReadOnlyList<AddNodeMenuEntry> _entries;
 
         public AddNodeMenu(BlockRegistry blocks, IReadOnlyList<BlockFamily> families, Func<BlockType, bool> filter = null)
             : base(new AdvancedDropdownState())
         {
-            _blocks = blocks;
-            _families = families;
-            _filter = filter;
+            _entries = AddNodeMenuModel.BuildEntries(blocks, families, filter);
             minimumSize = new Vector2(260f, 320f);
         }
 
@@ -40,43 +48,10 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
             var root = new AdvancedDropdownItem("Add Node");
             var byCategory = new Dictionary<string, AdvancedDropdownItem>(StringComparer.Ordinal);
 
-            var familyBlockTypeIds = new HashSet<string>(_families.SelectMany(f => f.VariantsByType.Values.Select(v => v.Id)));
-
-            foreach (IGrouping<string, BlockType> group in _blocks.ListByCategory())
+            foreach (AddNodeMenuEntry entry in _entries)
             {
-                foreach (BlockType blockType in group)
-                {
-                    if (familyBlockTypeIds.Contains(blockType.Id))
-                    {
-                        continue; // represented by its family entry instead
-                    }
-
-                    if (_filter != null && !_filter(blockType))
-                    {
-                        continue;
-                    }
-
-                    AdvancedDropdownItem categoryItem = GetOrCreateCategory(root, byCategory, blockType.Category);
-                    var item = new AdvancedDropdownItem(blockType.DisplayName) { id = _nextId };
-                    _blockTypesById[_nextId] = blockType;
-                    _nextId++;
-                    categoryItem.AddChild(item);
-                }
-            }
-
-            foreach (BlockFamily family in _families)
-            {
-                BlockType defaultVariant = family.VariantsByType.Values.FirstOrDefault(v => _filter == null || _filter(v));
-                if (defaultVariant == null)
-                {
-                    continue;
-                }
-
-                AdvancedDropdownItem categoryItem = GetOrCreateCategory(root, byCategory, family.Category);
-                var item = new AdvancedDropdownItem(family.DisplayName) { id = _nextId };
-                _blockTypesById[_nextId] = defaultVariant;
-                _nextId++;
-                categoryItem.AddChild(item);
+                AdvancedDropdownItem categoryItem = GetOrCreateCategory(root, byCategory, entry.Category);
+                categoryItem.AddChild(new EntryDropdownItem(entry));
             }
 
             return root;
@@ -97,9 +72,9 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
 
         protected override void ItemSelected(AdvancedDropdownItem item)
         {
-            if (_blockTypesById.TryGetValue(item.id, out BlockType blockType))
+            if (item is EntryDropdownItem entryItem)
             {
-                BlockTypeChosen?.Invoke(blockType);
+                EntryChosen?.Invoke(entryItem.Entry);
             }
         }
     }

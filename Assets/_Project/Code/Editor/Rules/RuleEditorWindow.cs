@@ -116,13 +116,13 @@ namespace TheEmptying.Editor.Rules
 
         private VisualElement BuildCenterPanel()
         {
-            var panel = new VisualElement { style = { flexGrow = 1, flexDirection = FlexDirection.Column } };
+            var panel = new VisualElement { style = { flexGrow = 1, flexDirection = FlexDirection.Column, overflow = Overflow.Hidden } };
 
-            var propsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingLeft = 4, paddingTop = 4, paddingBottom = 4, alignItems = Align.Center } };
-            _idField = new TextField("Id") { style = { width = 240 } };
-            _nameField = new TextField("Name") { style = { width = 220 } };
-            _enabledToggle = new Toggle("Enabled");
-            _descriptionField = new TextField("Description") { style = { flexGrow = 1 } };
+            var propsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, paddingLeft = 4, paddingTop = 4, paddingBottom = 4, alignItems = Align.Center } };
+            _idField = new TextField("Id") { style = { width = 180, flexShrink = 1, minWidth = 90 } };
+            _nameField = new TextField("Name") { style = { width = 160, flexShrink = 1, minWidth = 80 } };
+            _enabledToggle = new Toggle("Enabled") { style = { flexShrink = 0 } };
+            _descriptionField = new TextField("Description") { style = { flexGrow = 1, flexShrink = 1, minWidth = 120 } };
 
             WireRuleProperty(_idField);
             WireRuleProperty(_nameField);
@@ -506,6 +506,7 @@ namespace TheEmptying.Editor.Rules
 
             SyncPropertiesFromModel();
             RefreshProblemsList();
+            UpdateStatusBar();
         }
 
         private void OnActiveModelChanged()
@@ -516,9 +517,23 @@ namespace TheEmptying.Editor.Rules
             RefreshFilesList();
             _canvasView?.Refresh();
             hasUnsavedChanges = _rulesByFilePath.Keys.Any(path => IsFileDirty(new RuleFileHandle(_selectedSource, path)));
-            SetStatus(_activeModel != null && _activeModel.LastValidation.HasErrors
-                ? "This rule has compile errors - it will be saved, but won't run in game until they're fixed."
-                : "No problems found.");
+            UpdateStatusBar();
+        }
+
+        /// <summary>Only unsaved state and whether the rule will run - the problem list itself lives in the Problems panel, not here.</summary>
+        private void UpdateStatusBar()
+        {
+            if (_activeModel == null)
+            {
+                SetStatus(string.Empty);
+                return;
+            }
+
+            string saveState = _activeModel.IsDirty ? "Unsaved changes." : "Saved.";
+            string runState = _activeModel.LastValidation.HasErrors
+                ? "This rule will not run until its errors are fixed."
+                : "This rule will run.";
+            SetStatus($"{saveState} {runState}");
         }
 
         private void SyncPropertiesFromModel()
@@ -544,12 +559,19 @@ namespace TheEmptying.Editor.Rules
                 return;
             }
 
-            foreach (RuleCompileProblem problem in _activeModel.LastValidation.Errors)
+            RuleCompileReport validation = _activeModel.LastValidation;
+            if (validation.Errors.Count == 0 && validation.Warnings.Count == 0)
+            {
+                _problemsListHost.Add(new Label("No problems found.") { style = { color = new Color(0.6f, 0.6f, 0.6f), paddingLeft = 4, paddingTop = 2 } });
+                return;
+            }
+
+            foreach (RuleCompileProblem problem in validation.Errors)
             {
                 _problemsListHost.Add(BuildProblemRow(problem, new Color(0.9f, 0.4f, 0.4f)));
             }
 
-            foreach (RuleCompileProblem problem in _activeModel.LastValidation.Warnings)
+            foreach (RuleCompileProblem problem in validation.Warnings)
             {
                 _problemsListHost.Add(BuildProblemRow(problem, new Color(0.9f, 0.8f, 0.3f)));
             }
@@ -582,7 +604,6 @@ namespace TheEmptying.Editor.Rules
             Func<BlockType, bool> filter = null;
             if (request.DragSourcePort != null)
             {
-                NodeViewModel sourceNode = request.DragSourceNode;
                 PortViewModel sourcePort = request.DragSourcePort;
                 filter = candidate => candidate.Ports.Any(p =>
                     p.Direction != sourcePort.Direction &&
@@ -591,37 +612,16 @@ namespace TheEmptying.Editor.Rules
             }
 
             var menu = new AddNodeMenu(_context.Blocks, families, filter);
-            menu.BlockTypeChosen += blockType =>
+            menu.EntryChosen += entry =>
             {
-                string newNodeId = _activeModel.AddNode(blockType.Id, request.CanvasPosition);
-
-                if (request.DragSourcePort != null)
-                {
-                    PortDefinition compatiblePort = blockType.Ports.FirstOrDefault(p =>
-                        p.Direction != request.DragSourcePort.Direction &&
-                        p.Kind == request.DragSourcePort.Kind &&
-                        (request.DragSourcePort.DataType == null || p.DataType == null || p.DataType == request.DragSourcePort.DataType));
-
-                    if (compatiblePort != null)
-                    {
-                        if (request.DragSourcePort.Direction == PortDirection.Output)
-                        {
-                            _activeModel.Connect(request.DragSourceNode.Node.Id, request.DragSourcePort.Name, newNodeId, compatiblePort.Name);
-                        }
-                        else
-                        {
-                            _activeModel.Connect(newNodeId, compatiblePort.Name, request.DragSourceNode.Node.Id, request.DragSourcePort.Name);
-                        }
-                    }
-                }
-
-                _canvasView?.Refresh();
+                AddNodeMenuModel.ApplyChoice(_activeModel, entry, request.CanvasPosition, request.DragSourceNode, request.DragSourcePort);
             };
 
-            // AdvancedDropdown.Show wants a rect in the window's own GUI space; the
-            // request's position is local to the canvas element, so convert it.
-            Vector2 windowPosition = _canvasView != null ? _canvasView.LocalToWorld(request.ScreenPosition) : request.ScreenPosition;
-            menu.Show(new Rect(windowPosition, Vector2.zero));
+            // AdvancedDropdown.Show wants a rect in screen space; the request's
+            // position is local to the canvas element, so convert via the window's
+            // root-space position plus this window's own screen position.
+            Vector2 screenPosition = position.position + (_canvasView != null ? _canvasView.LocalToWorld(request.ScreenPosition) : request.ScreenPosition);
+            menu.Show(new Rect(screenPosition, Vector2.zero));
         }
 
         #endregion

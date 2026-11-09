@@ -9,7 +9,9 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
         public static readonly Color MissingHeader = new Color(0.55f, 0.16f, 0.16f);
         public static readonly Color ExecutionWire = new Color(0.92f, 0.92f, 0.92f);
         public static readonly Color InferredPort = new Color(0.6f, 0.6f, 0.6f);
-        public static readonly Color SelectionHighlight = new Color(1f, 0.75f, 0.2f);
+        // Deliberately blue, not yellow, so it never reads as a warning: selection is an
+        // outer halo around the node, validation (error/warning) is the node's own border.
+        public static readonly Color SelectionHighlight = new Color(0.3f, 0.65f, 1f);
         public static readonly Color GridLine = new Color(1f, 1f, 1f, 0.08f);
         public static readonly Color SelectionBoxFill = new Color(0.3f, 0.6f, 1f, 0.15f);
         public static readonly Color SelectionBoxBorder = new Color(0.3f, 0.6f, 1f, 0.9f);
