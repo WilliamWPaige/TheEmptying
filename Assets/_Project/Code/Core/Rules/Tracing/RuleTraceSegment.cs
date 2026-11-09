@@ -3,27 +3,6 @@ using System.Collections.Generic;
 
 namespace TheEmptying.Core.Rules.Tracing
 {
-    /// <summary>What started a run segment.</summary>
-    public enum RuleTraceStartKind
-    {
-        EventTrigger,
-        ScheduleTrigger,
-        Resume,
-        Answer
-    }
-
-    /// <summary>How a run segment ended.</summary>
-    public enum RuleTraceEndKind
-    {
-        Ended,
-        Waiting,
-        Asking,
-        StepCap,
-        ChainDepthCutOff,
-        FireCap,
-        Error
-    }
-
     /// <summary>
     /// One run segment's complete record: from a trigger, resume or answer
     /// until the instance ends, waits, asks, or stops (step cap, chain-depth
