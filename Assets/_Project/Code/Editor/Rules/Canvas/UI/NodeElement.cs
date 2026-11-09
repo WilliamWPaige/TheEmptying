@@ -34,11 +34,18 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
         private static readonly Color WarningBorderColor = new Color(0.9f, 0.8f, 0.2f);
         private static readonly Color ErrorBorderColor = new Color(0.9f, 0.25f, 0.25f);
 
+        private static readonly Color RuntimeErrorColor = new Color(1f, 0.3f, 0.3f);
+        private static readonly Color PortValueColor = new Color(1f, 0.85f, 0.2f);
+
         private readonly RuleEditorModel _model;
         private readonly VisualElement _header;
         private readonly Label _title;
         private readonly VisualElement _portsAndFields;
         private readonly VisualElement _selectionHalo;
+        private readonly Label _executionBadge;
+        private readonly Label _runtimeErrorLabel;
+        private readonly Dictionary<string, Label> _portLabelsByInputName = new Dictionary<string, Label>();
+        private readonly Dictionary<string, Label> _portLabelsByOutputName = new Dictionary<string, Label>();
         private readonly List<Action<RuleNode>> _fieldRefreshers = new List<Action<RuleNode>>();
 
         private bool _isSelected;
@@ -78,6 +85,37 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
             };
             Add(_selectionHalo);
 
+            _executionBadge = new Label
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    right = 2, top = 2,
+                    fontSize = 9,
+                    color = Color.black,
+                    backgroundColor = RuleCanvasColors.SelectionHighlight,
+                    paddingLeft = 3, paddingRight = 3,
+                    borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3,
+                    display = DisplayStyle.None
+                }
+            };
+            Add(_executionBadge);
+
+            _runtimeErrorLabel = new Label
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    left = 2, bottom = 2, right = 2,
+                    fontSize = 9,
+                    color = Color.white,
+                    backgroundColor = RuntimeErrorColor,
+                    whiteSpace = WhiteSpace.Normal,
+                    display = DisplayStyle.None
+                }
+            };
+            Add(_runtimeErrorLabel);
+
             _header = new VisualElement
             {
                 style =
@@ -110,7 +148,11 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
 
             foreach (PortViewModel port in node.Ports)
             {
-                _portsAndFields.Add(BuildPortLabel(port));
+                Label label = BuildPortLabel(port);
+                _portsAndFields.Add(label);
+
+                Dictionary<string, Label> byDirection = port.Direction == PortDirection.Input ? _portLabelsByInputName : _portLabelsByOutputName;
+                byDirection[port.Name] = label;
             }
 
             if (node.HasVariantDropdown)
@@ -414,7 +456,7 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
             return source.Literal != null && source.Literal.Type != JTokenType.Null && source.Literal.Value<bool>();
         }
 
-        private static VisualElement BuildPortLabel(PortViewModel port)
+        private static Label BuildPortLabel(PortViewModel port)
         {
             bool isInput = port.Direction == PortDirection.Input;
             var label = new Label(port.Name)
@@ -511,6 +553,64 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
         {
             _validationState = state;
             ApplyBorder();
+        }
+
+        /// <summary>Shows a small badge with this node's 1-based position in a highlighted trace run's order of execution. Null hides it.</summary>
+        public void SetExecutionOrder(int? order)
+        {
+            if (order.HasValue)
+            {
+                _executionBadge.text = order.Value.ToString();
+                _executionBadge.style.display = DisplayStyle.Flex;
+            }
+            else
+            {
+                _executionBadge.style.display = DisplayStyle.None;
+            }
+        }
+
+        /// <summary>Shows the error a highlighted trace run reported for this node. Null hides it.</summary>
+        public void SetRuntimeError(string message)
+        {
+            if (!string.IsNullOrEmpty(message))
+            {
+                _runtimeErrorLabel.text = message;
+                _runtimeErrorLabel.style.display = DisplayStyle.Flex;
+            }
+            else
+            {
+                _runtimeErrorLabel.style.display = DisplayStyle.None;
+            }
+        }
+
+        /// <summary>Appends a data port's value (from a highlighted trace run) to its label; null/empty restores the plain port name.</summary>
+        public void SetPortValue(string portName, PortDirection direction, string valueText)
+        {
+            Dictionary<string, Label> byDirection = direction == PortDirection.Input ? _portLabelsByInputName : _portLabelsByOutputName;
+            if (!byDirection.TryGetValue(portName, out Label label))
+            {
+                return;
+            }
+
+            bool hasValue = !string.IsNullOrEmpty(valueText);
+            label.text = hasValue ? $"{portName}: {valueText}" : portName;
+            label.style.color = hasValue ? PortValueColor : new Color(0.85f, 0.85f, 0.85f);
+        }
+
+        /// <summary>Restores every port label to its plain name.</summary>
+        public void ClearPortValues()
+        {
+            foreach (KeyValuePair<string, Label> kvp in _portLabelsByInputName)
+            {
+                kvp.Value.text = kvp.Key;
+                kvp.Value.style.color = new Color(0.85f, 0.85f, 0.85f);
+            }
+
+            foreach (KeyValuePair<string, Label> kvp in _portLabelsByOutputName)
+            {
+                kvp.Value.text = kvp.Key;
+                kvp.Value.style.color = new Color(0.85f, 0.85f, 0.85f);
+            }
         }
 
         private void ApplyBorder()

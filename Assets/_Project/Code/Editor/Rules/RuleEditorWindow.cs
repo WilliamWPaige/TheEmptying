@@ -3,9 +3,11 @@ using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using TheEmptying.Core.Rules;
+using TheEmptying.Core.Rules.Tracing;
 using TheEmptying.Editor.Rules.Canvas;
 using TheEmptying.Editor.Rules.Canvas.UI;
 using TheEmptying.Editor.Rules.Editing;
+using TheEmptying.Editor.Rules.Testing.UI;
 using UnityEditor;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -47,6 +49,18 @@ namespace TheEmptying.Editor.Rules
         private VisualElement _problemsListHost;
         private Label _statusLabel;
 
+        private VisualElement _problemsTabContent;
+        private VisualElement _testTabContent;
+        private VisualElement _testTabHost;
+        private RuleTestPanel _testPanel;
+        private VisualElement _liveTabContent;
+        private VisualElement _liveTabHost;
+        private Button _problemsTabButton;
+        private Button _testTabButton;
+        private Button _liveTabButton;
+        private enum RightTab { Problems, Test, Live }
+        private RightTab _activeRightTab = RightTab.Problems;
+
         private TextField _idField;
         private TextField _nameField;
         private TextField _descriptionField;
@@ -73,6 +87,7 @@ namespace TheEmptying.Editor.Rules
 
             rootVisualElement.RegisterCallback<KeyDownEvent>(OnWindowKeyDown, TrickleDown.TrickleDown);
 
+            SelectRightTab(RightTab.Problems);
             ReloadContext();
         }
 
@@ -150,11 +165,46 @@ namespace TheEmptying.Editor.Rules
 
         private VisualElement BuildRightPanel()
         {
-            var panel = new VisualElement { style = { width = 280, borderLeftWidth = 1, borderLeftColor = new Color(0, 0, 0, 0.4f) } };
-            panel.Add(new Label("Problems") { style = { unityFontStyleAndWeight = FontStyle.Bold, paddingLeft = 4, paddingTop = 4 } });
+            var panel = new VisualElement { style = { width = 320, borderLeftWidth = 1, borderLeftColor = new Color(0, 0, 0, 0.4f), flexDirection = FlexDirection.Column } };
+
+            var tabRow = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingTop = 2 } };
+            _problemsTabButton = new Button(() => SelectRightTab(RightTab.Problems)) { text = "Problems", style = { flexGrow = 1 } };
+            _testTabButton = new Button(() => SelectRightTab(RightTab.Test)) { text = "Test", style = { flexGrow = 1 } };
+            _liveTabButton = new Button(() => SelectRightTab(RightTab.Live)) { text = "Live", style = { flexGrow = 1 } };
+            tabRow.Add(_problemsTabButton);
+            tabRow.Add(_testTabButton);
+            tabRow.Add(_liveTabButton);
+            panel.Add(tabRow);
+
+            _problemsTabContent = new VisualElement { style = { flexGrow = 1, flexDirection = FlexDirection.Column } };
+            _problemsTabContent.Add(new Label("Problems") { style = { unityFontStyleAndWeight = FontStyle.Bold, paddingLeft = 4, paddingTop = 4 } });
             _problemsListHost = new ScrollView { style = { flexGrow = 1 } };
-            panel.Add(_problemsListHost);
+            _problemsTabContent.Add(_problemsListHost);
+
+            _testTabContent = new VisualElement { style = { flexGrow = 1, flexDirection = FlexDirection.Column, display = DisplayStyle.None } };
+            _testTabHost = new VisualElement { style = { flexGrow = 1 } };
+            _testTabContent.Add(_testTabHost);
+
+            _liveTabContent = new VisualElement { style = { flexGrow = 1, flexDirection = FlexDirection.Column, display = DisplayStyle.None } };
+            _liveTabHost = new VisualElement { style = { flexGrow = 1 } };
+            _liveTabContent.Add(_liveTabHost);
+
+            panel.Add(_problemsTabContent);
+            panel.Add(_testTabContent);
+            panel.Add(_liveTabContent);
+
             return panel;
+        }
+
+        private void SelectRightTab(RightTab tab)
+        {
+            _activeRightTab = tab;
+            _problemsTabContent.style.display = tab == RightTab.Problems ? DisplayStyle.Flex : DisplayStyle.None;
+            _testTabContent.style.display = tab == RightTab.Test ? DisplayStyle.Flex : DisplayStyle.None;
+            _liveTabContent.style.display = tab == RightTab.Live ? DisplayStyle.Flex : DisplayStyle.None;
+            _problemsTabButton.style.unityFontStyleAndWeight = tab == RightTab.Problems ? FontStyle.Bold : FontStyle.Normal;
+            _testTabButton.style.unityFontStyleAndWeight = tab == RightTab.Test ? FontStyle.Bold : FontStyle.Normal;
+            _liveTabButton.style.unityFontStyleAndWeight = tab == RightTab.Live ? FontStyle.Bold : FontStyle.Normal;
         }
 
         private static VisualElement BuildLabeledColumn(string label, VisualElement field, float flexGrow)
@@ -484,6 +534,9 @@ namespace TheEmptying.Editor.Rules
         private void RefreshCanvas()
         {
             _canvasHost.Clear();
+            _testTabHost.Clear();
+            _liveTabHost.Clear();
+            _testPanel = null;
             _canvasView = null;
             _activeModel = null;
 
@@ -515,6 +568,32 @@ namespace TheEmptying.Editor.Rules
             _canvasView = new RuleCanvasView(model);
             _canvasView.AddNodeMenuRequested += OnAddNodeMenuRequested;
             _canvasHost.Add(_canvasView);
+
+            _testPanel = new RuleTestPanel(model, segment =>
+            {
+                if (segment != null)
+                {
+                    _canvasView?.HighlightSegment(segment);
+                }
+                else
+                {
+                    _canvasView?.ClearHighlight();
+                }
+            });
+            _testTabHost.Add(_testPanel);
+
+            Action<RuleTraceSegment> onLiveSegmentSelected = segment =>
+            {
+                if (segment != null)
+                {
+                    _canvasView?.HighlightSegment(segment);
+                }
+                else
+                {
+                    _canvasView?.ClearHighlight();
+                }
+            };
+            _liveTabHost.Add(new LiveTracePanel(model.Rule.Id, onLiveSegmentSelected));
 
             SyncPropertiesFromModel();
             RefreshProblemsList();

@@ -13,9 +13,10 @@ namespace TheEmptying.Core.Console
     /// <summary>Registers every milestone-1 built-in command directly on the Simulation's own registry (not through a ModuleContext, so they're never removed).</summary>
     public static class BuiltInConsoleCommands
     {
-        public static void RegisterAll(Simulation simulation, IPresentationCommands presentation)
+        public static void RegisterAll(Simulation simulation, IPresentationCommands presentation, ILogSink logSink = null)
         {
             ConsoleCommandRegistry commands = simulation.Commands;
+            ILogSink traceLogSink = logSink ?? presentation as ILogSink;
 
             commands.Register(new ConsoleCommand("help", "Lists every command.", args => commands.HelpText()));
 
@@ -167,6 +168,54 @@ namespace TheEmptying.Core.Console
 
                 return presentation.SetLogFilter(mode);
             }));
+
+            commands.Register(new ConsoleCommand("rules", "Lists every rule: active, fires this game, paused instances, pending questions.", args => FormatRules(simulation)));
+
+            commands.Register(new ConsoleCommand("trace", "trace <ruleId> <on|off> - writes a rule's run segments to the log as short text.", args =>
+            {
+                if (args.Length != 2 || (args[1] != "on" && args[1] != "off"))
+                {
+                    return "Usage: trace <ruleId> <on|off>";
+                }
+
+                if (simulation.RuleRunner == null)
+                {
+                    return "No rule runner.";
+                }
+
+                string ruleId = args[0];
+
+                if (args[1] == "off")
+                {
+                    simulation.RuleRunner.ClearTraceListener(ruleId);
+                    return $"Tracing off for '{ruleId}'.";
+                }
+
+                if (traceLogSink == null)
+                {
+                    return "No log sink available to trace to.";
+                }
+
+                simulation.RuleRunner.SetTraceListener(ruleId, new RuleConsoleTraceListener(traceLogSink));
+                return $"Tracing on for '{ruleId}'.";
+            }));
+        }
+
+        private static string FormatRules(Simulation simulation)
+        {
+            if (simulation.RuleRunner == null)
+            {
+                return "(no rule runner)";
+            }
+
+            List<string> ruleIds = simulation.RuleRunner.ActivatedRuleIds.ToList();
+            if (ruleIds.Count == 0)
+            {
+                return "(no activated rules)";
+            }
+
+            return string.Join("\n", ruleIds.Select(id =>
+                $"{id}: {(simulation.RuleRunner.IsRuleActive(id) ? "active" : "inactive")}, fires {simulation.RuleRunner.TotalFires(id)}, paused {simulation.RuleRunner.PausedInstanceCount(id)}, pending questions {simulation.RuleRunner.PendingQuestionCount(id)}"));
         }
 
         private static string FormatModules(Simulation simulation)

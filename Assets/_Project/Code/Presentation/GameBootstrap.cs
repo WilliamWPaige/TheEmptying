@@ -91,6 +91,15 @@ namespace TheEmptying.Presentation
         /// <summary>For the PlayMode smoke test: confirms the clock is actually advancing.</summary>
         public long CurrentTick => _simulation.Clock.CurrentTick;
 
+#if UNITY_EDITOR
+        /// <summary>
+        /// The game's currently-running simulation, for editor tools only (the
+        /// rule editor's live trace panel). Never referenced by anything that
+        /// ships in a build.
+        /// </summary>
+        public Simulation SimulationForEditorTools => _simulation;
+#endif
+
         /// <summary>For tests: whether the console is currently open.</summary>
         public bool IsConsoleOpen => _consoleOpen;
 
@@ -289,7 +298,7 @@ namespace TheEmptying.Presentation
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this);
             _simulation = simulation;
 
-            BuiltInConsoleCommands.RegisterAll(_simulation, this);
+            BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
 
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
             return report;
@@ -866,7 +875,7 @@ namespace TheEmptying.Presentation
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this);
 
                 _simulation = loaded;
-                BuiltInConsoleCommands.RegisterAll(_simulation, this);
+                BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

@@ -1,16 +1,19 @@
+using System.Collections.Generic;
 using TheEmptying.Core.Rules;
 using UnityEngine;
 using UnityEngine.UIElements;
 
 namespace TheEmptying.Editor.Rules.Canvas.UI
 {
-    /// <summary>Draws every wire as a curve between its two ports, in screen space (via the view-model's CanvasToScreen). Execution wires draw thicker and neutral-colored; data wires draw in their type's color.</summary>
+    /// <summary>Draws every wire as a curve between its two ports, in screen space (via the view-model's CanvasToScreen). Execution wires draw thicker and neutral-colored; data wires draw in their type's color. A highlighted wire (from a test-tool or live-trace run) draws a bright overlay on top.</summary>
     internal sealed class WiresLayer : VisualElement
     {
         private const float MinExecutionWidth = 3f;
         private const float MinDataWidth = 2f;
+        private static readonly Color HighlightColor = new Color(1f, 0.85f, 0.2f);
 
         private readonly RuleCanvasViewModel _viewModel;
+        private HashSet<(string FromNode, string FromPort)> _highlightedFromPorts;
 
         public WiresLayer(RuleCanvasViewModel viewModel)
         {
@@ -24,6 +27,13 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
             generateVisualContent += OnGenerateVisualContent;
         }
 
+        /// <summary>Highlights every wire leaving one of these (node, output port) pairs - the execution outputs a trace run actually followed. Null or empty clears the highlight.</summary>
+        public void SetHighlightedFromPorts(HashSet<(string FromNode, string FromPort)> fromPorts)
+        {
+            _highlightedFromPorts = fromPorts != null && fromPorts.Count > 0 ? fromPorts : null;
+            MarkDirtyRepaint();
+        }
+
         private void OnGenerateVisualContent(MeshGenerationContext mgc)
         {
             Painter2D painter = mgc.painter2D;
@@ -31,8 +41,10 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
             foreach (WireViewModel wire in _viewModel.Wires)
             {
                 bool isExecution = wire.Kind == PortKind.Execution;
-                painter.strokeColor = isExecution ? RuleCanvasColors.ExecutionWire : RuleCanvasColors.DataTypeColor(wire.DataType);
-                painter.lineWidth = isExecution ? MinExecutionWidth : MinDataWidth;
+                bool highlighted = _highlightedFromPorts != null && _highlightedFromPorts.Contains((wire.Connection.FromNode, wire.Connection.FromPort));
+
+                painter.strokeColor = highlighted ? HighlightColor : isExecution ? RuleCanvasColors.ExecutionWire : RuleCanvasColors.DataTypeColor(wire.DataType);
+                painter.lineWidth = (isExecution ? MinExecutionWidth : MinDataWidth) + (highlighted ? 2f : 0f);
 
                 Vector2 from = _viewModel.CanvasToScreen(wire.FromAnchor);
                 Vector2 to = _viewModel.CanvasToScreen(wire.ToAnchor);

@@ -2,10 +2,12 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
+using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Memory;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
+using TheEmptying.Core.Rules.Tracing;
 using TheEmptying.Core.Scheduling;
 using TheEmptying.Core.Timekeeping;
 
@@ -78,6 +80,20 @@ namespace TheEmptying.Core.Rules
         private long _firesTickStamp = long.MinValue;
         private long _nextInstanceId = 1;
 
+        private readonly Dictionary<string, long> _totalFires = new Dictionary<string, long>();
+
+        /// <summary>How many times a rule has actually fired (created and run an instance) this game, for the "rules" console command. 0 for an unknown rule.</summary>
+        public long TotalFires(string ruleId) => _totalFires.TryGetValue(ruleId, out long count) ? count : 0;
+
+        /// <summary>Every activated rule's Id, in ordinal order, for the "rules" console command.</summary>
+        public IEnumerable<string> ActivatedRuleIds => _activated.Keys.OrderBy(id => id, StringComparer.Ordinal);
+
+        public int PausedInstanceCount(string ruleId) => _paused.Count(p => p.RuleId == ruleId);
+
+        public int PendingQuestionCount(string ruleId) => _pendingQuestions.Count(q => q.RuleId == ruleId);
+
+        private readonly Dictionary<string, IRuleTraceListener> _traceListeners = new Dictionary<string, IRuleTraceListener>();
+
         private readonly RandomService _randomService;
         private SimRandom _randomStream;
 
@@ -115,6 +131,119 @@ namespace TheEmptying.Core.Rules
         public void RegisterQuestionDelegate(IQuestionDelegate questionDelegate)
         {
             _questionDelegates.Add(questionDelegate ?? throw new ArgumentNullException(nameof(questionDelegate)));
+        }
+
+        /// <summary>
+        /// Attaches a trace listener for one rule. While attached, every run
+        /// segment for that rule is recorded and reported; with none
+        /// attached (the default), the runner never builds a segment for
+        /// that rule at all.
+        /// </summary>
+        public void SetTraceListener(string ruleId, IRuleTraceListener listener)
+        {
+            if (string.IsNullOrEmpty(ruleId))
+            {
+                throw new ArgumentNullException(nameof(ruleId));
+            }
+
+            _traceListeners[ruleId] = listener ?? throw new ArgumentNullException(nameof(listener));
+        }
+
+        public void ClearTraceListener(string ruleId) => _traceListeners.Remove(ruleId);
+
+        public bool IsTracingEnabled(string ruleId) => ruleId != null && _traceListeners.ContainsKey(ruleId);
+
+        private RuleTraceRecorder BeginTrace(string ruleId, long instanceId, long tick) =>
+            _traceListeners.ContainsKey(ruleId) ? new RuleTraceRecorder(ruleId, instanceId, tick) : null;
+
+        private void CompleteTrace(RuleTraceRecorder recorder, RuleTraceEndKind endKind, long endResumeTick = 0, long endQuestionId = 0, string endErrorMessage = null, string endNodeId = null)
+        {
+            if (recorder == null)
+            {
+                return;
+            }
+
+            RuleTraceSegment segment = recorder.Finish(endKind, endResumeTick, endQuestionId, endErrorMessage, endNodeId);
+            if (_traceListeners.TryGetValue(recorder.RuleId, out IRuleTraceListener listener))
+            {
+                listener.OnSegmentCompleted(segment);
+            }
+        }
+
+        /// <summary>A zero-step segment for a fire that never got as far as creating an instance (chain-depth cutoff, fire cap).</summary>
+        private void CompleteZeroStepTrace(string ruleId, long tick, PostedEvent triggeringEvent, RuleTraceEndKind endKind)
+        {
+            RuleTraceRecorder recorder = BeginTrace(ruleId, 0, tick);
+            if (recorder == null)
+            {
+                return;
+            }
+
+            StartFromTrigger(recorder, triggeringEvent);
+            CompleteTrace(recorder, endKind);
+        }
+
+        private static void StartFromTrigger(RuleTraceRecorder recorder, PostedEvent triggeringEvent)
+        {
+            if (triggeringEvent == null)
+            {
+                recorder.StartFromScheduleTrigger();
+                return;
+            }
+
+            recorder.StartFromEventTrigger(triggeringEvent.DefinitionId, DescribeEventData(triggeringEvent.Data));
+        }
+
+        private static List<(string Name, string ValueText)> DescribeEventData(EventData data)
+        {
+            var parameters = new List<(string Name, string ValueText)>();
+            if (data == null)
+            {
+                return parameters;
+            }
+
+            foreach (KeyValuePair<string, double> kvp in data.DoubleValues)
+            {
+                parameters.Add((kvp.Key, kvp.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            }
+
+            foreach (KeyValuePair<string, bool> kvp in data.BoolValues)
+            {
+                parameters.Add((kvp.Key, kvp.Value ? "true" : "false"));
+            }
+
+            foreach (KeyValuePair<string, string> kvp in data.StringValues)
+            {
+                parameters.Add((kvp.Key, kvp.Value));
+            }
+
+            foreach (KeyValuePair<string, long> kvp in data.LongValues)
+            {
+                parameters.Add((kvp.Key, kvp.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)));
+            }
+
+            foreach (KeyValuePair<string, EntityId> kvp in data.EntityValues)
+            {
+                parameters.Add((kvp.Key, kvp.Value.ToString()));
+            }
+
+            return parameters;
+        }
+
+        /// <summary>
+        /// Fires a rule right now, as if its schedule had triggered - for the
+        /// test tool's "Fire now" on time triggers. Works for any activated
+        /// rule, event-triggered or not, since (like a schedule trigger) it
+        /// carries no event data.
+        /// </summary>
+        internal void FireNow(string ruleId)
+        {
+            if (!_activated.TryGetValue(ruleId, out ActivatedRule activated) || !activated.IsActive)
+            {
+                return;
+            }
+
+            OnScheduleTriggered(activated);
         }
 
         public RuleRunner(
@@ -258,17 +387,29 @@ namespace TheEmptying.Core.Rules
             if (posted.ChainDepth >= MaxChainDepth)
             {
                 Report(activated.Rule.Id, activated.Rule.TriggerNodeId, $"Triggering event chain depth {posted.ChainDepth} is at or beyond the limit ({MaxChainDepth}); the rule did not run.", tick);
+                CompleteZeroStepTrace(activated.Rule.Id, tick, posted, RuleTraceEndKind.ChainDepthCutOff);
                 return;
             }
 
             if (!TryReserveFireSlot(activated.Rule.Id, tick))
             {
+                CompleteZeroStepTrace(activated.Rule.Id, tick, posted, RuleTraceEndKind.FireCap);
                 return;
             }
 
+            _totalFires.TryGetValue(activated.Rule.Id, out long totalBefore);
+            _totalFires[activated.Rule.Id] = totalBefore + 1;
+
             var instance = new RuleInstance(_nextInstanceId++, activated.Rule.Id, posted, posted.ChainDepth + 1);
             instance.Position.CurrentNodeId = activated.TriggerNextNodeId;
-            RunInstanceGuarded(instance, activated, tick);
+
+            RuleTraceRecorder recorder = BeginTrace(activated.Rule.Id, instance.InstanceId, tick);
+            if (recorder != null)
+            {
+                StartFromTrigger(recorder, posted);
+            }
+
+            RunInstanceGuarded(instance, activated, tick, recorder);
         }
 
         private void OnScheduleTriggered(ActivatedRule activated)
@@ -282,12 +423,23 @@ namespace TheEmptying.Core.Rules
 
             if (!TryReserveFireSlot(activated.Rule.Id, tick))
             {
+                CompleteZeroStepTrace(activated.Rule.Id, tick, null, RuleTraceEndKind.FireCap);
                 return;
             }
 
+            _totalFires.TryGetValue(activated.Rule.Id, out long totalBefore);
+            _totalFires[activated.Rule.Id] = totalBefore + 1;
+
             var instance = new RuleInstance(_nextInstanceId++, activated.Rule.Id, null, 0);
             instance.Position.CurrentNodeId = activated.TriggerNextNodeId;
-            RunInstanceGuarded(instance, activated, tick);
+
+            RuleTraceRecorder recorder = BeginTrace(activated.Rule.Id, instance.InstanceId, tick);
+            if (recorder != null)
+            {
+                StartFromTrigger(recorder, null);
+            }
+
+            RunInstanceGuarded(instance, activated, tick, recorder);
         }
 
         /// <summary>
@@ -314,7 +466,10 @@ namespace TheEmptying.Core.Rules
                     continue;
                 }
 
-                RunInstanceGuarded(entry.Instance, activated, tick);
+                RuleTraceRecorder recorder = BeginTrace(entry.RuleId, entry.Instance.InstanceId, tick);
+                recorder?.StartFromResume(entry.ResumeTick);
+
+                RunInstanceGuarded(entry.Instance, activated, tick, recorder);
             }
         }
 
@@ -344,19 +499,21 @@ namespace TheEmptying.Core.Rules
             return true;
         }
 
-        private void RunInstanceGuarded(RuleInstance instance, ActivatedRule activated, long tick)
+        private void RunInstanceGuarded(RuleInstance instance, ActivatedRule activated, long tick, RuleTraceRecorder recorder)
         {
             try
             {
                 var steps = new RuleStepsState();
-                RunFrom(instance, activated, steps);
+                RunFrom(instance, activated, steps, recorder);
             }
             catch (RuleNodeExecutionException ex)
             {
+                CompleteTrace(recorder, RuleTraceEndKind.Error, endErrorMessage: (ex.InnerException ?? ex).Message, endNodeId: ex.NodeId);
                 HandleRuleFailure(activated, ex.NodeId, ex.InnerException ?? ex, tick);
             }
             catch (Exception ex)
             {
+                CompleteTrace(recorder, RuleTraceEndKind.Error, endErrorMessage: ex.Message, endNodeId: activated.Rule.TriggerNodeId);
                 HandleRuleFailure(activated, activated.Rule.TriggerNodeId, ex, tick);
             }
         }
@@ -367,7 +524,7 @@ namespace TheEmptying.Core.Rules
         /// calling back in, so the whole position stays plain data the entire
         /// time and a Wait can snapshot it exactly as it stands.
         /// </summary>
-        private void RunFrom(RuleInstance instance, ActivatedRule activated, RuleStepsState steps)
+        private void RunFrom(RuleInstance instance, ActivatedRule activated, RuleStepsState steps, RuleTraceRecorder recorder)
         {
             RuleExecutionPosition position = instance.Position;
 
@@ -377,6 +534,7 @@ namespace TheEmptying.Core.Rules
                 {
                     if (!TryAdvanceFromContinuation(position, activated))
                     {
+                        CompleteTrace(recorder, RuleTraceEndKind.Ended);
                         return;
                     }
 
@@ -391,6 +549,7 @@ namespace TheEmptying.Core.Rules
                         Report(activated.Rule.Id, position.CurrentNodeId, $"Rule '{activated.Rule.Id}' exceeded the maximum of {MaxStepsPerInstance} steps in one run; it was stopped.", _currentTick());
                     }
 
+                    CompleteTrace(recorder, RuleTraceEndKind.StepCap);
                     return;
                 }
 
@@ -400,7 +559,7 @@ namespace TheEmptying.Core.Rules
                 position.CurrentNodeId = null;
 
                 CompiledRuleNode node = activated.Rule.Nodes[nodeId];
-                var context = new RuleStepContext(this, instance, activated, nodeId);
+                var context = new RuleStepContext(this, instance, activated, nodeId, recorder);
 
                 RuleExecutionResult result;
                 try
@@ -419,25 +578,31 @@ namespace TheEmptying.Core.Rules
                 switch (result)
                 {
                     case FollowExecutionResult follow:
+                        recorder?.RecordNodeExecuted(nodeId, follow.PortName);
                         position.CurrentNodeId = ResolveNext(activated, nodeId, follow.PortName);
                         break;
 
                     case FollowInOrderExecutionResult followMany:
+                        recorder?.RecordNodeExecuted(nodeId, null);
                         PushContinuation(position, nodeId, followMany.PortNames);
                         break;
 
                     case WaitExecutionResult wait:
+                        recorder?.RecordNodeExecuted(nodeId, wait.ResumePortName);
                         position.CurrentNodeId = ResolveNext(activated, nodeId, wait.ResumePortName);
                         PauseInstance(instance, activated.Rule.Id, wait.ResumeTick);
+                        CompleteTrace(recorder, RuleTraceEndKind.Waiting, endResumeTick: wait.ResumeTick);
                         return;
 
                     case AskExecutionResult ask:
                         // position.CurrentNodeId stays null: which output to resume on
                         // isn't known until the question is answered.
-                        HandleAsk(instance, activated, nodeId, ask, _currentTick());
+                        recorder?.RecordNodeExecuted(nodeId, null);
+                        HandleAsk(instance, activated, nodeId, ask, _currentTick(), recorder);
                         return;
 
                     default:
+                        recorder?.RecordNodeExecuted(nodeId, null);
                         position.CurrentNodeId = null;
                         break;
                 }
@@ -597,9 +762,14 @@ namespace TheEmptying.Core.Rules
             return null;
         }
 
-        private void HandleAsk(RuleInstance instance, ActivatedRule activated, string nodeId, AskExecutionResult ask, long tick)
+        private void HandleAsk(RuleInstance instance, ActivatedRule activated, string nodeId, AskExecutionResult ask, long tick, RuleTraceRecorder recorder)
         {
             PendingQuestion question = AskQuestion(activated.Rule.Id, nodeId, instance, ask.Category, ask.Title, ask.Body, ask.ChoiceTexts, ask.DefaultChoiceNumber, ask.TimeoutTicks, tick);
+
+            // Finished before any possible immediate (delegate) resolution below, so this
+            // segment is always reported before any nested "Answer" segment it triggers.
+            CompleteTrace(recorder, RuleTraceEndKind.Asking, endQuestionId: question.QuestionId);
+
             TryResolveImmediatelyOrEnqueue(question, tick);
         }
 
@@ -668,7 +838,11 @@ namespace TheEmptying.Core.Rules
             }
 
             question.Instance.Position.CurrentNodeId = ResolveNext(activated, question.AskingNodeId, $"choice{choiceNumber}");
-            RunInstanceGuarded(question.Instance, activated, tick);
+
+            RuleTraceRecorder recorder = BeginTrace(question.RuleId, question.Instance.InstanceId, tick);
+            recorder?.StartFromAnswer(question.QuestionId, choiceNumber);
+
+            RunInstanceGuarded(question.Instance, activated, tick, recorder);
         }
 
         private void PostQuestionAskedEvent(PendingQuestion question, long tick)

@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
@@ -22,7 +23,8 @@ namespace TheEmptying.Core.Startup
             IEnumerable<IModule> modules,
             ErrorMode errorMode = ErrorMode.Development,
             bool isLoading = false,
-            ILogSink logSink = null)
+            ILogSink logSink = null,
+            Action<ContentDatabase> contentOverlay = null)
         {
             List<string> sources = sourceFolders?.ToList() ?? new List<string>();
             List<IModule> moduleList = modules?.ToList() ?? new List<IModule>();
@@ -47,6 +49,12 @@ namespace TheEmptying.Core.Startup
             // 5. Register event definitions and settings from the loaded content.
             BuiltInContentTypes.RegisterEventDefinitionsFrom(database, simulation.EventDefinitions);
             BuiltInContentTypes.DeclareSettingsFrom(database, simulation.Settings);
+
+            // 5b. Let the caller (e.g. the rule editor's test tool) adjust loaded content
+            // before rules compile - the one seam a throwaway sandbox simulation needs to
+            // overlay an unsaved rule, or isolate a single rule, while still being "built
+            // the same way the game builds" for everything else.
+            contentOverlay?.Invoke(database);
 
             // 6. Compile rules (after content loads, before modules initialize).
             (RuleRegistry ruleRegistry, RuleCompileReport ruleReport) = RuleCompiler.Compile(database, simulation.Blocks, simulation.Settings, simulation.EventDefinitions, errorMode);

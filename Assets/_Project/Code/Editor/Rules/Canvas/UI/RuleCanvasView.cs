@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Rules;
+using TheEmptying.Core.Rules.Tracing;
 using TheEmptying.Editor.Rules.Editing;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -128,9 +129,112 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
         {
             SyncNodeElements();
             ApplyTransform();
+            ApplyHighlight();
             _gridBackground.Refresh();
             _wiresLayer.Refresh();
             _pendingWireLayer.Refresh();
+        }
+
+        private RuleTraceSegment _highlightedSegment;
+
+        /// <summary>Marks every node a trace segment's run touched: execution order, followed wires, the values read/computed at each port, and an error label on whichever node it ended on.</summary>
+        public void HighlightSegment(RuleTraceSegment segment)
+        {
+            _highlightedSegment = segment;
+            ApplyHighlight();
+        }
+
+        public void ClearHighlight()
+        {
+            _highlightedSegment = null;
+            ApplyHighlight();
+        }
+
+        private void ApplyHighlight()
+        {
+            if (_highlightedSegment == null)
+            {
+                foreach (NodeElement element in _nodeElements.Values)
+                {
+                    element.SetExecutionOrder(null);
+                    element.SetRuntimeError(null);
+                    element.ClearPortValues();
+                }
+
+                _wiresLayer.SetHighlightedFromPorts(null);
+                return;
+            }
+
+            var orderByNode = new Dictionary<string, int>();
+            var followedFromPorts = new HashSet<(string, string)>();
+            var inputValuesByNode = new Dictionary<string, List<(string Port, string Value)>>();
+            var computedValueByNode = new Dictionary<string, string>();
+
+            int order = 0;
+            foreach (RuleTraceEntry entry in _highlightedSegment.Entries)
+            {
+                switch (entry.Kind)
+                {
+                    case RuleTraceEntryKind.NodeExecuted:
+                        if (!orderByNode.ContainsKey(entry.NodeId))
+                        {
+                            order++;
+                            orderByNode[entry.NodeId] = order;
+                        }
+
+                        if (entry.PortOrFieldName != null)
+                        {
+                            followedFromPorts.Add((entry.NodeId, entry.PortOrFieldName));
+                        }
+
+                        break;
+
+                    case RuleTraceEntryKind.InputRead:
+                        if (!inputValuesByNode.TryGetValue(entry.NodeId, out List<(string Port, string Value)> list))
+                        {
+                            list = new List<(string Port, string Value)>();
+                            inputValuesByNode[entry.NodeId] = list;
+                        }
+
+                        list.Add((entry.PortOrFieldName, entry.Value.HasValue ? entry.Value.Value.ToString() : string.Empty));
+                        break;
+
+                    case RuleTraceEntryKind.ValueComputed:
+                        computedValueByNode[entry.NodeId] = entry.Value.HasValue ? entry.Value.Value.ToString() : string.Empty;
+                        break;
+                }
+            }
+
+            foreach (NodeViewModel node in _viewModel.Nodes)
+            {
+                if (!_nodeElements.TryGetValue(node.Node.Id, out NodeElement element))
+                {
+                    continue;
+                }
+
+                element.SetExecutionOrder(orderByNode.TryGetValue(node.Node.Id, out int ord) ? ord : (int?)null);
+                element.SetRuntimeError(_highlightedSegment.EndNodeId == node.Node.Id ? _highlightedSegment.EndErrorMessage : null);
+                element.ClearPortValues();
+
+                if (inputValuesByNode.TryGetValue(node.Node.Id, out List<(string Port, string Value)> inputs))
+                {
+                    foreach ((string port, string value) in inputs)
+                    {
+                        element.SetPortValue(port, PortDirection.Input, value);
+                    }
+                }
+
+                if (computedValueByNode.TryGetValue(node.Node.Id, out string outputValue))
+                {
+                    PortViewModel outputPort = node.OutputPorts.FirstOrDefault();
+                    if (outputPort != null)
+                    {
+                        element.SetPortValue(outputPort.Name, PortDirection.Output, outputValue);
+                    }
+                }
+            }
+
+            _wiresLayer.SetHighlightedFromPorts(followedFromPorts);
         }
 
         private void ApplyTransform()

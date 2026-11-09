@@ -2,6 +2,7 @@ using System.Collections.Generic;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Memory;
 using TheEmptying.Core.Randomness;
+using TheEmptying.Core.Rules.Tracing;
 
 namespace TheEmptying.Core.Rules
 {
@@ -9,23 +10,27 @@ namespace TheEmptying.Core.Rules
     /// IRuleNodeContext for one node's step. Its value cache is scoped to this
     /// one instance (created fresh per node execution by RuleRunner.RunFrom),
     /// so a value node wired into more than one input of the same step
-    /// computes only once.
+    /// computes only once. When recorder is null (no trace listener attached
+    /// to this rule), every record call below is a no-op null-conditional
+    /// call - no allocation, no extra work.
     /// </summary>
     internal sealed class RuleStepContext : IRuleNodeContext
     {
         private readonly RuleRunner _runner;
         private readonly RuleInstance _instance;
         private readonly ActivatedRule _activated;
+        private readonly RuleTraceRecorder _recorder;
         private readonly Dictionary<string, RuleValue> _valueCache = new Dictionary<string, RuleValue>();
 
         private string _currentNodeId;
 
-        public RuleStepContext(RuleRunner runner, RuleInstance instance, ActivatedRule activated, string currentNodeId)
+        public RuleStepContext(RuleRunner runner, RuleInstance instance, ActivatedRule activated, string currentNodeId, RuleTraceRecorder recorder)
         {
             _runner = runner;
             _instance = instance;
             _activated = activated;
             _currentNodeId = currentNodeId;
+            _recorder = recorder;
         }
 
         public SimRandom Random => _runner.RandomStream;
@@ -36,19 +41,24 @@ namespace TheEmptying.Core.Rules
         public RuleValue GetInput(string name)
         {
             CompiledRuleNode node = _activated.Rule.Nodes[_currentNodeId];
+            RuleValue value;
 
             if (_activated.DataInputConnections.TryGetValue((_currentNodeId, name), out CompiledRuleConnection connection))
             {
-                return ResolveNodeValue(connection.FromNode);
+                value = ResolveNodeValue(connection.FromNode);
             }
-
-            if (node.Fields.TryGetValue(name, out CompiledFieldValue field))
+            else if (node.Fields.TryGetValue(name, out CompiledFieldValue field))
             {
-                return ResolveField(field);
+                value = ResolveField(field);
+            }
+            else
+            {
+                PortDefinition port = node.BlockType.FindPort(name, PortDirection.Input);
+                value = RuleValue.Default(port?.DataType ?? RuleDataType.Number);
             }
 
-            PortDefinition port = node.BlockType.FindPort(name, PortDirection.Input);
-            return RuleValue.Default(port?.DataType ?? RuleDataType.Number);
+            _recorder?.RecordInputRead(_currentNodeId, name, value);
+            return value;
         }
 
         public bool IsInputConnected(string portName)
@@ -56,16 +66,25 @@ namespace TheEmptying.Core.Rules
             return _activated.DataInputConnections.ContainsKey((_currentNodeId, portName));
         }
 
-        public void Log(string message) => _runner.Log(message);
+        public void Log(string message)
+        {
+            _recorder?.RecordLineLogged(_currentNodeId, message);
+            _runner.Log(message);
+        }
 
         public void PostEvent(string eventDefinitionId, IReadOnlyList<(string Name, RuleValue Value)> parameters)
         {
+            _recorder?.RecordEventPosted(_currentNodeId, eventDefinitionId, parameters);
             _runner.PostRuleEvent(eventDefinitionId, parameters, _instance);
         }
 
         public RuleValue GetLocal(string name, RuleDataType type) => _instance.GetLocal(name, type);
 
-        public void SetLocal(string name, RuleDataType type, RuleValue value) => _instance.SetLocal(name, type, value);
+        public void SetLocal(string name, RuleDataType type, RuleValue value)
+        {
+            _instance.SetLocal(name, type, value);
+            _recorder?.RecordLocalSet(_currentNodeId, name, value);
+        }
 
         public bool TryGetEventParameter(string name, RuleDataType type, out RuleValue value)
         {
@@ -102,6 +121,7 @@ namespace TheEmptying.Core.Rules
             }
 
             _valueCache[nodeId] = value;
+            _recorder?.RecordValueComputed(nodeId, value);
             return value;
         }
 
