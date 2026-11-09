@@ -165,45 +165,7 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                 return;
             }
 
-            var orderByNode = new Dictionary<string, int>();
-            var followedFromPorts = new HashSet<(string, string)>();
-            var inputValuesByNode = new Dictionary<string, List<(string Port, string Value)>>();
-            var computedValueByNode = new Dictionary<string, string>();
-
-            int order = 0;
-            foreach (RuleTraceEntry entry in _highlightedSegment.Entries)
-            {
-                switch (entry.Kind)
-                {
-                    case RuleTraceEntryKind.NodeExecuted:
-                        if (!orderByNode.ContainsKey(entry.NodeId))
-                        {
-                            order++;
-                            orderByNode[entry.NodeId] = order;
-                        }
-
-                        if (entry.PortOrFieldName != null)
-                        {
-                            followedFromPorts.Add((entry.NodeId, entry.PortOrFieldName));
-                        }
-
-                        break;
-
-                    case RuleTraceEntryKind.InputRead:
-                        if (!inputValuesByNode.TryGetValue(entry.NodeId, out List<(string Port, string Value)> list))
-                        {
-                            list = new List<(string Port, string Value)>();
-                            inputValuesByNode[entry.NodeId] = list;
-                        }
-
-                        list.Add((entry.PortOrFieldName, entry.Value.HasValue ? entry.Value.Value.ToString() : string.Empty));
-                        break;
-
-                    case RuleTraceEntryKind.ValueComputed:
-                        computedValueByNode[entry.NodeId] = entry.Value.HasValue ? entry.Value.Value.ToString() : string.Empty;
-                        break;
-                }
-            }
+            RuleHighlightData data = RuleHighlightData.Build(_highlightedSegment);
 
             foreach (NodeViewModel node in _viewModel.Nodes)
             {
@@ -212,11 +174,11 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                     continue;
                 }
 
-                element.SetExecutionOrder(orderByNode.TryGetValue(node.Node.Id, out int ord) ? ord : (int?)null);
-                element.SetRuntimeError(_highlightedSegment.EndNodeId == node.Node.Id ? _highlightedSegment.EndErrorMessage : null);
+                element.SetExecutionOrder(data.ExecutionOrderByNode.TryGetValue(node.Node.Id, out int ord) ? ord : (int?)null);
+                element.SetRuntimeError(data.ErrorNodeId == node.Node.Id ? data.ErrorMessage : null);
                 element.ClearPortValues();
 
-                if (inputValuesByNode.TryGetValue(node.Node.Id, out List<(string Port, string Value)> inputs))
+                if (data.InputValuesByNode.TryGetValue(node.Node.Id, out List<(string Port, string Value)> inputs))
                 {
                     foreach ((string port, string value) in inputs)
                     {
@@ -224,7 +186,7 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                     }
                 }
 
-                if (computedValueByNode.TryGetValue(node.Node.Id, out string outputValue))
+                if (data.ComputedValueByNode.TryGetValue(node.Node.Id, out string outputValue))
                 {
                     PortViewModel outputPort = node.OutputPorts.FirstOrDefault();
                     if (outputPort != null)
@@ -234,7 +196,7 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                 }
             }
 
-            _wiresLayer.SetHighlightedFromPorts(followedFromPorts);
+            _wiresLayer.SetHighlightedFromPorts(data.FollowedExecutionOutputs);
         }
 
         private void ApplyTransform()

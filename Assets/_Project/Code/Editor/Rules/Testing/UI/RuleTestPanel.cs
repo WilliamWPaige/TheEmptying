@@ -50,7 +50,11 @@ namespace TheEmptying.Editor.Rules.Testing.UI
 
         private readonly RuleEditorModel _model;
         private readonly Action<RuleTraceSegment> _onSegmentSelected;
+        private readonly Action<string> _onStepNodeSelected;
         private readonly RuleTestSession _session = new RuleTestSession();
+
+        /// <summary>Test-only: the session this panel drives, so a test can read its state (pending questions, segments) without simulating a pointer click on a Button, which needs a live panel.</summary>
+        internal RuleTestSession SessionForTests => _session;
 
         private IntegerField _seedField;
         private Toggle _isolatedToggle;
@@ -62,10 +66,11 @@ namespace TheEmptying.Editor.Rules.Testing.UI
 
         private ScrollView _runViewHost;
 
-        public RuleTestPanel(RuleEditorModel model, Action<RuleTraceSegment> onSegmentSelected = null)
+        public RuleTestPanel(RuleEditorModel model, Action<RuleTraceSegment> onSegmentSelected = null, Action<string> onStepNodeSelected = null)
         {
             _model = model;
             _onSegmentSelected = onSegmentSelected;
+            _onStepNodeSelected = onStepNodeSelected;
             style.flexGrow = 1;
             style.flexDirection = FlexDirection.Column;
             BuildUi();
@@ -98,7 +103,8 @@ namespace TheEmptying.Editor.Rules.Testing.UI
             RefreshFireControls();
         }
 
-        private void OnBuildClicked()
+        /// <summary>Internal (not private) so tests can drive the real Build button handler directly - a UI Toolkit Button's click can only be simulated with a live panel, which these tests don't open.</summary>
+        internal void OnBuildClicked()
         {
             IReadOnlyList<string> sources = _model.Context.SourceFolders;
             _session.Build(_model.Rule, sources, ModuleCatalog.CreateModules(), _isolatedToggle.value, (ulong)Math.Max(1, _seedField.value));
@@ -107,7 +113,7 @@ namespace TheEmptying.Editor.Rules.Testing.UI
             RefreshRunView();
         }
 
-        private void OnClearClicked()
+        internal void OnClearClicked()
         {
             if (!_session.IsBuilt)
             {
@@ -175,16 +181,19 @@ namespace TheEmptying.Editor.Rules.Testing.UI
             {
                 var fireNowRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center } };
                 fireNowRow.Add(new Label("Time trigger - "));
-                fireNowRow.Add(new Button(() =>
-                {
-                    _session.FireNow();
-                    RefreshStatus();
-                    RefreshRunView();
-                }) { text = "Fire now" });
+                fireNowRow.Add(new Button(OnFireNowClicked) { text = "Fire now" });
                 _fireHost.Add(fireNowRow);
             }
 
             BuildWaitingAndAskingControls();
+        }
+
+        internal void OnFireNowClicked()
+        {
+            _session.FireNow();
+            RefreshStatus();
+            RefreshFireControls();
+            RefreshRunView();
         }
 
         private void BuildEventFireControls()
@@ -204,14 +213,17 @@ namespace TheEmptying.Editor.Rules.Testing.UI
             _fireHost.Add(addRowButton);
 
             var fireRow = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingTop = 4 } };
-            fireRow.Add(new Button(() =>
-            {
-                var parameters = _paramRows.Where(r => !string.IsNullOrEmpty(r.NameField.value)).Select(r => r.ToParameter()).ToList();
-                _session.FireEvent(_eventIdField.value, parameters);
-                RefreshStatus();
-                RefreshRunView();
-            }) { text = "Fire" });
+            fireRow.Add(new Button(OnFireEventClicked) { text = "Fire" });
             _fireHost.Add(fireRow);
+        }
+
+        internal void OnFireEventClicked()
+        {
+            var parameters = _paramRows.Where(r => !string.IsNullOrEmpty(r.NameField.value)).Select(r => r.ToParameter()).ToList();
+            _session.FireEvent(_eventIdField.value, parameters);
+            RefreshStatus();
+            RefreshFireControls();
+            RefreshRunView();
         }
 
         private void AddParamRow(VisualElement host)
@@ -259,14 +271,8 @@ namespace TheEmptying.Editor.Rules.Testing.UI
             if (_session.TryGetResumeTick(out long resumeTick))
             {
                 var waitRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, paddingTop = 4 } };
-                waitRow.Add(new Label($"Waiting until tick {resumeTick}. "));
-                waitRow.Add(new Button(() =>
-                {
-                    _session.SkipToResume();
-                    RefreshStatus();
-                    RefreshFireControls();
-                    RefreshRunView();
-                }) { text = "Skip ahead" });
+                waitRow.Add(new Label($"Waiting until {RuleTraceTextFormatter.FormatDayTime(resumeTick)}. "));
+                waitRow.Add(new Button(OnSkipToResumeClicked) { text = "Skip ahead" });
                 _fireHost.Add(waitRow);
             }
 
@@ -280,19 +286,28 @@ namespace TheEmptying.Editor.Rules.Testing.UI
                 foreach ((int choiceNumber, string text) in question.Choices)
                 {
                     long questionId = question.QuestionId;
-                    choicesRow.Add(new Button(() =>
-                    {
-                        _session.AnswerQuestion(questionId, choiceNumber);
-                        RefreshStatus();
-                        RefreshFireControls();
-                        RefreshRunView();
-                    })
-                    { text = text });
+                    choicesRow.Add(new Button(() => OnAnswerChoiceClicked(questionId, choiceNumber)) { text = text });
                 }
 
                 questionBox.Add(choicesRow);
                 _fireHost.Add(questionBox);
             }
+        }
+
+        internal void OnSkipToResumeClicked()
+        {
+            _session.SkipToResume();
+            RefreshStatus();
+            RefreshFireControls();
+            RefreshRunView();
+        }
+
+        internal void OnAnswerChoiceClicked(long questionId, int choiceNumber)
+        {
+            _session.AnswerQuestion(questionId, choiceNumber);
+            RefreshStatus();
+            RefreshFireControls();
+            RefreshRunView();
         }
 
         private void RefreshRunView()
@@ -304,60 +319,14 @@ namespace TheEmptying.Editor.Rules.Testing.UI
                 return;
             }
 
+            IReadOnlyDictionary<string, RuleTraceNodeInfo> nodeInfo = RuleTraceNodeInfo.BuildMap(_model.Rule, _model.Context.Blocks);
+
             foreach (RuleTraceSegment segment in _session.Segments)
             {
-                _runViewHost.Add(BuildSegmentView(segment, _onSegmentSelected));
+                _runViewHost.Add(RuleRunView.Build(segment, nodeInfo, _onStepNodeSelected));
             }
 
             _onSegmentSelected?.Invoke(_session.Segments.Count > 0 ? _session.Segments[^1] : null);
-        }
-
-        private static VisualElement BuildSegmentView(RuleTraceSegment segment, Action<RuleTraceSegment> onSelected)
-        {
-            var box = new VisualElement
-            {
-                style = { paddingLeft = 4, paddingTop = 4, paddingBottom = 4, borderBottomWidth = 1, borderBottomColor = new Color(0, 0, 0, 0.3f) }
-            };
-
-            if (onSelected != null)
-            {
-                box.RegisterCallback<ClickEvent>(_ => onSelected(segment));
-            }
-
-            box.Add(new Label($"Tick {segment.Tick} - {DescribeStart(segment)} - ended: {DescribeEnd(segment)}")
-            {
-                style = { unityFontStyleAndWeight = FontStyle.Bold, whiteSpace = WhiteSpace.Normal }
-            });
-
-            foreach (RuleTraceEntry entry in segment.Entries)
-            {
-                box.Add(new Label(entry.ToString()) { style = { fontSize = 10, color = new Color(0.8f, 0.8f, 0.8f), whiteSpace = WhiteSpace.Normal } });
-            }
-
-            return box;
-        }
-
-        private static string DescribeStart(RuleTraceSegment segment)
-        {
-            return segment.StartKind switch
-            {
-                RuleTraceStartKind.EventTrigger => $"event '{segment.StartEventDefinitionId}'",
-                RuleTraceStartKind.ScheduleTrigger => "schedule",
-                RuleTraceStartKind.Resume => $"resume (due at {segment.StartResumeTick})",
-                RuleTraceStartKind.Answer => $"answer to question {segment.StartQuestionId} (choice {segment.StartChoiceNumber})",
-                _ => segment.StartKind.ToString()
-            };
-        }
-
-        private static string DescribeEnd(RuleTraceSegment segment)
-        {
-            return segment.EndKind switch
-            {
-                RuleTraceEndKind.Waiting => $"waiting until tick {segment.EndResumeTick}",
-                RuleTraceEndKind.Asking => $"asking question {segment.EndQuestionId}",
-                RuleTraceEndKind.Error => $"error: {segment.EndErrorMessage}",
-                _ => segment.EndKind.ToString()
-            };
         }
     }
 }

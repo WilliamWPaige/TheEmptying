@@ -370,6 +370,7 @@ namespace TheEmptying.Core.Rules
                 if (kvp.Key.Node == activated.Rule.TriggerNodeId)
                 {
                     activated.TriggerNextNodeId = kvp.Value;
+                    activated.TriggerOutputPortName = kvp.Key.Port;
                     break;
                 }
             }
@@ -407,6 +408,7 @@ namespace TheEmptying.Core.Rules
             if (recorder != null)
             {
                 StartFromTrigger(recorder, posted);
+                recorder.RecordNodeExecuted(activated.Rule.TriggerNodeId, activated.TriggerOutputPortName);
             }
 
             RunInstanceGuarded(instance, activated, tick, recorder);
@@ -437,6 +439,7 @@ namespace TheEmptying.Core.Rules
             if (recorder != null)
             {
                 StartFromTrigger(recorder, null);
+                recorder.RecordNodeExecuted(activated.Rule.TriggerNodeId, activated.TriggerOutputPortName);
             }
 
             RunInstanceGuarded(instance, activated, tick, recorder);

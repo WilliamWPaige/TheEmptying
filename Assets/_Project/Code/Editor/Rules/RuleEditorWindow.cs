@@ -95,7 +95,7 @@ namespace TheEmptying.Editor.Rules
 
         private VisualElement BuildLeftPanel()
         {
-            var panel = new VisualElement { style = { width = 260, borderRightWidth = 1, borderRightColor = new Color(0, 0, 0, 0.4f) } };
+            var panel = new VisualElement { style = { width = 260, minWidth = 260, flexShrink = 0, borderRightWidth = 1, borderRightColor = new Color(0, 0, 0, 0.4f) } };
 
             var sourceRow = new VisualElement { style = { flexDirection = FlexDirection.Row, paddingLeft = 4, paddingTop = 4, paddingBottom = 4 } };
             var refreshButton = new Button(ReloadContext) { text = "Refresh" };
@@ -137,22 +137,38 @@ namespace TheEmptying.Editor.Rules
             // label (which reserves a fixed width, squeezing the actual input down to a
             // few characters) - this is the only way to give Id/Name/Description room to
             // read a normal value at the window's default width.
-            var propsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, paddingLeft = 4, paddingTop = 4, paddingBottom = 4, alignItems = Align.FlexEnd } };
-            _idField = new TextField { style = { flexGrow = 1, flexShrink = 1, minWidth = 140 } };
-            _nameField = new TextField { style = { flexGrow = 1, flexShrink = 1, minWidth = 140 } };
+            //
+            // Two explicit, fixed-height rows (never wrapped, never grown by a long
+            // value) rather than one wrapping row: a long description used to wrap
+            // Id/Name/Enabled onto their own line without the container reserving room
+            // for it, so the wrapped line and the canvas below it overlapped. Fixed
+            // rows mean the canvas always starts exactly below the bar, at any window
+            // width or description length.
+            const float PropsRowHeight = 36f;
+
+            var propsContainer = new VisualElement { style = { flexDirection = FlexDirection.Column, flexShrink = 0, paddingLeft = 4, paddingTop = 4, paddingBottom = 4 } };
+
+            var propsLine1 = new VisualElement { style = { flexDirection = FlexDirection.Row, height = PropsRowHeight, flexShrink = 0, alignItems = Align.FlexEnd, overflow = Overflow.Hidden } };
+            _idField = new TextField { style = { flexGrow = 1, flexShrink = 1, minWidth = 100 } };
+            _nameField = new TextField { style = { flexGrow = 1, flexShrink = 1, minWidth = 100 } };
             _enabledToggle = new Toggle("Enabled") { style = { flexShrink = 0, marginLeft = 4, marginRight = 4 } };
-            _descriptionField = new TextField { style = { flexGrow = 2, flexShrink = 1, minWidth = 160 } };
+
+            propsLine1.Add(BuildLabeledColumn("Id", _idField, flexGrow: 1));
+            propsLine1.Add(BuildLabeledColumn("Name", _nameField, flexGrow: 1));
+            propsLine1.Add(_enabledToggle);
+            propsContainer.Add(propsLine1);
+
+            var propsLine2 = new VisualElement { style = { flexDirection = FlexDirection.Row, height = PropsRowHeight, flexShrink = 0, paddingTop = 2, overflow = Overflow.Hidden } };
+            _descriptionField = new TextField { style = { flexGrow = 1, flexShrink = 1, minWidth = 0 } };
+            propsLine2.Add(BuildLabeledColumn("Description", _descriptionField, flexGrow: 1));
+            propsContainer.Add(propsLine2);
 
             WireRuleProperty(_idField);
             WireRuleProperty(_nameField);
             WireRuleProperty(_descriptionField);
             _enabledToggle.RegisterValueChangedCallback(_ => CommitRuleProperties());
 
-            propsRow.Add(BuildLabeledColumn("Id", _idField, flexGrow: 1));
-            propsRow.Add(BuildLabeledColumn("Name", _nameField, flexGrow: 1));
-            propsRow.Add(_enabledToggle);
-            propsRow.Add(BuildLabeledColumn("Description", _descriptionField, flexGrow: 2));
-            panel.Add(propsRow);
+            panel.Add(propsContainer);
 
             _canvasHost = new VisualElement { style = { flexGrow = 1 } };
             panel.Add(_canvasHost);
@@ -569,20 +585,7 @@ namespace TheEmptying.Editor.Rules
             _canvasView.AddNodeMenuRequested += OnAddNodeMenuRequested;
             _canvasHost.Add(_canvasView);
 
-            _testPanel = new RuleTestPanel(model, segment =>
-            {
-                if (segment != null)
-                {
-                    _canvasView?.HighlightSegment(segment);
-                }
-                else
-                {
-                    _canvasView?.ClearHighlight();
-                }
-            });
-            _testTabHost.Add(_testPanel);
-
-            Action<RuleTraceSegment> onLiveSegmentSelected = segment =>
+            Action<RuleTraceSegment> onSegmentSelected = segment =>
             {
                 if (segment != null)
                 {
@@ -593,7 +596,12 @@ namespace TheEmptying.Editor.Rules
                     _canvasView?.ClearHighlight();
                 }
             };
-            _liveTabHost.Add(new LiveTracePanel(model.Rule.Id, onLiveSegmentSelected));
+            Action<string> onStepNodeSelected = nodeId => _canvasView?.SelectAndFrameNode(nodeId);
+
+            _testPanel = new RuleTestPanel(model, onSegmentSelected, onStepNodeSelected);
+            _testTabHost.Add(_testPanel);
+
+            _liveTabHost.Add(new LiveTracePanel(model.Rule.Id, model.Rule, model.Context.Blocks, onSegmentSelected, onStepNodeSelected));
 
             SyncPropertiesFromModel();
             RefreshProblemsList();

@@ -1,6 +1,5 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using TheEmptying.Core;
 using TheEmptying.Core.Rules;
 using TheEmptying.Core.Rules.Tracing;
@@ -15,8 +14,9 @@ namespace TheEmptying.Editor.Rules.Testing.UI
     /// While the game runs in the editor, shows live traces for the rule
     /// currently open: a toggle to switch tracing on/off for it (off by
     /// default), the last 50 segments, and this rule's paused instances and
-    /// pending questions in the running game. Leaving play mode clears the
-    /// view and detaches the listener.
+    /// pending questions in the running game. Selecting a segment shows the
+    /// same plain-language run view and canvas highlighting as the Test tab.
+    /// Leaving play mode clears the view and detaches the listener.
     /// </summary>
     internal sealed class LiveTracePanel : VisualElement
     {
@@ -36,18 +36,24 @@ namespace TheEmptying.Editor.Rules.Testing.UI
         }
 
         private readonly string _ruleId;
+        private readonly IReadOnlyDictionary<string, RuleTraceNodeInfo> _nodeInfo;
         private readonly Action<RuleTraceSegment> _onSegmentSelected;
+        private readonly Action<string> _onStepNodeSelected;
 
         private Toggle _traceToggle;
         private Label _statusLabel;
         private ScrollView _listHost;
+        private VisualElement _selectedDetailHost;
         private CollectingListener _listener;
         private GameBootstrap _bootstrap;
+        private RuleTraceSegment _selectedSegment;
 
-        public LiveTracePanel(string ruleId, Action<RuleTraceSegment> onSegmentSelected)
+        public LiveTracePanel(string ruleId, RuleDefinition rule, BlockRegistry blocks, Action<RuleTraceSegment> onSegmentSelected, Action<string> onStepNodeSelected = null)
         {
             _ruleId = ruleId;
+            _nodeInfo = RuleTraceNodeInfo.BuildMap(rule, blocks);
             _onSegmentSelected = onSegmentSelected;
+            _onStepNodeSelected = onStepNodeSelected;
             style.flexGrow = 1;
             style.flexDirection = FlexDirection.Column;
             BuildUi();
@@ -72,8 +78,11 @@ namespace TheEmptying.Editor.Rules.Testing.UI
             Add(_statusLabel);
 
             Add(new Label("Segments (most recent 50)") { style = { unityFontStyleAndWeight = FontStyle.Bold, paddingLeft = 4 } });
-            _listHost = new ScrollView { style = { flexGrow = 1 } };
+            _listHost = new ScrollView { style = { flexGrow = 1, maxHeight = 160 } };
             Add(_listHost);
+
+            _selectedDetailHost = new ScrollView { style = { flexGrow = 1 } };
+            Add(_selectedDetailHost);
         }
 
         private void OnToggleChanged(ChangeEvent<bool> evt)
@@ -131,7 +140,10 @@ namespace TheEmptying.Editor.Rules.Testing.UI
                     DetachListener();
                     _traceToggle.SetValueWithoutNotify(false);
                     _listHost.Clear();
+                    _selectedDetailHost.Clear();
+                    _selectedSegment = null;
                     _statusLabel.text = "Left play mode - live view cleared.";
+                    _onSegmentSelected?.Invoke(null);
                 }
 
                 return;
@@ -153,10 +165,19 @@ namespace TheEmptying.Editor.Rules.Testing.UI
             _listHost.Clear();
             foreach (RuleTraceSegment segment in _listener.Segments)
             {
-                var row = new Label($"Tick {segment.Tick} - ended: {segment.EndKind}") { style = { fontSize = 10, whiteSpace = WhiteSpace.Normal } };
-                row.RegisterCallback<ClickEvent>(_ => _onSegmentSelected?.Invoke(segment));
+                string label = $"{RuleTraceTextFormatter.FormatDayTime(segment.Tick)} - {RuleTraceTextFormatter.DescribeEnd(segment, _nodeInfo)}";
+                var row = new Label(label) { style = { fontSize = 10, whiteSpace = WhiteSpace.Normal } };
+                row.RegisterCallback<ClickEvent>(_ => SelectSegment(segment));
                 _listHost.Add(row);
             }
+        }
+
+        private void SelectSegment(RuleTraceSegment segment)
+        {
+            _selectedSegment = segment;
+            _selectedDetailHost.Clear();
+            _selectedDetailHost.Add(RuleRunView.Build(segment, _nodeInfo, _onStepNodeSelected));
+            _onSegmentSelected?.Invoke(segment);
         }
     }
 }

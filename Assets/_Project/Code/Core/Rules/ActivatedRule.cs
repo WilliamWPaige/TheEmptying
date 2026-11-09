@@ -10,6 +10,9 @@ namespace TheEmptying.Core.Rules
         public RuleTriggerDescriptor Trigger { get; set; }
         public string TriggerNextNodeId { get; set; }
 
+        /// <summary>The trigger node's own execution output port name, if it has an outgoing wire (null otherwise) - so a trigger fire can be recorded as a NodeExecuted entry for itself, same as any other node.</summary>
+        public string TriggerOutputPortName { get; set; }
+
         public Dictionary<(string Node, string Port), string> ExecOutputTargets { get; } = new Dictionary<(string, string), string>();
         public Dictionary<(string Node, string Port), CompiledRuleConnection> DataInputConnections { get; } = new Dictionary<(string, string), CompiledRuleConnection>();
 

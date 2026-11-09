@@ -83,23 +83,31 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                     display = DisplayStyle.None
                 }
             };
-            Add(_selectionHalo);
 
+            // Sits outside the node's own top-left corner (negative offset), not in the
+            // header's colored area, so it's never covered by the header's background
+            // and reads at a glance regardless of the header's own color. Added last
+            // (see the bottom of this constructor) so it also paints on top of
+            // everything else, not just positioned outside it.
             _executionBadge = new Label
             {
+                pickingMode = PickingMode.Ignore,
                 style =
                 {
                     position = Position.Absolute,
-                    right = 2, top = 2,
-                    fontSize = 9,
+                    left = -9, top = -9,
+                    width = 18, height = 18,
+                    fontSize = 10,
+                    unityFontStyleAndWeight = FontStyle.Bold,
                     color = Color.black,
-                    backgroundColor = RuleCanvasColors.SelectionHighlight,
-                    paddingLeft = 3, paddingRight = 3,
-                    borderTopLeftRadius = 3, borderTopRightRadius = 3, borderBottomLeftRadius = 3, borderBottomRightRadius = 3,
+                    unityTextAlign = TextAnchor.MiddleCenter,
+                    backgroundColor = new Color(1f, 0.85f, 0.1f),
+                    borderTopWidth = 1.5f, borderBottomWidth = 1.5f, borderLeftWidth = 1.5f, borderRightWidth = 1.5f,
+                    borderTopColor = Color.black, borderBottomColor = Color.black, borderLeftColor = Color.black, borderRightColor = Color.black,
+                    borderTopLeftRadius = 9, borderTopRightRadius = 9, borderBottomLeftRadius = 9, borderBottomRightRadius = 9,
                     display = DisplayStyle.None
                 }
             };
-            Add(_executionBadge);
 
             _runtimeErrorLabel = new Label
             {
@@ -114,7 +122,6 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                     display = DisplayStyle.None
                 }
             };
-            Add(_runtimeErrorLabel);
 
             _header = new VisualElement
             {
@@ -183,6 +190,12 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                 Add(BuildPortDot(port));
             }
 
+            // Overlay indicators added last so they paint on top of the header,
+            // fields and port dots above, not underneath them.
+            Add(_selectionHalo);
+            Add(_executionBadge);
+            Add(_runtimeErrorLabel);
+
             Refresh(node);
         }
 
@@ -211,10 +224,10 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
             List<string> choices = types.Select(t => t.ToString()).ToList();
             RuleDataType currentType = family.VariantsByType.First(kvp => kvp.Value.Id == currentBlockTypeId).Key;
 
-            var dropdown = new DropdownField(choices, choices.IndexOf(currentType.ToString()))
+            var dropdown = ApplyDropdownEllipsisAndTooltip(new DropdownField(choices, choices.IndexOf(currentType.ToString()))
             {
                 style = { position = Position.Absolute, left = 4, top = y, width = NodeViewModel.Width - 8, fontSize = 9, height = NodeViewModel.FieldRowHeight + 4 }
-            };
+            });
 
             dropdown.RegisterValueChangedCallback(evt =>
             {
@@ -259,10 +272,10 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                     .OrderBy(id => id, StringComparer.Ordinal)
                     .ToList();
 
-                var dropdown = new DropdownField(NonEmpty(compatibleSettingIds), 0)
+                var dropdown = ApplyDropdownEllipsisAndTooltip(new DropdownField(NonEmpty(compatibleSettingIds), 0)
                 {
                     style = { flexGrow = 1, flexShrink = 1, minWidth = 0, overflow = Overflow.Hidden, height = NodeViewModel.FieldRowHeight + 2, display = DisplayStyle.None }
-                };
+                });
                 settingPicker = dropdown;
                 row.Add(dropdown);
 
@@ -319,6 +332,7 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                     if (isSettingRef)
                     {
                         settingPicker.SetValueWithoutNotify(source.SettingId);
+                        settingPicker.tooltip = source.SettingId;
                     }
                 }
 
@@ -345,20 +359,20 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
         {
             if (field.AllowedValues != null && field.AllowedValues.Count > 0)
             {
-                return new DropdownField(NonEmpty(field.AllowedValues.ToList()), 0);
+                return ApplyDropdownEllipsisAndTooltip(new DropdownField(NonEmpty(field.AllowedValues.ToList()), 0));
             }
 
             switch (field.PickerKind)
             {
                 case FieldPickerKind.EventId:
-                    return new DropdownField(NonEmpty(_model.Context.Events.All.Select(e => e.Id).OrderBy(id => id, StringComparer.Ordinal).ToList()), 0);
+                    return ApplyDropdownEllipsisAndTooltip(new DropdownField(NonEmpty(_model.Context.Events.All.Select(e => e.Id).OrderBy(id => id, StringComparer.Ordinal).ToList()), 0));
                 case FieldPickerKind.SettingId:
-                    return new DropdownField(NonEmpty(_model.Context.Settings.ExportAll().Select(s => s.Id).OrderBy(id => id, StringComparer.Ordinal).ToList()), 0);
+                    return ApplyDropdownEllipsisAndTooltip(new DropdownField(NonEmpty(_model.Context.Settings.ExportAll().Select(s => s.Id).OrderBy(id => id, StringComparer.Ordinal).ToList()), 0));
                 case FieldPickerKind.ContentId:
                     List<string> ids = field.ContentTypeName != null && _model.Context.ContentIdsByType.TryGetValue(field.ContentTypeName, out IReadOnlyList<string> known)
                         ? known.ToList()
                         : new List<string>();
-                    return new DropdownField(NonEmpty(ids), 0);
+                    return ApplyDropdownEllipsisAndTooltip(new DropdownField(NonEmpty(ids), 0));
             }
 
             return field.DataType switch
@@ -370,6 +384,23 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
         }
 
         private static List<string> NonEmpty(List<string> values) => values.Count > 0 ? values : new List<string> { string.Empty };
+
+        /// <summary>A dropdown's own internal label has no ellipsis by default, so a long value (an event or content Id) is hard-clipped mid-character. This clips it with an ellipsis instead and keeps a tooltip with the full value, updated whenever the value changes.</summary>
+        private static DropdownField ApplyDropdownEllipsisAndTooltip(DropdownField dropdown)
+        {
+            dropdown.tooltip = dropdown.value;
+            dropdown.RegisterValueChangedCallback(evt => dropdown.tooltip = evt.newValue);
+
+            TextElement label = dropdown.Q<TextElement>();
+            if (label != null)
+            {
+                label.style.overflow = Overflow.Hidden;
+                label.style.textOverflow = TextOverflow.Ellipsis;
+                label.style.whiteSpace = WhiteSpace.NoWrap;
+            }
+
+            return dropdown;
+        }
 
         private void WireTypedControlEvents(VisualElement control, FieldDefinition field, Action<RuleFieldValueSource> commit)
         {
@@ -421,7 +452,9 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                     toggle.SetValueWithoutNotify(ResolveBool(field, source));
                     break;
                 case DropdownField dropdown:
-                    dropdown.SetValueWithoutNotify(ResolveText(field, source));
+                    string text = ResolveText(field, source);
+                    dropdown.SetValueWithoutNotify(text);
+                    dropdown.tooltip = text;
                     break;
             }
         }
