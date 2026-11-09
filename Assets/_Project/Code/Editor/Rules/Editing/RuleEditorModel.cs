@@ -121,7 +121,42 @@ namespace TheEmptying.Editor.Rules.Editing
         public string AddNode(string blockTypeId, Vector2 canvasPosition)
         {
             PushUndoImmediate();
+            string id = AddNodeInternal(blockTypeId, canvasPosition);
+            CommitChange();
+            return id;
+        }
 
+        /// <summary>
+        /// Adds a node and, if existingNodeId/existingPortName names a real
+        /// port on it, connects the new node to it too (figuring out which
+        /// side is the output from existingPortDirection) - both in the same
+        /// undo step. Used by the add-node menu's "drag a wire to empty
+        /// canvas" flow, where the node and its first wire are one action
+        /// from the user's point of view.
+        /// </summary>
+        public string AddNodeAndConnect(string blockTypeId, Vector2 canvasPosition, string existingNodeId, string existingPortName, PortDirection existingPortDirection, string newNodePortName)
+        {
+            PushUndoImmediate();
+
+            string newNodeId = AddNodeInternal(blockTypeId, canvasPosition);
+            Canvas.Rebuild(); // so the new node is resolvable by CanConnect/ConnectInternal below
+
+            string fromNode = existingPortDirection == PortDirection.Output ? existingNodeId : newNodeId;
+            string fromPort = existingPortDirection == PortDirection.Output ? existingPortName : newNodePortName;
+            string toNode = existingPortDirection == PortDirection.Output ? newNodeId : existingNodeId;
+            string toPort = existingPortDirection == PortDirection.Output ? newNodePortName : existingPortName;
+
+            if (CanConnect(fromNode, fromPort, toNode, toPort).IsAllowed)
+            {
+                ConnectInternal(fromNode, fromPort, toNode, toPort);
+            }
+
+            CommitChange();
+            return newNodeId;
+        }
+
+        private string AddNodeInternal(string blockTypeId, Vector2 canvasPosition)
+        {
             string id = AllocateNodeId();
             Rule.Nodes.Add(new RuleNode
             {
@@ -132,7 +167,6 @@ namespace TheEmptying.Editor.Rules.Editing
                 Fields = new Dictionary<string, RuleFieldValueSource>()
             });
 
-            CommitChange();
             return id;
         }
 
@@ -205,7 +239,13 @@ namespace TheEmptying.Editor.Rules.Editing
             }
 
             PushUndoImmediate();
+            RuleConnection connection = ConnectInternal(fromNode, fromPort, toNode, toPort);
+            CommitChange();
+            return connection;
+        }
 
+        private RuleConnection ConnectInternal(string fromNode, string fromPort, string toNode, string toPort)
+        {
             Rule.Connections.RemoveAll(c => c.ToNode == toNode && c.ToPort == toPort);
 
             NodeViewModel from = Canvas.Nodes.First(n => n.Node.Id == fromNode);
@@ -217,8 +257,6 @@ namespace TheEmptying.Editor.Rules.Editing
 
             var connection = new RuleConnection { FromNode = fromNode, FromPort = fromPort, ToNode = toNode, ToPort = toPort };
             Rule.Connections.Add(connection);
-
-            CommitChange();
             return connection;
         }
 

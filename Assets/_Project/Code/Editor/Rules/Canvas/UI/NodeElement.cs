@@ -46,6 +46,9 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
 
         public string NodeId { get; }
 
+        /// <summary>The container every port label, field row and the variant dropdown are placed in - exposed (internal, test-only) so a test can check it shares the node's own (0,0) origin, the same one port dots use.</summary>
+        internal VisualElement PortsAndFieldsContainerForTests => _portsAndFields;
+
         public NodeElement(NodeViewModel node, RuleEditorModel model)
         {
             _model = model;
@@ -91,7 +94,18 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
             _header.Add(_title);
             Add(_header);
 
-            _portsAndFields = new VisualElement { pickingMode = PickingMode.Ignore };
+            // Absolutely positioned at the node's own origin (0,0) - NOT a normal-flow
+            // sibling of _header, which would otherwise push it down by HeaderHeight a
+            // second time on top of the HeaderHeight NodeViewModel already bakes into
+            // every port/field Y, since _header (a flow child with height HeaderHeight)
+            // would shove any in-flow sibling below it. Port dots (added directly to
+            // this element) already use this same (0,0) origin, so this keeps every
+            // placed element - dots, labels, fields - in one shared coordinate space.
+            _portsAndFields = new VisualElement
+            {
+                pickingMode = PickingMode.Ignore,
+                style = { position = Position.Absolute, left = 0, top = 0, right = 0, bottom = 0 }
+            };
             Add(_portsAndFields);
 
             foreach (PortViewModel port in node.Ports)
@@ -175,7 +189,11 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
         {
             var row = new VisualElement
             {
-                style = { position = Position.Absolute, left = 4, top = y, width = NodeViewModel.Width - 8, height = NodeViewModel.FieldRowHeight + 4, flexDirection = FlexDirection.Row }
+                style =
+                {
+                    position = Position.Absolute, left = 4, top = y, width = NodeViewModel.Width - 8, height = NodeViewModel.FieldRowHeight + 4,
+                    flexDirection = FlexDirection.Row, overflow = Overflow.Hidden
+                }
             };
 
             var label = new Label(field.Name) { style = { fontSize = 9, color = new Color(0.7f, 0.7f, 0.7f), width = node.LabelColumnWidth, overflow = Overflow.Hidden, unityTextAlign = TextAnchor.MiddleLeft } };
@@ -183,6 +201,9 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
 
             VisualElement typedControl = BuildTypedControl(field);
             typedControl.style.flexGrow = 1;
+            typedControl.style.flexShrink = 1;
+            typedControl.style.minWidth = 0;
+            typedControl.style.overflow = Overflow.Hidden;
             typedControl.style.height = NodeViewModel.FieldRowHeight + 2;
 
             DropdownField settingPicker = null;
@@ -196,7 +217,10 @@ namespace TheEmptying.Editor.Rules.Canvas.UI
                     .OrderBy(id => id, StringComparer.Ordinal)
                     .ToList();
 
-                var dropdown = new DropdownField(NonEmpty(compatibleSettingIds), 0) { style = { flexGrow = 1, height = NodeViewModel.FieldRowHeight + 2, display = DisplayStyle.None } };
+                var dropdown = new DropdownField(NonEmpty(compatibleSettingIds), 0)
+                {
+                    style = { flexGrow = 1, flexShrink = 1, minWidth = 0, overflow = Overflow.Hidden, height = NodeViewModel.FieldRowHeight + 2, display = DisplayStyle.None }
+                };
                 settingPicker = dropdown;
                 row.Add(dropdown);
 

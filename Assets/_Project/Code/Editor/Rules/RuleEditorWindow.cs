@@ -118,21 +118,25 @@ namespace TheEmptying.Editor.Rules
         {
             var panel = new VisualElement { style = { flexGrow = 1, flexDirection = FlexDirection.Column, overflow = Overflow.Hidden } };
 
-            var propsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, paddingLeft = 4, paddingTop = 4, paddingBottom = 4, alignItems = Align.Center } };
-            _idField = new TextField("Id") { style = { width = 180, flexShrink = 1, minWidth = 90 } };
-            _nameField = new TextField("Name") { style = { width = 160, flexShrink = 1, minWidth = 80 } };
-            _enabledToggle = new Toggle("Enabled") { style = { flexShrink = 0 } };
-            _descriptionField = new TextField("Description") { style = { flexGrow = 1, flexShrink = 1, minWidth = 120 } };
+            // Each input gets its own Label above it rather than TextField's built-in
+            // label (which reserves a fixed width, squeezing the actual input down to a
+            // few characters) - this is the only way to give Id/Name/Description room to
+            // read a normal value at the window's default width.
+            var propsRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexWrap = Wrap.Wrap, paddingLeft = 4, paddingTop = 4, paddingBottom = 4, alignItems = Align.FlexEnd } };
+            _idField = new TextField { style = { flexGrow = 1, flexShrink = 1, minWidth = 140 } };
+            _nameField = new TextField { style = { flexGrow = 1, flexShrink = 1, minWidth = 140 } };
+            _enabledToggle = new Toggle("Enabled") { style = { flexShrink = 0, marginLeft = 4, marginRight = 4 } };
+            _descriptionField = new TextField { style = { flexGrow = 2, flexShrink = 1, minWidth = 160 } };
 
             WireRuleProperty(_idField);
             WireRuleProperty(_nameField);
             WireRuleProperty(_descriptionField);
             _enabledToggle.RegisterValueChangedCallback(_ => CommitRuleProperties());
 
-            propsRow.Add(_idField);
-            propsRow.Add(_nameField);
+            propsRow.Add(BuildLabeledColumn("Id", _idField, flexGrow: 1));
+            propsRow.Add(BuildLabeledColumn("Name", _nameField, flexGrow: 1));
             propsRow.Add(_enabledToggle);
-            propsRow.Add(_descriptionField);
+            propsRow.Add(BuildLabeledColumn("Description", _descriptionField, flexGrow: 2));
             panel.Add(propsRow);
 
             _canvasHost = new VisualElement { style = { flexGrow = 1 } };
@@ -151,6 +155,14 @@ namespace TheEmptying.Editor.Rules
             _problemsListHost = new ScrollView { style = { flexGrow = 1 } };
             panel.Add(_problemsListHost);
             return panel;
+        }
+
+        private static VisualElement BuildLabeledColumn(string label, VisualElement field, float flexGrow)
+        {
+            var column = new VisualElement { style = { flexDirection = FlexDirection.Column, flexGrow = flexGrow, flexShrink = 1, minWidth = 100, marginRight = 10 } };
+            column.Add(new Label(label) { style = { fontSize = 10, color = new Color(0.65f, 0.65f, 0.65f), marginBottom = 1 } });
+            column.Add(field);
+            return column;
         }
 
         private void WireRuleProperty(TextField field)

@@ -146,6 +146,36 @@ namespace TheEmptying.Tests.EditMode.EditorTools
         }
 
         [Test]
+        public void ApplyChoice_WireDragCase_AddAndConnectAreOneUndoStep()
+        {
+            var rule = NewRule();
+            rule.Nodes.Add(new RuleNode { Id = "trigger", BlockTypeId = "block.trigger.on_event", X = 0, Y = 0, Fields = new Dictionary<string, RuleFieldValueSource> { ["event"] = RuleFieldValueSource.FromLiteral(Newtonsoft.Json.Linq.JToken.FromObject("event.herald_line")) } });
+            var model = new RuleEditorModel(rule, BuildContext());
+
+            NodeViewModel triggerNode = model.Canvas.Nodes.First(n => n.Node.Id == "trigger");
+            PortViewModel execOutput = triggerNode.OutputPorts.First(p => p.Name == "then");
+
+            EditorContext context = model.Context;
+            IReadOnlyList<BlockFamily> families = BlockFamilyCatalog.DetectFamilies(context.Blocks);
+            AddNodeMenuEntry entry = AddNodeMenuModel.BuildEntries(context.Blocks, families).First(e => e.BlockType.Id == "block.action.write_log_line");
+
+            AddNodeMenuModel.ApplyChoice(model, entry, new Vector2(300f, 0f), triggerNode, execOutput);
+
+            Assert.AreEqual(2, model.Rule.Nodes.Count);
+            Assert.AreEqual(1, model.Rule.Connections.Count);
+
+            model.Undo();
+
+            Assert.IsFalse(model.CanUndo, "adding the node and connecting it to the dragged-from port must be a single undo step.");
+            Assert.AreEqual(1, model.Rule.Nodes.Count, "undo must remove the added node...");
+            Assert.AreEqual(0, model.Rule.Connections.Count, "...and the wire to it, together, in one step.");
+
+            model.Redo();
+            Assert.AreEqual(2, model.Rule.Nodes.Count);
+            Assert.AreEqual(1, model.Rule.Connections.Count);
+        }
+
+        [Test]
         public void ApplyChoice_WireDragFromInput_ConnectsTheNewNodesCompatibleOutput()
         {
             var rule = NewRule();

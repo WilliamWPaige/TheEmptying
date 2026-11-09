@@ -76,37 +76,33 @@ namespace TheEmptying.Editor.Rules.Editing
         }
 
         /// <summary>
-        /// Adds entry's block type to model at canvasPosition (one undo
-        /// step). If dragSourcePort isn't null, also connects the new node
-        /// to it on a compatible port, in whichever direction fits. This is
-        /// the exact code path the real add-node menu's callback uses, so a
-        /// test exercising it is exercising the real behavior.
+        /// Adds entry's block type to model at canvasPosition. If
+        /// dragSourcePort isn't null, also connects the new node to it on a
+        /// compatible port, in whichever direction fits - the add and the
+        /// connect are one undo step together, since from the user's point
+        /// of view dragging a wire to empty canvas and picking a block is
+        /// one action. This is the exact code path the real add-node menu's
+        /// callback uses, so a test exercising it is exercising the real
+        /// behavior.
         /// </summary>
         public static string ApplyChoice(RuleEditorModel model, AddNodeMenuEntry entry, Vector2 canvasPosition, NodeViewModel dragSourceNode, PortViewModel dragSourcePort)
         {
-            string newNodeId = model.AddNode(entry.BlockType.Id, canvasPosition);
-
-            if (dragSourcePort != null && dragSourceNode != null)
+            if (dragSourcePort == null || dragSourceNode == null)
             {
-                PortDefinition compatiblePort = entry.BlockType.Ports.FirstOrDefault(p =>
-                    p.Direction != dragSourcePort.Direction &&
-                    p.Kind == dragSourcePort.Kind &&
-                    (dragSourcePort.DataType == null || p.DataType == null || p.DataType == dragSourcePort.DataType));
-
-                if (compatiblePort != null)
-                {
-                    if (dragSourcePort.Direction == PortDirection.Output)
-                    {
-                        model.Connect(dragSourceNode.Node.Id, dragSourcePort.Name, newNodeId, compatiblePort.Name);
-                    }
-                    else
-                    {
-                        model.Connect(newNodeId, compatiblePort.Name, dragSourceNode.Node.Id, dragSourcePort.Name);
-                    }
-                }
+                return model.AddNode(entry.BlockType.Id, canvasPosition);
             }
 
-            return newNodeId;
+            PortDefinition compatiblePort = entry.BlockType.Ports.FirstOrDefault(p =>
+                p.Direction != dragSourcePort.Direction &&
+                p.Kind == dragSourcePort.Kind &&
+                (dragSourcePort.DataType == null || p.DataType == null || p.DataType == dragSourcePort.DataType));
+
+            if (compatiblePort == null)
+            {
+                return model.AddNode(entry.BlockType.Id, canvasPosition);
+            }
+
+            return model.AddNodeAndConnect(entry.BlockType.Id, canvasPosition, dragSourceNode.Node.Id, dragSourcePort.Name, dragSourcePort.Direction, compatiblePort.Name);
         }
     }
 }
