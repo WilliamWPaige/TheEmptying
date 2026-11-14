@@ -32,7 +32,8 @@ namespace TheEmptying.Tests.EditMode.Modules.DemoHunger
             source.WriteDataFile("events.json", @"{
                 ""type"": ""event_definition"",
                 ""items"": [
-                    { ""id"": ""event.demo_hunger.starving"", ""visibility"": ""Witnessed"", ""reportingScore"": 5, ""notabilityScore"": 3, ""description"": ""starving"" }
+                    { ""id"": ""event.demo_hunger.starving"", ""visibility"": ""Witnessed"", ""reportingScore"": 5, ""notabilityScore"": 3, ""description"": ""starving"" },
+                    { ""id"": ""event.demo_hunger.hunger_changed"", ""visibility"": ""Hidden"", ""reportingScore"": 0, ""notabilityScore"": 0, ""description"": ""hunger changed"" }
                 ]
             }");
             return source;
@@ -72,23 +73,38 @@ namespace TheEmptying.Tests.EditMode.Modules.DemoHunger
         }
 
         [Test]
-        public void HungerCrossingBelowThreshold_PostsAStarvingEventForThatEntity()
+        public void HungerUpdate_PostsHungerChangedWithTheOldAndNewValues()
         {
+            // The starving reaction itself moved out of this module and into a core rule
+            // (prompt 2.8b); see DemoHungerStarvingReactionRuleTests for that behavior.
+            // This module's own responsibility is just to post what changed.
             using TempContentSource source = BuildSource();
             (Simulation sim, _) = SimulationBuilder.Build(1, new[] { source.FolderPath }, new IModule[] { new DemoHungerModule() });
 
-            sim.Settings.Set(DemoHungerModule.DecayPerHourSettingId, 20);
+            EntityId first = sim.Entities.LivingEntities().First();
 
-            var starving = new List<EntityId>();
-            sim.Events.Subscribe(DemoHungerModule.StarvingEventId, posted => starving.Add(posted.Data.GetEntity("entity")));
+            double? hunger = null;
+            double? previousHunger = null;
+            EntityId? entity = null;
+            sim.Events.Subscribe(DemoHungerModule.HungerChangedEventId, posted =>
+            {
+                if (posted.Data.GetEntity("entity") == first)
+                {
+                    hunger = posted.Data.GetDouble("hunger");
+                    previousHunger = posted.Data.GetDouble("previousHunger");
+                    entity = posted.Data.GetEntity("entity");
+                }
+            });
 
-            for (int i = 0; i < 3000 && starving.Count == 0; i++)
+            for (int i = 0; i < 2000 && hunger == null; i++)
             {
                 sim.Step();
             }
 
-            Assert.Greater(starving.Count, 0, "Expected at least one starving event with a high decay setting.");
-            Assert.IsTrue(sim.Entities.IsAlive(starving[0]));
+            Assert.IsNotNull(hunger, "Expected at least one hunger_changed event for the first entity.");
+            Assert.AreEqual(first, entity);
+            Assert.Less(hunger.Value, previousHunger.Value, "Hunger should have decayed from the previous value.");
+            Assert.AreEqual(100.0, previousHunger.Value, 0.001, "The first update's previous value should be the starting hunger.");
         }
 
         [Test]

@@ -111,6 +111,7 @@ namespace TheEmptying.Core
 
             if (boundaries.NewDay)
             {
+                RuleRunner?.FlushDailyLimitReports(tick);
                 Events.Post(new NewDayEvent(tick), tick);
             }
 

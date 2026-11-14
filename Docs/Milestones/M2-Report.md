@@ -2,6 +2,8 @@
 
 Prompt 2.8, the Milestone 2 check. Covers the spec review, a project-rules sweep, a performance benchmark, save/load under load, the Milestone 1 carried-forward items, and decisions made during Milestone 2 that the design doc doesn't record.
 
+Prompt 2.8b closed out the open items from 2.8: fire-cap/chain-depth handling in each error mode (section 1 and the closing list), the hunger reaction rebuilt as a rule (section 7), two corrections to this report (sections 1 and the closing list, on "questions pause the game"), and a benchmark rerun with warm-up excluded (section 3).
+
 ## 1. Spec review
 
 Checked against "Milestone 2 specs: the rule system and its editor" in `Docs/Design/05-TechnicalFramework.pdf`.
@@ -12,9 +14,9 @@ Checked against "Milestone 2 specs: the rule system and its editor" in `Docs/Des
 - **Blueprint-style rules** — done as written. `PortKind.Execution` vs `PortKind.Data`; `RuleFieldValueSource` is literal or setting-reference.
 - **Blocks are C#, registered by modules** — done differently. Blocks are plain C#, but they are registered by a direct static call, `CoreBlocks.RegisterAll(BlockRegistry)`, called from `SimulationBuilder.Build` and `EditorContext.Build` *before* the module declaration phase runs — not through any module's `IModuleDeclaration.Declare`. `ModuleDeclarationContext.Blocks` exists for a future module to register through, but nothing uses it yet; what's registered today is core-only. "Data mods combine existing blocks but can't create new kinds" holds.
 - **Paused rules are saved and resume exactly on time** — done as written. `RuleRuntimeSection` persists paused instances (position, locals, triggering event); `Simulation.Step` resumes them before any other event delivery that tick.
-- **Questions queue and pause the game by default** — the queue, the setting (`setting.rules.questions_pause_game`, default on) and the delegation hook (`IQuestionDelegate`) are done as written. The *presentation-layer* half ("pause the game") — actually halting clock advancement while a question is open — isn't wired up anywhere yet; there's no player-facing surface for questions at all yet, so this is a reasonable gap, not a bug.
+- **Questions queue and pause the game by default** — done as written, including the presentation-layer half. The queue, the setting (`setting.rules.questions_pause_game`, default on) and the delegation hook (`IQuestionDelegate`) are done as written; prompt 2.4 also built the question popup and wired actually halting clock advancement into `GameBootstrap` (`IsBlockedByPendingQuestion`, checked in `Update` before any ticks run, and before `SetPaused(false)` is allowed to take effect), with `PlayMode/QuestionPopupTests.cs` covering it (popup shown and the clock stopped, resuming on an answer, staying blocked across two pending questions until both are answered, and staying unblocked when the pause setting is off). The 1–9 section below was wrong to call this unwired; corrected there too.
 - **Rule memory** — done as written: `RuleInstance.Locals` for running locals, `MemoryStore`/`MemorySection` for saved flags/counters.
-- **Limits: 1,000 fires/rule/tick, chains capped at 10, loop warnings in the editor, switched off and reported in Release** — the two numeric limits are exact (`setting.rules.max_fires_per_tick` = 1000, `RuleRunner.MaxChainDepth` = 10). "Loop warnings in the editor" are compile-time warnings (unreachable nodes, self-triggering events), not a separate runtime loop detector — a reasonable reading. One real deviation: hitting the fire cap or chain-depth cap only skips *that fire* and logs a report — it does **not** switch the rule off. Only a runtime *exception* switches a rule off in Release mode. A rule that hits its fire cap every tick forever will just keep quietly skipping forever rather than disabling itself — worth a decision from William on whether that's the intended behavior.
+- **Limits: 1,000 fires/rule/tick, chains capped at 10, loop warnings in the editor, switched off and reported in Release** — the two numeric limits are exact (`setting.rules.max_fires_per_tick` = 1000, `RuleRunner.MaxChainDepth` = 10). "Loop warnings in the editor" are compile-time warnings (unreachable nodes, self-triggering events), not a separate runtime loop detector — a reasonable reading. One deviation from the doc's "switched off and reported in Release," decided by William in prompt 2.8b and now implemented: hitting the fire cap or chain-depth cap only skips *that fire*; the rule itself is never switched off. In Release mode the skip is now reported once per rule per in-game day (how many times it hit each limit that day), not a line per hit; in Development mode hitting either limit is an error naming the rule, the node and the limit, handled the same way as any other rule runtime error there (it throws and stops the game). `RuleRunner.FlushDailyLimitReports`, called from `Simulation.Step` on the `NewDay` boundary.
 - **In-game editor and system-specific blocks come later** — correctly out of scope.
 
 ### 1–9
@@ -62,7 +64,7 @@ Files with one public type plus small `internal` helper types in the same file (
 
 Benchmark: 2,000 entities, 500 rules (300 on events across 300 distinct event Ids — one rule each — with a sliding 50-event window posted each tick so about 50 events fire per tick; 200 on schedules split across every-N-hours/at-an-hour/on-new-day), 10 rotating rule templates together covering every core block kind (triggers, every value block, branch/wait/sequence/stop, get/set flag, get/change/set counter, local variables, post event/log line/herald line, ask the player). Run for one full in-game day (14,400 ticks). New test: `Tests/EditMode/Rules/RulePerformanceBenchmarkTests.cs` (`[Explicit]`, run by name for numbers — doesn't slow the normal suite) and its shared fixture `RuleBenchmarkFixture.cs`.
 
-**Results:**
+**Results (prompt 2.8):**
 
 | Metric | Value |
 | --- | --- |
@@ -78,6 +80,20 @@ Benchmark: 2,000 entities, 500 rules (300 on events across 300 distinct event Id
 
 **Where the worst-case time likely goes (not optimized, per the prompt):** across 14,400 ticks only one single tick is the outlier; every other tick's rule work stayed close to the 0.33 ms average (consistent with the average meeting target so comfortably). The far likelier of two straightforward causes: a first-tick cost (JIT warm-up of the ~500 compiled rules' `Execute`/`ComputeValue` paths, the rules random stream's lazy first resolution, and every `Dictionary`/`List` used by the runner growing from empty for the first time) rather than a sustained per-tick cost from the rule work itself — the same "a single outlier" pattern the Milestone 1 report recorded for its own benchmark (worst 4.5 ms there, also one outlier against a ~0.04 ms average). This wasn't instrumented further since the prompt asks only to report where the time goes, not to fix it.
 
+**Rerun with one in-game hour of warm-up excluded (prompt 2.8b):** `RulePerformanceBenchmarkTests` now runs 600 ticks (one in-game hour) before starting to measure, discards those from every average/worst/allocation figure, then measures a full 14,400-tick day on top of that, and additionally records the five slowest measured ticks with which calendar boundaries (`NewHour`/`NewDay`/`NewSeason`/`NewYear`) landed on them.
+
+| Metric | Value |
+| --- | --- |
+| Whole simulation, average | 0.3047 ms/tick |
+| Whole simulation, worst | 4.6130 ms/tick |
+| Rule work alone, average | 0.3046 ms/tick |
+| Rule work alone, worst | 4.6128 ms/tick |
+| Allocations/tick (tracing off) | not reliably measurable — see below (unchanged) |
+
+Five slowest measured ticks (rule work): tick 13776 (4.6128 ms), tick 7487 (4.4998 ms), tick 7021 (4.4350 ms), tick 7590 (4.3928 ms), tick 13909 (4.3644 ms) — none of the five landed on a `NewHour`, `NewDay`, `NewSeason` or `NewYear` boundary, and they aren't clustered together (roughly ticks 7000–7600 and 13700–13900, nowhere near the excluded warm-up window at the start).
+
+**Targets with warm-up excluded: both met.** Average is effectively unchanged (0.3047 vs. 0.33 ms, within noise). Worst case drops from 15.3 ms to 4.61 ms, now *under* the 5 ms budget — confirming the earlier 15.3 ms outlier was warm-up cost (the previous report's leading theory), not a real steady-state spike: once that one tick is excluded, the next-worst ticks across the whole measured day top out well inside budget. **Where the remaining ~4.6 ms worst ticks go:** they show no correlation with calendar boundaries (ruling out "a burst of schedule-triggered rules landing on the same hour" as the cause) and aren't adjacent to each other or to the warm-up window, which points to transient GC pauses in this Mono/EditMode batch environment rather than a sustained or periodic rule-system cost — consistent with every other measured tick staying close to the 0.30 ms average. Not instrumented further, per the prompt.
+
 **Allocations:** `GC.GetAllocatedBytesForCurrentThread()` reported exactly 0 bytes/tick over the whole run, which is almost certainly the API not tracking allocations reliably in this Editor/Mono test environment rather than a true zero — hundreds of thousands of rule steps, each boxing `RuleValue`s and touching per-step dictionaries, cannot plausibly allocate nothing. Reporting this as **not reliably measurable here**, not as a real number; a proper measurement needs the Unity/Memory Profiler or a build where this API is known to work, not an EditMode batch test.
 
 ## 4. Save and load under load
@@ -89,7 +105,7 @@ New test: `Tests/EditMode/Rules/RuleSaveLoadUnderLoadTests.cs`, using the same 5
 - **Per-tick allocations from table iteration, iterator wrappers and closures** — still open, not re-measured properly in this pass (the attempted measurement in section 3 wasn't reliable in this environment either). Carries forward again to a dedicated profiling pass.
 - **Console and HUD built in C# instead of UXML/USS layout files** — unchanged; still true for the built-in console. The rule editor itself (a different, later piece of UI) is built on UI Toolkt with C#-constructed `VisualElement` trees rather than `.uxml`/`.uss` files too, for the same reason the console is — it needs to be built and iterated on quickly by Claude Code. Still an open item for when real game-facing screens are built.
 - **Obsolete Unity API warnings** — searched for and **fixed, because none were found.** Checked every EditMode/PlayMode compile log (zero `warning CS0618`/`CS0612` entries, zero "obsolete" or "deprecated" mentions attributable to our own code — the only "Deprecated" hits are inside Unity's own `com.unity.render-pipelines.core` package, not ours) and grepped `Code/` directly for the usual deprecated-API patterns (`FindObjectOfType`, old `FindObjectsOfType` overloads, etc.) — none present. This item appears to have already been resolved somewhere along the way during Milestone 2's many prompts; nothing remained to fix here.
-- **The temporary demo hunger module is deleted in Milestone 3** — not yet done (correctly out of scope for this prompt; `Code/Modules/DemoHunger/` and its content files are still present and still used by the rule editor's test tool — `RuleTestPanel`'s "Build" button, and multiple EditMode tests, go through `ModuleCatalog.CreateModules()`, which currently returns just `DemoHungerModule`). Flagging so Milestone 3's removal remembers these touch points.
+- **The temporary demo hunger module is deleted in Milestone 3** — not yet done (correctly out of scope for this prompt; `Code/Modules/DemoHunger/` and its content files are still present and still used by the rule editor's test tool — `RuleTestPanel`'s "Build" button, and multiple EditMode tests, go through `ModuleCatalog.CreateModules()`, which currently returns just `DemoHungerModule`). Flagging so Milestone 3's removal remembers these touch points. Prompt 2.8b adds one more: `Content/core/Data/demo_hunger_starving_reaction.json` (the core rule that now owns the starving reaction) and the `event.demo_hunger.hunger_changed` definition in `demo_hunger_events.json` are both tied to this module's events and should be deleted alongside it.
 
 ## 6. Decisions made during Milestone 2 not in the design doc
 
@@ -109,17 +125,36 @@ New test: `Tests/EditMode/Rules/RuleSaveLoadUnderLoadTests.cs`, using the same 5
 - **`AskPlayerBlockType` is categorized as Flow, not Action**, because — like Branch and Sequence — it has several named execution outputs instead of one "then".
 - **Rules are JSON-only content, never ScriptableObjects**, even in core content, despite the doc's earlier (pre-Milestone-2) general claim that every content type is "a ScriptableObject in the editor and a JSON file for mods." This is a doc-internal inconsistency between that earlier section and the rule system's own later section, not a deviation from the rule system's own spec.
 
+## 7. Prompt 2.8b: the hunger reaction rebuilt as a rule
+
+The doc's own milestone-2 check (row 2.8 in the prompts table, section 1) asked for "a reaction to the demo hunger module rebuilt as a rule" — out of scope for prompt 2.8 itself (see that table's note), done here instead.
+
+**Before:** `DemoHungerModule.UpdateHunger` computed each person's new hunger value, then directly checked `oldHunger >= 20 && newHunger < 20` in C# and posted `event.demo_hunger.starving` itself when that crossing happened.
+
+**After:** the module now only reports what changed — every update posts `event.demo_hunger.hunger_changed` (`entity`, `hunger`, `previousHunger`) — and a new core rule, `rule.demo_hunger.starving_reaction` in `Content/core/Data/demo_hunger_starving_reaction.json`, listens for that event, compares `previousHunger >= 20` and `hunger < 20` with two Compare Numbers blocks and an And, and posts `event.demo_hunger.starving` (with the `entity` parameter) through a Branch, exactly reproducing the old C# check. No flag or other persistent state was needed: because the rule gets both the old and new values on every event, it doesn't need to remember "was this entity already starving" between events, so (like the C# it replaced) it has no debounce — an entity that's fed back above 20 can starve again later, and jitter in the decay can make an entity cross the line more than once in one window, which it already did before this change.
+
+**Proving it behaves the same:** `Tests/EditMode/Rules/DemoHungerStarvingReactionRuleTests.cs`'s `TwoDayRun_WithDefaultSettings_MatchesTheExactEventsFromBeforeTheRuleRefactor` is a characterization test against the pre-refactor code: the exact 70 `(tick, entityIndex)` pairs it asserts were captured by running the unmodified code for world seed 777, default settings, over two in-game days, before any of this prompt's changes were made. The new rule-based system reproduces that list exactly. The existing `Milestone1DeterminismTests` (real core content, unchanged) also still passes, confirming save/load-under-interruption and cross-build determinism hold with the reaction running as a rule.
+
+**Why the state hash isn't expected to match the pre-refactor hash for the same run:** `RuleRunner.NextInstanceId` is saved unconditionally (it's part of `RuleRuntimeSection` whenever any `RuleRunner` exists, which is always, since `SimulationBuilder.Build` creates one regardless of rule count). Before this change, nothing ever triggered the one pre-existing rule (the disabled sample rule), so that counter stayed at 1 for the whole run. Now every `hunger_changed` event creates a (very short-lived, never-paused) rule instance, so the counter advances once per hunger update instead of staying at 1 — a real, expected difference in the saved byte layout, not a correctness problem; the observable events and log lines are unaffected, as the characterization test above shows.
+
+**Every event the demo hunger module posts** (for designing a practice rule around):
+
+| Event Id | Parameters | Posted when |
+| --- | --- | --- |
+| `event.demo_hunger.hunger_changed` | `entity` (Entity), `hunger` (Number, the new value), `previousHunger` (Number, the value just before this update) | Every time a person's hunger is recalculated (on that person's own scheduled bucket, by importance tier) |
+| `event.demo_hunger.starving` | `entity` (Entity) | Posted by `rule.demo_hunger.starving_reaction` (not by the module anymore) when a `hunger_changed` event shows that entity's hunger just crossed below 20 |
+
 ## Test counts
 
-- EditMode: 334 passing, 1 explicit (the performance benchmark, run separately by name).
-- PlayMode: 17 passing.
+- EditMode (after prompt 2.8b): 340 passing, 1 explicit (the performance benchmark, run separately by name) — up from 334 passing at prompt 2.8, from the new fire-cap/chain-depth Development- and Release-mode tests and the demo-hunger starving-reaction rule tests (prompt 2.8b).
+- PlayMode: 17 passing (unchanged).
 - Save/load under load (3 save points × 1 full-day run each, plus one unbroken reference day): state hashes and full event/log-line histories match exactly at every point.
 
 ## What's worth fixing or deciding before Milestone 3
 
-1. **Decide: should a rule that keeps hitting its fire cap every tick eventually switch itself off?** Right now it just quietly skips forever (see Decisions/Limits above). This is a design call, not a bug — flagging for William.
-2. **"Questions pause the game" isn't wired up anywhere yet.** No bug today (nothing player-facing exists to pause), but worth remembering once a real play surface exists.
+1. **Decide: should a rule that keeps hitting its fire cap every tick eventually switch itself off?** Right now it just quietly skips forever (see Decisions/Limits above). This is a design call, not a bug — flagging for William. Resolved in prompt 2.8b: William decided it stays switched on and skipping; Release mode now reports the day's hit count once per rule per in-game day instead of a line per hit, and Development mode treats hitting either limit as an error naming the rule, node and limit (same handling as any other rule runtime error there).
+2. ~~"Questions pause the game" isn't wired up anywhere yet.~~ Corrected in 2.8b: this was wrong — prompt 2.4 already wired it into `GameBootstrap` (`IsBlockedByPendingQuestion`), with `PlayMode/QuestionPopupTests.cs` covering it. See the corrected Decisions bullet above.
 3. **Block registration bypasses the module declaration phase.** `ModuleDeclarationContext.Blocks` exists but nothing uses it; `CoreBlocks.RegisterAll` is called directly instead. Not broken, but if a future module ever needs to register its own blocks, this is the seam that needs actually wiring up, not just existing.
-4. **The worst-case tick (15.3 ms, section 3) wasn't root-caused**, only plausibly attributed to first-tick warm-up. Worth a short, dedicated look before any milestone where the game actually ships with hundreds of active rules at once.
+4. ~~The worst-case tick (15.3 ms, section 3) wasn't root-caused~~, only plausibly attributed to first-tick warm-up. **Resolved in 2.8b:** rerunning with one in-game hour of warm-up excluded drops the worst tick to 4.61 ms (under the 5 ms target), confirming it was warm-up cost. The new worst ticks it exposed (~4.4–4.6 ms, not correlated with any calendar boundary) are small enough and infrequent enough not to warrant a dedicated look yet, but are worth another pass if hundreds of active rules ship together and ticks start costing noticeably more.
 5. **Per-tick allocation measurement needs a real profiler**, not `GC.GetAllocatedBytesForCurrentThread()` in an EditMode batch test — carried forward from Milestone 1 again, now confirmed the same simple approach still doesn't work here.
-6. **`Code/Modules/DemoHunger/`'s removal (planned for Milestone 3) now has more touch points to clean up**: the rule editor's Test tab hardcodes `ModuleCatalog.CreateModules()` for its "Build" button, and several EditMode tests go through the same call — worth a quick grep pass when that module is actually deleted.
+6. **`Code/Modules/DemoHunger/`'s removal (planned for Milestone 3) now has more touch points to clean up**: the rule editor's Test tab hardcodes `ModuleCatalog.CreateModules()` for its "Build" button, and several EditMode tests go through the same call — worth a quick grep pass when that module is actually deleted. Prompt 2.8b adds `Content/core/Data/demo_hunger_starving_reaction.json` and the `hunger_changed` event definition to that same grep pass.

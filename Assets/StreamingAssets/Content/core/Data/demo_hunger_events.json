@@ -7,6 +7,13 @@
             "reportingScore": 5,
             "notabilityScore": 3,
             "description": "A person's hunger has dropped below the starving threshold."
+        },
+        {
+            "id": "event.demo_hunger.hunger_changed",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "A person's hunger was just recalculated (entity, hunger, previousHunger). Posted on every update so rules can react to it."
         }
     ]
 }

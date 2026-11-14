@@ -80,6 +80,25 @@ namespace TheEmptying.Core.Rules
         private long _firesTickStamp = long.MinValue;
         private long _nextInstanceId = 1;
 
+        private enum LimitKind
+        {
+            FireCap,
+            ChainDepth
+        }
+
+        private sealed class DailyLimitHitCounts
+        {
+            public int FireCapHits;
+            public int ChainDepthHits;
+        }
+
+        /// <summary>
+        /// Release mode only: how many times each rule has hit each limit
+        /// since the last daily flush. In Development mode a limit hit throws
+        /// immediately instead, so this stays empty there.
+        /// </summary>
+        private readonly Dictionary<string, DailyLimitHitCounts> _dailyLimitHits = new Dictionary<string, DailyLimitHitCounts>();
+
         private readonly Dictionary<string, long> _totalFires = new Dictionary<string, long>();
 
         /// <summary>How many times a rule has actually fired (created and run an instance) this game, for the "rules" console command. 0 for an unknown rule.</summary>
@@ -387,12 +406,12 @@ namespace TheEmptying.Core.Rules
 
             if (posted.ChainDepth >= MaxChainDepth)
             {
-                Report(activated.Rule.Id, activated.Rule.TriggerNodeId, $"Triggering event chain depth {posted.ChainDepth} is at or beyond the limit ({MaxChainDepth}); the rule did not run.", tick);
+                HandleLimitHit(activated.Rule.Id, activated.Rule.TriggerNodeId, LimitKind.ChainDepth, $"depth {posted.ChainDepth} is at or beyond the limit ({MaxChainDepth})", tick);
                 CompleteZeroStepTrace(activated.Rule.Id, tick, posted, RuleTraceEndKind.ChainDepthCutOff);
                 return;
             }
 
-            if (!TryReserveFireSlot(activated.Rule.Id, tick))
+            if (!TryReserveFireSlot(activated, tick))
             {
                 CompleteZeroStepTrace(activated.Rule.Id, tick, posted, RuleTraceEndKind.FireCap);
                 return;
@@ -423,7 +442,7 @@ namespace TheEmptying.Core.Rules
 
             long tick = _currentTick();
 
-            if (!TryReserveFireSlot(activated.Rule.Id, tick))
+            if (!TryReserveFireSlot(activated, tick))
             {
                 CompleteZeroStepTrace(activated.Rule.Id, tick, null, RuleTraceEndKind.FireCap);
                 return;
@@ -476,8 +495,10 @@ namespace TheEmptying.Core.Rules
             }
         }
 
-        private bool TryReserveFireSlot(string ruleId, long tick)
+        private bool TryReserveFireSlot(ActivatedRule activated, long tick)
         {
+            string ruleId = activated.Rule.Id;
+
             if (_firesTickStamp != tick)
             {
                 _firesThisTick.Clear();
@@ -486,20 +507,85 @@ namespace TheEmptying.Core.Rules
 
             int maxFires = (int)Settings.Get(MaxFiresPerTickSettingId);
             _firesThisTick.TryGetValue(ruleId, out int count);
+            _firesThisTick[ruleId] = count + 1;
 
             if (count >= maxFires)
             {
-                if (count == maxFires)
-                {
-                    Report(ruleId, null, $"Rule '{ruleId}' reached its per-tick fire cap ({maxFires}); further fires this tick are skipped.", tick);
-                }
-
-                _firesThisTick[ruleId] = count + 1;
+                HandleLimitHit(ruleId, activated.Rule.TriggerNodeId, LimitKind.FireCap, $"cap ({maxFires} fires per tick)", tick);
                 return false;
             }
 
-            _firesThisTick[ruleId] = count + 1;
             return true;
+        }
+
+        /// <summary>
+        /// A rule hit its per-tick fire cap or its chain-depth limit. In
+        /// Development mode this is an error naming the rule, the node and
+        /// which limit, handled the same way as any other rule runtime
+        /// error (it throws and stops the game). In Release mode the fire is
+        /// still skipped by the caller; this just tallies the hit so
+        /// FlushDailyLimitReports can report it once, at the end of the
+        /// in-game day, with the day's total count for that limit.
+        /// </summary>
+        private void HandleLimitHit(string ruleId, string nodeId, LimitKind kind, string detail, long tick)
+        {
+            string limitName = kind == LimitKind.FireCap ? "per-tick fire cap" : "chain-depth limit";
+
+            if (_errorMode == ErrorMode.Development)
+            {
+                throw new RuleException($"Rule '{ruleId}' node '{nodeId ?? "-"}' hit its {limitName} ({detail}).", ruleId, nodeId, null);
+            }
+
+            if (!_dailyLimitHits.TryGetValue(ruleId, out DailyLimitHitCounts counts))
+            {
+                counts = new DailyLimitHitCounts();
+                _dailyLimitHits[ruleId] = counts;
+            }
+
+            if (kind == LimitKind.FireCap)
+            {
+                counts.FireCapHits++;
+            }
+            else
+            {
+                counts.ChainDepthHits++;
+            }
+        }
+
+        /// <summary>
+        /// Release mode only, called once per in-game day (Simulation.Step,
+        /// on the NewDay boundary): reports, once per rule that hit a limit
+        /// since the last flush, how many times it hit the fire cap and the
+        /// chain-depth limit over the day just finished, then clears the
+        /// day's counts. A no-op in Development mode, where a limit hit
+        /// throws immediately and nothing ever accumulates here.
+        /// </summary>
+        internal void FlushDailyLimitReports(long tick)
+        {
+            if (_dailyLimitHits.Count == 0)
+            {
+                return;
+            }
+
+            foreach (string ruleId in _dailyLimitHits.Keys.OrderBy(id => id, StringComparer.Ordinal).ToList())
+            {
+                DailyLimitHitCounts counts = _dailyLimitHits[ruleId];
+                var parts = new List<string>();
+
+                if (counts.FireCapHits > 0)
+                {
+                    parts.Add($"the per-tick fire cap {counts.FireCapHits} time{(counts.FireCapHits == 1 ? "" : "s")}");
+                }
+
+                if (counts.ChainDepthHits > 0)
+                {
+                    parts.Add($"the chain-depth limit {counts.ChainDepthHits} time{(counts.ChainDepthHits == 1 ? "" : "s")}");
+                }
+
+                Report(ruleId, null, $"Rule '{ruleId}' hit {string.Join(" and ", parts)} over the past in-game day.", tick);
+            }
+
+            _dailyLimitHits.Clear();
         }
 
         private void RunInstanceGuarded(RuleInstance instance, ActivatedRule activated, long tick, RuleTraceRecorder recorder)

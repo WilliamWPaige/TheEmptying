@@ -736,8 +736,48 @@ namespace TheEmptying.Tests.EditMode.Rules
                 sim.Step();
             }
 
-            RuleRuntimeReport cutoffReport = runner.Reports.Single(r => r.Message.Contains("chain depth"));
+            Assert.IsEmpty(runner.Reports, "In Release mode, a chain-depth hit should not be reported until the daily flush.");
+
+            runner.FlushDailyLimitReports(sim.Clock.CurrentTick);
+
+            RuleRuntimeReport cutoffReport = runner.Reports.Single(r => r.Message.Contains("chain-depth limit"));
             Assert.AreEqual("rule.self_loop", cutoffReport.RuleId);
+            StringAssert.Contains("1 time", cutoffReport.Message);
+        }
+
+        [Test]
+        public void SelfTriggeringChain_InDevelopmentMode_ThrowsNamingRuleNodeAndLimit()
+        {
+            var rule = Rule("rule.self_loop", new List<RuleNode>
+            {
+                Node("trigger", "block.trigger.on_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("loop") }),
+                Node("post", "block.action.post_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("loop") })
+            }, new List<RuleConnection> { Conn("trigger", "then", "post", "exec") });
+
+            (Simulation sim, _, RuleCompileReport report) = Build(
+                errorMode: ErrorMode.Development,
+                extraEvents: new[] { new EventDefinition("loop", EventVisibility.Public, 0, 0, "x") },
+                rules: rule);
+            Assert.IsFalse(report.HasErrors);
+
+            sim.Events.Post("loop", sim.Clock.CurrentTick, chainDepth: 0);
+
+            RuleException ex = null;
+            try
+            {
+                for (int i = 0; i < 15; i++)
+                {
+                    sim.Step();
+                }
+            }
+            catch (RuleException caught)
+            {
+                ex = caught;
+            }
+
+            Assert.IsNotNull(ex, "Development mode should throw as soon as the chain-depth limit is hit.");
+            Assert.AreEqual("rule.self_loop", ex.RuleId);
+            StringAssert.Contains("chain-depth limit", ex.Message);
         }
 
         [Test]
@@ -766,8 +806,75 @@ namespace TheEmptying.Tests.EditMode.Rules
             sim.Step();
 
             Assert.AreEqual(2, sink.Lines.Count, "only the first 2 fires this tick should have run");
+            Assert.IsEmpty(runner.Reports, "In Release mode, a fire-cap hit should not be reported until the daily flush.");
+
+            runner.FlushDailyLimitReports(sim.Clock.CurrentTick);
+
             RuleRuntimeReport capReport = runner.Reports.Single(r => r.Message.Contains("per-tick fire cap"));
             Assert.AreEqual("rule.capped", capReport.RuleId);
+            StringAssert.Contains("3 times", capReport.Message);
+        }
+
+        [Test]
+        public void PerTickFireCap_InDevelopmentMode_ThrowsNamingRuleNodeAndLimit()
+        {
+            var rule = Rule("rule.capped", new List<RuleNode>
+            {
+                Node("trigger", "block.trigger.on_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("go") }),
+                Node("log", "block.action.write_log_line", new Dictionary<string, RuleFieldValueSource> { ["text"] = Lit("fired") })
+            }, new List<RuleConnection> { Conn("trigger", "then", "log", "exec") });
+
+            var sink = new TestLogSink();
+            (Simulation sim, _, RuleCompileReport report) = Build(
+                errorMode: ErrorMode.Development,
+                logSink: sink,
+                extraEvents: new[] { new EventDefinition("go", EventVisibility.Public, 0, 0, "x") },
+                extraSettings: new[] { new SettingDefinition { Id = RuleRunner.MaxFiresPerTickSettingId, ValueType = SettingValueType.Integer, Default = 2, Minimum = 1, Maximum = 1000, Category = "Rules", Description = "x" } },
+                rules: rule);
+            Assert.IsFalse(report.HasErrors);
+
+            for (int i = 0; i < 5; i++)
+            {
+                sim.Events.Post("go", sim.Clock.CurrentTick);
+            }
+
+            RuleException ex = Assert.Throws<RuleException>(() => sim.Step());
+            Assert.AreEqual("rule.capped", ex.RuleId);
+            StringAssert.Contains("per-tick fire cap", ex.Message);
+        }
+
+        [Test]
+        public void FireCapHits_AreFlushedAutomaticallyAtTheNextNewDayBoundary()
+        {
+            var rule = Rule("rule.capped", new List<RuleNode>
+            {
+                Node("trigger", "block.trigger.on_event", new Dictionary<string, RuleFieldValueSource> { ["event"] = Lit("go") }),
+                Node("log", "block.action.write_log_line", new Dictionary<string, RuleFieldValueSource> { ["text"] = Lit("fired") })
+            }, new List<RuleConnection> { Conn("trigger", "then", "log", "exec") });
+
+            var sink = new TestLogSink();
+            (Simulation sim, RuleRunner runner, RuleCompileReport report) = Build(
+                errorMode: ErrorMode.Release,
+                logSink: sink,
+                extraEvents: new[] { new EventDefinition("go", EventVisibility.Public, 0, 0, "x") },
+                extraSettings: new[] { new SettingDefinition { Id = RuleRunner.MaxFiresPerTickSettingId, ValueType = SettingValueType.Integer, Default = 2, Minimum = 1, Maximum = 1000, Category = "Rules", Description = "x" } },
+                rules: rule);
+            Assert.IsFalse(report.HasErrors);
+
+            // One tick before the day boundary: hit the cap, but don't cross into a new day yet.
+            sim.Clock.RestoreTick(CalendarConstants.TicksPerDay - 2);
+            for (int i = 0; i < 5; i++)
+            {
+                sim.Events.Post("go", sim.Clock.CurrentTick);
+            }
+
+            sim.Step();
+            Assert.IsEmpty(runner.Reports, "The hit happened, but today hasn't ended yet.");
+
+            sim.Step();
+            RuleRuntimeReport capReport = runner.Reports.Single(r => r.Message.Contains("per-tick fire cap"));
+            Assert.AreEqual("rule.capped", capReport.RuleId);
+            StringAssert.Contains("3 times", capReport.Message);
         }
 
         [Test]

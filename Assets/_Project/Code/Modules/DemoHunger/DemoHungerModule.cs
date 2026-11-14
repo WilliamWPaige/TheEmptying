@@ -23,11 +23,11 @@ namespace TheEmptying.Modules.DemoHunger
         public const string ModuleId = "module.demo_hunger";
         public const string DecayPerHourSettingId = "setting.demo_hunger.decay_per_hour";
         public const string StarvingEventId = "event.demo_hunger.starving";
+        public const string HungerChangedEventId = "event.demo_hunger.hunger_changed";
 
         private const int DefaultPersonCount = 50;
         private const int BucketCount = 10;
         private const double StartingHunger = 100.0;
-        private const double StarvingThreshold = 20.0;
         private const double JitterRange = 0.5;
 
         private sealed class HungerSystem : ISimSystem
@@ -190,10 +190,10 @@ namespace TheEmptying.Modules.DemoHunger
 
                 _hunger.Set(id, newHunger);
 
-                if (oldHunger >= StarvingThreshold && newHunger < StarvingThreshold)
-                {
-                    _events.Post(StarvingEventId, tick, new EventData().SetEntity("entity", id));
-                }
+                _events.Post(HungerChangedEventId, tick, new EventData()
+                    .SetEntity("entity", id)
+                    .SetDouble("hunger", newHunger)
+                    .SetDouble("previousHunger", oldHunger));
             });
         }
     }

@@ -51,15 +51,22 @@ namespace TheEmptying.Tests.EditMode.Rules
                 sim.Entities.Create(EntityKind.Person);
             }
 
-            long ticks = CalendarConstants.TicksPerDay;
-            var totalMs = new List<double>(capacity: (int)ticks);
-            var ruleMs = new List<double>(capacity: (int)ticks);
+            // Prompt 2.8b: exclude one in-game hour of warm-up (JIT, empty-collection growth,
+            // the rules random stream's lazy first resolution) from the measured sample, so
+            // the worst-case number reflects steady-state rule work, not startup noise.
+            const long warmUpTicks = CalendarConstants.TicksPerHour;
+            long measuredTicks = CalendarConstants.TicksPerDay;
+            long totalTicks = warmUpTicks + measuredTicks;
+
+            var totalMs = new List<double>(capacity: (int)measuredTicks);
+            var ruleMs = new List<double>(capacity: (int)measuredTicks);
+            var tickRecords = new List<TickRecord>(capacity: (int)measuredTicks);
 
             long allocBefore = TryGetAllocatedBytes();
             var tickStopwatch = new Stopwatch();
             var ruleStopwatch = new Stopwatch();
 
-            for (long tick = 0; tick < ticks; tick++)
+            for (long tick = 0; tick < totalTicks; tick++)
             {
                 tickStopwatch.Restart();
 
@@ -83,8 +90,12 @@ namespace TheEmptying.Tests.EditMode.Rules
 
                 tickStopwatch.Stop();
 
-                totalMs.Add(tickStopwatch.Elapsed.TotalMilliseconds);
-                ruleMs.Add(ruleStopwatch.Elapsed.TotalMilliseconds);
+                if (tick >= warmUpTicks)
+                {
+                    totalMs.Add(tickStopwatch.Elapsed.TotalMilliseconds);
+                    ruleMs.Add(ruleStopwatch.Elapsed.TotalMilliseconds);
+                    tickRecords.Add(new TickRecord(currentTick, ruleStopwatch.Elapsed.TotalMilliseconds, boundaries));
+                }
             }
 
             long allocAfter = TryGetAllocatedBytes();
@@ -94,12 +105,19 @@ namespace TheEmptying.Tests.EditMode.Rules
 
             TestContext.WriteLine($"Startup (content load + compile + activate, 500 rules): {buildStopwatch.Elapsed.TotalMilliseconds:F2} ms");
             TestContext.WriteLine($"Compiling 500 rules alone (content already loaded): {compileStopwatch.Elapsed.TotalMilliseconds:F2} ms");
-            TestContext.WriteLine($"Ticks run: {ticks}");
+            TestContext.WriteLine($"Warm-up ticks run (excluded from the measurement): {warmUpTicks}");
+            TestContext.WriteLine($"Measured ticks run: {measuredTicks}");
             TestContext.WriteLine($"Whole simulation: avg {avg:F4} ms/tick, worst {worst:F4} ms/tick");
             TestContext.WriteLine($"Rule work alone: avg {ruleAvg:F4} ms/tick, worst {ruleWorst:F4} ms/tick");
             TestContext.WriteLine(allocBefore >= 0 && allocAfter >= 0
-                ? $"Allocations (tracing off): {(allocAfter - allocBefore) / (double)ticks:F1} bytes/tick average over the whole run"
+                ? $"Allocations (tracing off): {(allocAfter - allocBefore) / (double)measuredTicks:F1} bytes/tick average over the measured run"
                 : "Allocations: GC.GetAllocatedBytesForCurrentThread unavailable in this runtime; not measured.");
+
+            TestContext.WriteLine("Five slowest measured ticks (rule work):");
+            foreach (TickRecord record in tickRecords.OrderByDescending(r => r.RuleMs).Take(5))
+            {
+                TestContext.WriteLine($"  tick {record.Tick}: {record.RuleMs:F4} ms - {record.Describe()}");
+            }
 
             const double ruleAvgTargetMs = 1.0;
             const double ruleWorstTargetMs = 5.0;
@@ -114,6 +132,30 @@ namespace TheEmptying.Tests.EditMode.Rules
 
             // This test reports; it does not gate on the performance targets (the prompt says not to optimize here).
             Assert.Pass("See TestContext output for timing and allocation numbers.");
+        }
+
+        private readonly struct TickRecord
+        {
+            public long Tick { get; }
+            public double RuleMs { get; }
+            private readonly TickBoundaries _boundaries;
+
+            public TickRecord(long tick, double ruleMs, TickBoundaries boundaries)
+            {
+                Tick = tick;
+                RuleMs = ruleMs;
+                _boundaries = boundaries;
+            }
+
+            public string Describe()
+            {
+                var flags = new List<string>();
+                if (_boundaries.NewHour) flags.Add("NewHour");
+                if (_boundaries.NewDay) flags.Add("NewDay");
+                if (_boundaries.NewSeason) flags.Add("NewSeason");
+                if (_boundaries.NewYear) flags.Add("NewYear");
+                return flags.Count > 0 ? string.Join("+", flags) : "no calendar boundary";
+            }
         }
 
         private static (double Average, double Worst) AverageAndWorst(List<double> samples)
