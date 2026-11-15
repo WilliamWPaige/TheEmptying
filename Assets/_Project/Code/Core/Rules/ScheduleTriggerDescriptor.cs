@@ -20,5 +20,6 @@ namespace TheEmptying.Core.Rules
         public static ScheduleTriggerDescriptor EveryNHours(int hours) => new ScheduleTriggerDescriptor(RuleScheduleKind.EveryNHours, hours, 0);
         public static ScheduleTriggerDescriptor AtHourOfDay(int hourOfDay) => new ScheduleTriggerDescriptor(RuleScheduleKind.AtHourOfDay, 0, hourOfDay);
         public static ScheduleTriggerDescriptor OnNewDay() => new ScheduleTriggerDescriptor(RuleScheduleKind.OnNewDay, 0, 0);
+        public static ScheduleTriggerDescriptor OnNewMonth() => new ScheduleTriggerDescriptor(RuleScheduleKind.OnNewMonth, 0, 0);
     }
 }

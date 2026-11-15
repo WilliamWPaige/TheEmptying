@@ -262,6 +262,28 @@ namespace TheEmptying.Tests.EditMode.Rules
             CollectionAssert.AreEqual(new[] { CalendarConstants.TicksPerDay, CalendarConstants.TicksPerDay * 2 }, sink.Entries.Select(e => e.Tick).ToList());
         }
 
+        [Test]
+        public void OnNewMonth_FiresAtTheStartOfEachMonth()
+        {
+            var sink = new TickRecordingLogSink();
+            var rule = Rule("rule.new_month", new List<RuleNode>
+            {
+                Node("n1", "block.trigger.on_new_month"),
+                Node("n2", "block.action.write_log_line", new Dictionary<string, RuleFieldValueSource> { ["text"] = Lit("newmonth") })
+            }, new List<RuleConnection> { Conn("n1", "then", "n2", "exec") });
+
+            (Simulation sim, _, RuleCompileReport report) = Build(logSink: sink, rules: rule);
+            Assert.IsFalse(report.HasErrors);
+            sink.CurrentTick = () => sim.Clock.CurrentTick;
+
+            for (long i = 0; i < CalendarConstants.TicksPerMonth * 2; i++)
+            {
+                sim.Step();
+            }
+
+            CollectionAssert.AreEqual(new[] { CalendarConstants.TicksPerMonth, CalendarConstants.TicksPerMonth * 2 }, sink.Entries.Select(e => e.Tick).ToList());
+        }
+
         // --- Values ---
 
         [Test]

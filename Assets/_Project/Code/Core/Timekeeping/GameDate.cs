@@ -1,21 +1,23 @@
 namespace TheEmptying.Core.Timekeeping
 {
     /// <summary>
-    /// Derived from a tick count. Tick 0 is Year 1, Spring, day 1, 00:00.
+    /// Derived from a tick count. Tick 0 is Year 1, Month 1 (Waking), day 1, 00:00.
     /// </summary>
     public readonly struct GameDate
     {
         public int Year { get; }
+        public int Month { get; }
         public Season Season { get; }
-        public int DayOfSeason { get; }
+        public int DayOfMonth { get; }
         public int Hour { get; }
         public int Minute { get; }
 
-        public GameDate(int year, Season season, int dayOfSeason, int hour, int minute)
+        public GameDate(int year, int month, Season season, int dayOfMonth, int hour, int minute)
         {
             Year = year;
+            Month = month;
             Season = season;
-            DayOfSeason = dayOfSeason;
+            DayOfMonth = dayOfMonth;
             Hour = hour;
             Minute = minute;
         }
@@ -29,18 +31,26 @@ namespace TheEmptying.Core.Timekeeping
             int hour = (int)(totalHours % CalendarConstants.HoursPerDay);
 
             long totalDays = totalHours / CalendarConstants.HoursPerDay;
-            int dayOfSeason = (int)(totalDays % CalendarConstants.DaysPerSeason) + 1;
+            int dayOfMonth = (int)(totalDays % CalendarConstants.DaysPerMonth) + 1;
 
-            long totalSeasons = totalDays / CalendarConstants.DaysPerSeason;
-            int seasonIndex = (int)(totalSeasons % CalendarConstants.SeasonsPerYear);
-            int year = (int)(totalSeasons / CalendarConstants.SeasonsPerYear) + 1;
+            long totalMonths = totalDays / CalendarConstants.DaysPerMonth;
+            int monthIndex = (int)(totalMonths % CalendarConstants.MonthsPerYear);
+            int year = (int)(totalMonths / CalendarConstants.MonthsPerYear) + 1;
 
-            return new GameDate(year, (Season)seasonIndex, dayOfSeason, hour, minute);
+            var season = (Season)(monthIndex / CalendarConstants.MonthsPerSeason);
+            int month = monthIndex + 1;
+
+            return new GameDate(year, month, season, dayOfMonth, hour, minute);
         }
 
         public override string ToString()
         {
-            return $"Year {Year}, {Season}, Day {DayOfSeason}, {Hour:00}:{Minute:00}";
+            if (Season == Season.Hollow)
+            {
+                return $"Day {DayOfMonth}, the Hollow, Year {Year}";
+            }
+
+            return $"Day {DayOfMonth}, {Season} (month {Month}), Year {Year}";
         }
     }
 }

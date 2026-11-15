@@ -8,13 +8,15 @@ namespace TheEmptying.Core.Timekeeping
     {
         public bool NewHour { get; }
         public bool NewDay { get; }
+        public bool NewMonth { get; }
         public bool NewSeason { get; }
         public bool NewYear { get; }
 
-        public TickBoundaries(bool newHour, bool newDay, bool newSeason, bool newYear)
+        public TickBoundaries(bool newHour, bool newDay, bool newMonth, bool newSeason, bool newYear)
         {
             NewHour = newHour;
             NewDay = newDay;
+            NewMonth = newMonth;
             NewSeason = newSeason;
             NewYear = newYear;
         }

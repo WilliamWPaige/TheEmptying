@@ -27,10 +27,18 @@ namespace TheEmptying.Core.Timekeeping
 
             bool newHour = CurrentTick % CalendarConstants.TicksPerHour == 0;
             bool newDay = CurrentTick % CalendarConstants.TicksPerDay == 0;
-            bool newSeason = CurrentTick % CalendarConstants.TicksPerSeason == 0;
+            bool newMonth = CurrentTick % CalendarConstants.TicksPerMonth == 0;
             bool newYear = CurrentTick % CalendarConstants.TicksPerYear == 0;
 
-            return new TickBoundaries(newHour, newDay, newSeason, newYear);
+            bool newSeason = false;
+            if (newMonth)
+            {
+                long totalMonths = CurrentTick / CalendarConstants.TicksPerMonth;
+                int monthIndex = (int)(totalMonths % CalendarConstants.MonthsPerYear);
+                newSeason = monthIndex % CalendarConstants.MonthsPerSeason == 0;
+            }
+
+            return new TickBoundaries(newHour, newDay, newMonth, newSeason, newYear);
         }
     }
 }

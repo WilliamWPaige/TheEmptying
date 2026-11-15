@@ -2,13 +2,14 @@ using TheEmptying.Core.Events;
 
 namespace TheEmptying.Core.Saves
 {
-    /// <summary>Serializers for the four calendar events, which the engine depends on.</summary>
+    /// <summary>Serializers for the five calendar events, which the engine depends on.</summary>
     public static class CalendarEventSerializers
     {
         public static void RegisterAll(TypedEventSerializerRegistry registry)
         {
             registry.Register(NewHourEvent.DefinitionIdValue, new NewHourEventSerializer());
             registry.Register(NewDayEvent.DefinitionIdValue, new NewDayEventSerializer());
+            registry.Register(NewMonthEvent.DefinitionIdValue, new NewMonthEventSerializer());
             registry.Register(NewSeasonEvent.DefinitionIdValue, new NewSeasonEventSerializer());
             registry.Register(NewYearEvent.DefinitionIdValue, new NewYearEventSerializer());
         }
@@ -23,6 +24,12 @@ namespace TheEmptying.Core.Saves
         {
             public void Write(SaveWriter writer, ISimEvent typedEvent) => writer.WriteLong(((NewDayEvent)typedEvent).Tick);
             public ISimEvent Read(SaveReader reader) => new NewDayEvent(reader.ReadLong());
+        }
+
+        private sealed class NewMonthEventSerializer : ITypedEventSerializer
+        {
+            public void Write(SaveWriter writer, ISimEvent typedEvent) => writer.WriteLong(((NewMonthEvent)typedEvent).Tick);
+            public ISimEvent Read(SaveReader reader) => new NewMonthEvent(reader.ReadLong());
         }
 
         private sealed class NewSeasonEventSerializer : ITypedEventSerializer

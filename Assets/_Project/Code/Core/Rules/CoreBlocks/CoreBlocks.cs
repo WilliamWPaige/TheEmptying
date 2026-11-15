@@ -13,6 +13,7 @@ namespace TheEmptying.Core.Rules.CoreBlocks
             registry.Register(new EveryNHoursTriggerBlockType());
             registry.Register(new AtHourOfDayTriggerBlockType());
             registry.Register(new OnNewDayTriggerBlockType());
+            registry.Register(new OnNewMonthTriggerBlockType());
 
             registry.Register(new CompareNumbersBlockType());
             registry.Register(new CompareTextBlockType());

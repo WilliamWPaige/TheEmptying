@@ -9,6 +9,7 @@ The Emptying is a single-player sandbox colony sim in Unity. The player is a rel
 - Team: William (creator, decision-maker) and Claude (programming). Art comes later, from William's Synty and other store packs.
 - Engine: Unity 6000.6.8f1, Universal Render Pipeline. Do not change the Unity version.
 - The design is LOCKED. Build what the docs say. If something in the docs is unclear, contradictory or seems wrong, stop and ask. Do not invent design.
+- The design locks in layers: each later layer (building management in full, settlements, military, religion, and so on) gets its own Phase 3 design and Phase 4 review before it is built. Only the milestone that's been locked (see the Phase 5 build plan) is built now; a system with no lock yet is not ready to build.
 
 ## Design docs (source of truth)
 
@@ -60,16 +61,18 @@ The simulation is plain C#. It must run headless, in edit-mode tests, with no sc
 
 ### Data and content
 
+- No mod support. The content loader still loads the game's own core data folder the same way it always has; nothing is promised to outsiders.
 - All content is data, never hard-coded: resources, items, buildings, traits, laws, faiths, events, techs, relics, names.
-- Content is ScriptableObjects in the editor and JSON for mods; both load into the same internal form.
+- Player-facing content (buildings, resources, races, faiths, needs and the like) is authored as ScriptableObjects in the Inspector. At startup the presentation layer copies each one into a plain data record; the simulation only ever sees those records, so it stays free of `UnityEngine` and deterministic. ScriptableObjects are never changed during play.
+- Technical definitions the simulation reads directly — event definitions, settings, rules — stay as JSON files in the core content source, maintained by Claude Code.
 - Every content item has a permanent, readable text ID such as `resource.iron_ore`. IDs are never renamed or reused.
-- The base game is itself a mod: a core data folder loaded the same way as any mod.
 - Any tunable number should be a named setting, so it can appear as a slider in the custom difficulty panel. Log new settings in the slider registry.
 
 ### The rule system
 
 - Behavior (laws, punishments, events, decision popups) is built from blocks: triggers, conditions, actions and flow.
-- Rules are data, authored in our node editor. Do not hard-code behavior that should be a rule.
+- Rules are data: JSON files Claude Code writes from William's plain-English descriptions, in the same format the rule editor saves, so they still open and inspect cleanly there. Do not hard-code behavior that should be a rule.
+- The rule editor is frozen as a viewer and test tool: open a rule to see its shape, run it in the Test tab, and watch it with Live Tracing. No further editor features are planned; engine work on the rule system itself (new blocks, performance, fixes) continues as needed.
 
 ## Folder structure
 
@@ -139,7 +142,7 @@ The in-game console and inspector are part of the core. When you add a module, a
 What a new module needs, based on what the milestone-1 demo module (`module.demo_hunger`, deleted in milestone 3) needed to prove the framework end to end:
 
 - **Folder and assembly definition.** `Code/Modules/<Name>/` with its own `.asmdef`, referencing `TheEmptying.Core` and only the modules it declares as dependencies.
-- **A manifest in data, not code.** A `module_manifest` item (id, version, dependencies, enabled) in a `Data/*.json` file in the core content source (or a mod, to override it). A module with no matching manifest in the data is a build error; a manifest with no matching module code is too.
+- **A manifest in data, not code.** A `module_manifest` item (id, version, dependencies, enabled) in a `Data/*.json` file in the core content source. A module with no matching manifest in the data is a build error; a manifest with no matching module code is too.
 - **`IModule`**: `Id`, `Version`, `Dependencies`, `Initialize(ModuleContext)`, `Shutdown()`. Add `IModuleDeclaration` only if the module needs to register its own content type or declare something before content loads; settings and event definitions normally belong in data instead (see below).
 - **Settings and events belong in data.** Declare a setting as a `setting_definition` content item and an event as an `event_definition` content item, not in code. Read a setting's live value with `context.Settings.Get(id)` inside the system that needs it every time it runs — never cache the value once, since the player (or a test) can change it mid-game.
 - **Entities and module data.** Store per-entity data in an `EntityTable<T>` created with `new EntityTable<T>(context.Entities)`. Only create entities on a new game (`if (!context.IsLoading)`); on a load, the table is repopulated by `Read`.

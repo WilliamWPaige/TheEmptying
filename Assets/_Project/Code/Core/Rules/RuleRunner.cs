@@ -355,6 +355,11 @@ namespace TheEmptying.Core.Rules
                     offset = Math.Clamp(schedule.HourOfDay, 0, CalendarConstants.HoursPerDay - 1) * CalendarConstants.TicksPerHour;
                     break;
 
+                case RuleScheduleKind.OnNewMonth:
+                    interval = CalendarConstants.TicksPerMonth;
+                    offset = 0;
+                    break;
+
                 default: // OnNewDay
                     interval = CalendarConstants.TicksPerDay;
                     offset = 0;

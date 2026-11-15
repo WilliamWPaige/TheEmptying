@@ -105,6 +105,58 @@ namespace TheEmptying.Tests.EditMode.Saves
         }
 
         [Test]
+        public void InterruptedRun_AcrossAMonthBoundaryIntoTheHollow_MatchesUninterruptedRun()
+        {
+            const ulong seed = 90210;
+            const long n = CalendarConstants.TicksPerMonth * 12 - 5; // just before the Hollow begins
+            const long m = 10; // crosses the month boundary into the Hollow
+
+            var uninterruptedSim = new Simulation(seed);
+            for (long i = 0; i < n + m; i++)
+            {
+                uninterruptedSim.Step();
+            }
+
+            ulong uninterruptedHash = uninterruptedSim.ComputeStateHash();
+            Assert.AreEqual(13, uninterruptedSim.Clock.CurrentDate.Month);
+            Assert.AreEqual(Season.Hollow, uninterruptedSim.Clock.CurrentDate.Season);
+
+            var firstSim = new Simulation(seed);
+            for (long i = 0; i < n; i++)
+            {
+                firstSim.Step();
+            }
+
+            using var stream = new MemoryStream();
+            GameSave.Save(firstSim, new SaveHeaderInfo { KingdomName = "K", Population = 1 }, stream);
+            stream.Position = 0;
+
+            (Simulation secondSim, _) = GameSave.Load(stream, Array.Empty<string>(), null);
+            for (long i = 0; i < m; i++)
+            {
+                secondSim.Step();
+            }
+
+            Assert.AreEqual(uninterruptedHash, secondSim.ComputeStateHash());
+        }
+
+        [Test]
+        public void OldSaveFormatVersion_IsRefusedWithAClearMessage()
+        {
+            var sim = new Simulation(1);
+            using var stream = new MemoryStream();
+            GameSave.Save(sim, new SaveHeaderInfo { KingdomName = "K", Population = 1 }, stream);
+
+            byte[] bytes = stream.ToArray();
+            byte[] oldVersion = BitConverter.GetBytes(SaveFile.FormatVersion - 1);
+            Array.Copy(oldVersion, 0, bytes, 8, 4);
+
+            using var oldStream = new MemoryStream(bytes);
+            InvalidDataException ex = Assert.Throws<InvalidDataException>(() => SaveFile.ReadHeader(oldStream));
+            StringAssert.Contains("format version", ex.Message.ToLowerInvariant());
+        }
+
+        [Test]
         public void ReadHeader_DoesNotRequireReadingTheBody()
         {
             var sim = new Simulation(123);

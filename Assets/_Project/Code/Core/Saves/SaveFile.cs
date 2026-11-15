@@ -16,7 +16,11 @@ namespace TheEmptying.Core.Saves
     {
         private static readonly byte[] Magic = { (byte)'E', (byte)'M', (byte)'P', (byte)'T', (byte)'Y', (byte)'S', (byte)'A', (byte)'V' };
 
-        public const int FormatVersion = 1;
+        /// <summary>
+        /// Bumped in prompt 3.1 for the new calendar (13 months of 28 days). No
+        /// conversion is attempted during development; older saves are refused.
+        /// </summary>
+        public const int FormatVersion = 2;
 
         public static void Write(Stream stream, SaveHeader header, IReadOnlyList<SaveSectionData> sections)
         {

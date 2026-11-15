@@ -4,6 +4,7 @@ namespace TheEmptying.Core.Rules
     {
         EveryNHours,
         AtHourOfDay,
-        OnNewDay
+        OnNewDay,
+        OnNewMonth
     }
 }

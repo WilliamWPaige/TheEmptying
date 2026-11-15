@@ -115,6 +115,11 @@ namespace TheEmptying.Core
                 Events.Post(new NewDayEvent(tick), tick);
             }
 
+            if (boundaries.NewMonth)
+            {
+                Events.Post(new NewMonthEvent(tick), tick);
+            }
+
             if (boundaries.NewSeason)
             {
                 Events.Post(new NewSeasonEvent(tick), tick);
@@ -166,6 +171,7 @@ namespace TheEmptying.Core
         {
             EventDefinitions.Register(new EventDefinition(NewHourEvent.DefinitionIdValue, EventVisibility.Public, 0f, 0f, "A new in-game hour has begun."));
             EventDefinitions.Register(new EventDefinition(NewDayEvent.DefinitionIdValue, EventVisibility.Public, 0f, 0f, "A new in-game day has begun."));
+            EventDefinitions.Register(new EventDefinition(NewMonthEvent.DefinitionIdValue, EventVisibility.Public, 0f, 0f, "A new in-game month has begun."));
             EventDefinitions.Register(new EventDefinition(NewSeasonEvent.DefinitionIdValue, EventVisibility.Public, 0f, 0f, "A new season has begun."));
             EventDefinitions.Register(new EventDefinition(NewYearEvent.DefinitionIdValue, EventVisibility.Public, 0f, 0f, "A new year has begun."));
         }
