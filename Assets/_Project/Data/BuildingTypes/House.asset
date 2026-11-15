@@ -1,0 +1,35 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6d7a82485f77e6a4bbe97c98dc0d4420, type: 3}
+  m_Name: House
+  m_EditorClassIdentifier: TheEmptying.Presentation::TheEmptying.Presentation.Content.BuildingTypeAsset
+  _id: building.house
+  _displayName: House
+  _footprintWidth: 3
+  _footprintDepth: 3
+  _constructionCost:
+  - _good: {fileID: 11400000, guid: a3c576ca20607a84a87ba353e34b0f70, type: 2}
+    _amount: 80
+  - _good: {fileID: 11400000, guid: c2e50b5954e2c2840ad2b841b44c6870, type: 2}
+    _amount: 30
+  - _good: {fileID: 11400000, guid: ad22fbf9c6fa2c14a8e6e87911b72d54, type: 2}
+    _amount: 2
+  _workerSlots: 0
+  _managerSlots: 0
+  _trainerSlots: 0
+  _isBasic: 1
+  _allowedZones:
+  - {fileID: 11400000, guid: 754fd917305a4fd49938e8ecd38d44a4, type: 2}
+  _isHome: 1
+  _householdsProvided: 1
+  _homeClass: 1
+  _description: 'placeholder: footprint, slots and construction cost are not final.'

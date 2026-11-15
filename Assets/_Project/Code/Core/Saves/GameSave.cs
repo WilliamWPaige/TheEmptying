@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
+using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 
@@ -58,7 +59,8 @@ namespace TheEmptying.Core.Saves
             IEnumerable<string> sourceFolders,
             IEnumerable<IModule> modules,
             ErrorMode errorMode = ErrorMode.Development,
-            ILogSink logSink = null)
+            ILogSink logSink = null,
+            IEnumerable<ContentAssetDefinition> contentAssets = null)
         {
             (SaveHeader header, Dictionary<string, SaveSectionData> sections) = SaveFile.ReadAll(stream);
 
@@ -66,7 +68,7 @@ namespace TheEmptying.Core.Saves
             List<SaveSourceInfo> currentSources = SourceManifestReader.ReadAll(sourceFolders);
             CompareSources(header, currentSources, report);
 
-            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(header.WorldSeed, sourceFolders, modules, errorMode, isLoading: true, logSink: logSink);
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(header.WorldSeed, sourceFolders, modules, errorMode, isLoading: true, logSink: logSink, contentAssets: contentAssets);
 
             CoreSections.ReadAll(sections, simulation, simulation.Settings, simulation.EventSerializers);
 

@@ -1,0 +1,26 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27a2682ddd343d942bdacfcd610389b9, type: 3}
+  m_Name: Woodcutting
+  m_EditorClassIdentifier: TheEmptying.Presentation::TheEmptying.Presentation.Content.RecipeAsset
+  _id: recipe.woodcutting
+  _workplace: {fileID: 11400000, guid: 1b704ed2f812c3742b69997a513eae0a, type: 2}
+  _inputs: []
+  _outputs:
+  - _good: {fileID: 11400000, guid: 1eae8aea0ef600f4b83268599195695e, type: 2}
+    _amount: 1
+  _durationHours: 1
+  _workerTier: 0
+  _isHardLabor: 0
+  _seasonsAllowed: 
+  _growthTimeMonths: 0
+  _description: 

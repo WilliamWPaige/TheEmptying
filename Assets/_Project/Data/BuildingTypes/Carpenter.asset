@@ -1,0 +1,33 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 6d7a82485f77e6a4bbe97c98dc0d4420, type: 3}
+  m_Name: Carpenter
+  m_EditorClassIdentifier: TheEmptying.Presentation::TheEmptying.Presentation.Content.BuildingTypeAsset
+  _id: building.carpenter
+  _displayName: Carpenter
+  _footprintWidth: 3
+  _footprintDepth: 3
+  _constructionCost:
+  - _good: {fileID: 11400000, guid: a3c576ca20607a84a87ba353e34b0f70, type: 2}
+    _amount: 20
+  - _good: {fileID: 11400000, guid: 90e1c1c1f7f354848b44723939bf5004, type: 2}
+    _amount: 10
+  _workerSlots: 1
+  _managerSlots: 0
+  _trainerSlots: 0
+  _isBasic: 0
+  _allowedZones:
+  - {fileID: 11400000, guid: fa6f50927faa5ca469c421e98a78407e, type: 2}
+  _isHome: 0
+  _householdsProvided: 0
+  _homeClass: 0
+  _description: 'placeholder: footprint, slots and construction cost are not final.'

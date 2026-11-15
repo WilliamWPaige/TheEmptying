@@ -5,11 +5,13 @@ using System.Linq;
 using System.Text;
 using TheEmptying.Core;
 using TheEmptying.Core.Console;
+using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Presentation.Content;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
@@ -295,13 +297,27 @@ namespace TheEmptying.Presentation
         private StartupReport BuildSimulation()
         {
             List<string> sources = ResolveSourceFolders();
-            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this);
+            List<ContentAssetDefinition> contentAssets = LoadContentAssetDefinitions();
+            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
 
             BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
 
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
             return report;
+        }
+
+        /// <summary>Converts every ScriptableObject content asset in the shipped catalog into the plain records the simulation reads.</summary>
+        private static List<ContentAssetDefinition> LoadContentAssetDefinitions()
+        {
+            var catalog = Resources.Load<ContentCatalog>("ContentCatalog");
+            if (catalog == null)
+            {
+                Debug.LogError("[TheEmptying] Could not load ContentCatalog from Resources. Player-facing content (goods, needs, zones, building types, recipes) will be missing.");
+                return new List<ContentAssetDefinition>();
+            }
+
+            return ContentAssetConverter.BuildDefinitions(catalog);
         }
 
         #endregion
@@ -872,7 +888,7 @@ namespace TheEmptying.Presentation
                 }
 
                 using var stream = File.OpenRead(path);
-                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this);
+                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
 
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);

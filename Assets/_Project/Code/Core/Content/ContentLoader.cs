@@ -35,7 +35,10 @@ namespace TheEmptying.Core.Content
             _errorMode = errorMode;
         }
 
-        public (ContentDatabase Database, ContentLoadReport Report) Load(IEnumerable<string> sourceFolders, IEnumerable<string> requiredModuleIds = null)
+        public (ContentDatabase Database, ContentLoadReport Report) Load(
+            IEnumerable<string> sourceFolders,
+            IEnumerable<string> requiredModuleIds = null,
+            IEnumerable<ContentAssetDefinition> assetDefinitions = null)
         {
             var database = new ContentDatabase();
             var report = new ContentLoadReport();
@@ -44,6 +47,8 @@ namespace TheEmptying.Core.Content
             {
                 LoadSource(folder, database, report);
             }
+
+            LoadAssetDefinitions(assetDefinitions, database, report);
 
             ResolveReferences(database, report);
             CheckRequiredModuleManifests(database, report, requiredModuleIds);
@@ -172,6 +177,58 @@ namespace TheEmptying.Core.Content
             }
 
             database.Set(typeDef.TypeName, definition, sourceId, fileName);
+        }
+
+        /// <summary>
+        /// Adds content built from the player's own ScriptableObject content assets
+        /// (in the shipped game) alongside the JSON sources. An Id already in the
+        /// database, from a JSON source or an earlier asset, is a duplicate-Id error
+        /// rather than a silent override - unlike the JSON path's load-order
+        /// override, since these aren't ordered mod sources.
+        /// </summary>
+        private void LoadAssetDefinitions(IEnumerable<ContentAssetDefinition> assetDefinitions, ContentDatabase database, ContentLoadReport report)
+        {
+            if (assetDefinitions == null)
+            {
+                return;
+            }
+
+            var seenInThisPass = new HashSet<(string TypeName, string Id)>();
+
+            foreach (ContentAssetDefinition asset in assetDefinitions)
+            {
+                ContentDefinition definition = asset.Definition;
+                if (definition == null || string.IsNullOrEmpty(definition.Id))
+                {
+                    report.Problems.Add(new ContentValidationProblem(asset.SourceId, asset.SourceFile, null, "id", "Item is missing an Id."));
+                    continue;
+                }
+
+                if (!_types.TryGet(asset.TypeName, out ContentTypeDefinition typeDef))
+                {
+                    report.Problems.Add(new ContentValidationProblem(asset.SourceId, asset.SourceFile, definition.Id, "type", $"Unknown content type '{asset.TypeName}'."));
+                    continue;
+                }
+
+                int problemCountBefore = report.Problems.Count;
+
+                bool isDuplicate = database.TryGet(asset.TypeName, definition.Id, out _) || !seenInThisPass.Add((asset.TypeName, definition.Id));
+                if (isDuplicate)
+                {
+                    report.Problems.Add(new ContentValidationProblem(asset.SourceId, asset.SourceFile, definition.Id, "id", $"Duplicate Id '{definition.Id}' across content assets and data sources."));
+                }
+
+                var context = new ContentValidationContext(database, asset.SourceId, asset.SourceFile, report.Problems);
+                typeDef.Validator?.Invoke(definition, context);
+
+                bool hadProblem = report.Problems.Count > problemCountBefore;
+                if (hadProblem && _errorMode == ErrorMode.Release)
+                {
+                    continue;
+                }
+
+                database.Set(asset.TypeName, definition, asset.SourceId, asset.SourceFile);
+            }
         }
 
         private void ResolveReferences(ContentDatabase database, ContentLoadReport report)

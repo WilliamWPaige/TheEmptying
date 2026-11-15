@@ -1,0 +1,28 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27a2682ddd343d942bdacfcd610389b9, type: 3}
+  m_Name: Carpentry
+  m_EditorClassIdentifier: TheEmptying.Presentation::TheEmptying.Presentation.Content.RecipeAsset
+  _id: recipe.carpentry
+  _workplace: {fileID: 11400000, guid: f1a9cba4f842a7240b592e9611432b87, type: 2}
+  _inputs:
+  - _good: {fileID: 11400000, guid: a3c576ca20607a84a87ba353e34b0f70, type: 2}
+    _amount: 6
+  _outputs:
+  - _good: {fileID: 11400000, guid: ad22fbf9c6fa2c14a8e6e87911b72d54, type: 2}
+    _amount: 1
+  _durationHours: 6
+  _workerTier: 1
+  _isHardLabor: 0
+  _seasonsAllowed: 
+  _growthTimeMonths: 0
+  _description: 
