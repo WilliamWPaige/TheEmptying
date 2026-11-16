@@ -9,6 +9,7 @@
         "TheEmptying.Modules.Wealth",
         "TheEmptying.Modules.Land",
         "TheEmptying.Modules.Buildings",
+        "TheEmptying.Modules.Jobs",
         "Unity.InputSystem",
         "Newtonsoft.Json"
     ],

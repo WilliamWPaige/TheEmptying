@@ -136,7 +136,7 @@ namespace TheEmptying.Tests.EditMode.Content
         {
             var recipe = new Recipe(
                 "recipe.woodcutting", new ContentRef<BuildingType>("building.woodcutters_camp"),
-                new List<GoodAmount>(), new List<GoodAmount>(), 0f, WorkerTier.Laborer, false, new List<Season>(), 0);
+                new List<GoodAmount>(), new List<GoodAmount>(), 0f, WorkerTier.Laborer, "Logging", false, new List<Season>(), 0);
 
             ContentLoadReport report = LoadAssets(new[] { Asset(BuiltInContentTypes.RecipeTypeName, recipe, "Woodcutting") });
 
@@ -148,7 +148,7 @@ namespace TheEmptying.Tests.EditMode.Content
         {
             var recipe = new Recipe(
                 "recipe.woodcutting", new ContentRef<BuildingType>("building.does_not_exist"),
-                new List<GoodAmount>(), new List<GoodAmount>(), 1f, WorkerTier.Laborer, false, new List<Season>(), 0);
+                new List<GoodAmount>(), new List<GoodAmount>(), 1f, WorkerTier.Laborer, "Logging", false, new List<Season>(), 0);
 
             ContentLoadReport report = LoadAssets(new[] { Asset(BuiltInContentTypes.RecipeTypeName, recipe, "Woodcutting") });
 
@@ -162,7 +162,7 @@ namespace TheEmptying.Tests.EditMode.Content
             var recipe = new Recipe(
                 "recipe.milling_flour", new ContentRef<BuildingType>("building.mill"),
                 new List<GoodAmount> { new GoodAmount(new ContentRef<Good>("good.wheat"), -4) },
-                new List<GoodAmount>(), 0.5f, WorkerTier.Skilled, false, new List<Season>(), 0);
+                new List<GoodAmount>(), 0.5f, WorkerTier.Skilled, "Crafting", false, new List<Season>(), 0);
 
             ContentLoadReport report = LoadAssets(new[]
             {
@@ -184,7 +184,7 @@ namespace TheEmptying.Tests.EditMode.Content
             var woodcutting = new Recipe(
                 "recipe.woodcutting", new ContentRef<BuildingType>("building.woodcutters_camp"),
                 new List<GoodAmount>(), new List<GoodAmount> { new GoodAmount(new ContentRef<Good>("good.plank"), 1) },
-                1f, WorkerTier.Laborer, false, new List<Season>(), 0);
+                1f, WorkerTier.Laborer, "Logging", false, new List<Season>(), 0);
 
             ContentLoadReport report = LoadAssets(new[]
             {

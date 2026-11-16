@@ -1033,5 +1033,25 @@ namespace TheEmptying.Tests.EditMode.Rules
             CollectionAssert.AreEqual(sinkA.Lines, sinkB.Lines);
             Assert.AreEqual(simA.ComputeStateHash(), simB.ComputeStateHash());
         }
+
+        [Test]
+        public void AskQuestion_WithFewerThanFourChoices_PadsInternally()
+        {
+            (_, RuleRunner runner, _) = Build();
+
+            runner.AskQuestion("category", "Title", "Body", new[] { "Allow", "Forbid" }, defaultChoiceNumber: 2);
+
+            QuestionInfo question = runner.PendingQuestions[0];
+            CollectionAssert.AreEqual(new (int, string)[] { (1, "Allow"), (2, "Forbid") }, question.Choices);
+        }
+
+        [Test]
+        public void AskQuestion_WithMoreThanFourChoices_ThrowsAClearError()
+        {
+            (_, RuleRunner runner, _) = Build();
+
+            Assert.Throws<ArgumentException>(() =>
+                runner.AskQuestion("category", "Title", "Body", new[] { "One", "Two", "Three", "Four", "Five" }, defaultChoiceNumber: 1));
+        }
     }
 }

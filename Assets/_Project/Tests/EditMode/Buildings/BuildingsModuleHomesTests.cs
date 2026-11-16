@@ -7,6 +7,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -26,7 +27,8 @@ namespace TheEmptying.Tests.EditMode.Buildings
             var wealth = new WealthModule(people);
             var land = new LandModule(mapMovement, wealth);
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             simulation.Settings.Set(PeopleModule.HomelessHealthDamagePerNightSettingId, 0); // isolate homes/rent from the unrelated homelessness-death mechanic
 
             // The 8 starting immigrants are homeless too, and would otherwise compete with

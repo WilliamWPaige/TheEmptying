@@ -21,6 +21,9 @@ namespace TheEmptying.Modules.People
 
         public readonly int[] Skills = new int[WorkSpeed.SkillCount];
 
+        /// <summary>Fractional progress (0..1) toward each skill's next level, accumulated from work and applied once it crosses 1.</summary>
+        public readonly double[] SkillProgress = new double[WorkSpeed.SkillCount];
+
         /// <summary>Consecutive hours with hunger at zero; resets the moment hunger rises above zero. Drives starvation death.</summary>
         public double HoursHungerEmpty;
 
@@ -31,5 +34,6 @@ namespace TheEmptying.Modules.People
         public double HygieneSumThisMonth;
         public int HygieneSamplesThisMonth;
         public int HoursBadMoodThisMonth;
+        public int HardLaborHoursThisMonth;
     }
 }

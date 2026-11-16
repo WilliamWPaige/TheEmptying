@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.People;
 using UnityEngine;
 
 namespace TheEmptying.Presentation.Content
@@ -14,6 +15,7 @@ namespace TheEmptying.Presentation.Content
         [SerializeField] private List<GoodAmountAsset> _outputs = new List<GoodAmountAsset>();
         [SerializeField] private float _durationHours;
         [SerializeField] private WorkerTier _workerTier;
+        [SerializeField] private Skill _skill;
         [SerializeField] private bool _isHardLabor;
         [SerializeField] private List<Season> _seasonsAllowed = new List<Season>();
 
@@ -31,6 +33,7 @@ namespace TheEmptying.Presentation.Content
         public IReadOnlyList<GoodAmountAsset> Outputs => _outputs;
         public float DurationHours => _durationHours;
         public WorkerTier WorkerTier => _workerTier;
+        public Skill Skill => _skill;
         public bool IsHardLabor => _isHardLabor;
         public IReadOnlyList<Season> SeasonsAllowed => _seasonsAllowed;
         public int GrowthTimeMonths => _growthTimeMonths;
@@ -86,6 +89,7 @@ namespace TheEmptying.Presentation.Content
             List<GoodAmountAsset> outputs,
             float durationHours,
             WorkerTier workerTier,
+            Skill skill,
             bool isHardLabor,
             List<Season> seasonsAllowed,
             int growthTimeMonths,
@@ -97,6 +101,7 @@ namespace TheEmptying.Presentation.Content
             _outputs = outputs ?? new List<GoodAmountAsset>();
             _durationHours = durationHours;
             _workerTier = workerTier;
+            _skill = skill;
             _isHardLabor = isHardLabor;
             _seasonsAllowed = seasonsAllowed ?? new List<Season>();
             _growthTimeMonths = growthTimeMonths;

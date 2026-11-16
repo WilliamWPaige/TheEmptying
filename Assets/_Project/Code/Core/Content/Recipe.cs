@@ -23,6 +23,10 @@ namespace TheEmptying.Core.Content
         [JsonProperty("workerTier")]
         public WorkerTier WorkerTier { get; }
 
+        /// <summary>The name of the skill (from People's Skill enum) this recipe's worker uses and trains. Kept as a string so Core content never references a module's types.</summary>
+        [JsonProperty("skill")]
+        public string Skill { get; }
+
         [JsonProperty("isHardLabor")]
         public bool IsHardLabor { get; }
 
@@ -42,6 +46,7 @@ namespace TheEmptying.Core.Content
             IReadOnlyList<GoodAmount> outputs,
             float durationHours,
             WorkerTier workerTier,
+            string skill,
             bool isHardLabor,
             IReadOnlyList<Season> seasonsAllowed,
             int growthTimeMonths)
@@ -52,6 +57,7 @@ namespace TheEmptying.Core.Content
             Outputs = outputs ?? Array.Empty<GoodAmount>();
             DurationHours = durationHours;
             WorkerTier = workerTier;
+            Skill = skill ?? string.Empty;
             IsHardLabor = isHardLabor;
             SeasonsAllowed = seasonsAllowed ?? Array.Empty<Season>();
             GrowthTimeMonths = growthTimeMonths;

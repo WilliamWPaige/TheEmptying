@@ -93,6 +93,12 @@ namespace TheEmptying.Modules.People
         /// <summary>A housed person's home cell; null (the default, meaning homeless) until Buildings registers the real one.</summary>
         private Func<EntityId, GridPoint?> _homeLocationProvider = _ => null;
 
+        /// <summary>A working person's workplace cell; null (the default, meaning no job) until Jobs registers the real one.</summary>
+        private Func<EntityId, GridPoint?> _workplaceLocationProvider = _ => null;
+
+        /// <summary>Whether a person should be at work this hour; false (the default) until Jobs registers the real one.</summary>
+        private Func<EntityId, int, bool> _isOnShiftProvider = (id, hour) => false;
+
         public PeopleModule(MapMovementModule mapMovement, InventoryModule inventory)
         {
             _mapMovement = mapMovement ?? throw new ArgumentNullException(nameof(mapMovement));
@@ -114,6 +120,47 @@ namespace TheEmptying.Modules.People
 
         /// <summary>Buildings calls this during its own Initialize, since it's the module that actually tracks who lives where.</summary>
         public void SetHomeLocationProvider(Func<EntityId, GridPoint?> provider) => _homeLocationProvider = provider ?? (_ => null);
+
+        /// <summary>Jobs calls this during its own Initialize, since it's the module that actually tracks who works where and when.</summary>
+        public void SetWorkplaceProvider(Func<EntityId, GridPoint?> location, Func<EntityId, int, bool> isOnShift)
+        {
+            _workplaceLocationProvider = location ?? (_ => null);
+            _isOnShiftProvider = isOnShift ?? ((id, hour) => false);
+        }
+
+        public GridPoint? GetHomeLocation(EntityId person) => _homeLocationProvider(person);
+
+        /// <summary>Adds fractional progress toward a skill's next level, applying whole levels (capped at the max) as progress crosses 1.</summary>
+        public void AddSkillExperience(EntityId person, Skill skill, double amount)
+        {
+            if (amount <= 0 || !_people.TryGet(person, out PersonState state))
+            {
+                return;
+            }
+
+            int index = (int)skill;
+            state.SkillProgress[index] += amount;
+
+            while (state.SkillProgress[index] >= 1.0 && state.Skills[index] < WorkSpeed.MaxSkillLevel)
+            {
+                state.SkillProgress[index] -= 1.0;
+                state.Skills[index]++;
+            }
+
+            if (state.Skills[index] >= WorkSpeed.MaxSkillLevel)
+            {
+                state.SkillProgress[index] = 0.0;
+            }
+        }
+
+        /// <summary>Jobs calls this once for every hour a person spends working a hard-labor recipe, feeding the lifestyle-lifespan hook.</summary>
+        public void RecordHardLaborHour(EntityId person)
+        {
+            if (_people.TryGet(person, out PersonState state))
+            {
+                state.HardLaborHoursThisMonth++;
+            }
+        }
 
         public void Initialize(ModuleContext context)
         {
@@ -339,7 +386,7 @@ namespace TheEmptying.Modules.People
                     ? person.HoursHungerEmpty + 1
                     : 0;
 
-                ChooseActivity(id, person, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, sleepRestorePerHour, wanderChance, wanderRadius);
+                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, sleepRestorePerHour, wanderChance, wanderRadius);
 
                 person.Mood = ComputeMood(person, homeless, homelessPenalty);
 
@@ -422,7 +469,7 @@ namespace TheEmptying.Modules.People
             return Math.Clamp(average, 0.0, 100.0);
         }
 
-        private void ChooseActivity(EntityId id, PersonState person, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float sleepRestorePerHour, float wanderChance, int wanderRadius)
+        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float sleepRestorePerHour, float wanderChance, int wanderRadius)
         {
             bool isHungry = person.Needs.TryGetValue("need.hunger", out PersonNeedState hunger) && hunger.Meter <= eatAtPercent;
             if (isHungry && _inventory.TryRemove(id, FoodGoodId, 1))
@@ -430,6 +477,29 @@ namespace TheEmptying.Modules.People
                 hunger.Meter = Math.Min(100f, hunger.Meter + hungerRestorePerLoaf);
                 person.Activity = PersonActivity.Eating;
                 return;
+            }
+
+            if (!isHungry && _isOnShiftProvider(id, hour))
+            {
+                GridPoint? workplace = _workplaceLocationProvider(id);
+                if (workplace.HasValue)
+                {
+                    if (_mapMovement.GetCell(id) != workplace.Value)
+                    {
+                        if (person.Activity != PersonActivity.Commuting || !_mapMovement.IsMover(id))
+                        {
+                            _mapMovement.TryMoveTo(id, workplace.Value);
+                        }
+
+                        person.Activity = PersonActivity.Commuting;
+                    }
+                    else
+                    {
+                        person.Activity = PersonActivity.Working;
+                    }
+
+                    return;
+                }
             }
 
             bool isTired = person.Needs.TryGetValue("need.rest", out PersonNeedState rest) && rest.Meter <= lowThreshold;
@@ -540,6 +610,7 @@ namespace TheEmptying.Modules.People
                 person.HygieneSumThisMonth = 0.0;
                 person.HygieneSamplesThisMonth = 0;
                 person.HoursBadMoodThisMonth = 0;
+                person.HardLaborHoursThisMonth = 0;
             }
 
             foreach ((EntityId id, string cause) in toKill)
@@ -549,12 +620,11 @@ namespace TheEmptying.Modules.People
         }
 
         /// <summary>
-        /// Combines this month's food, shelter, hygiene, hard labor (always
-        /// neutral - no jobs yet) and stress into a -1..+1 score, scaled by
-        /// the max-years-per-month setting. One factor per named input the
-        /// design calls out, so a later prompt can fill in hard labor (and
-        /// doctors/environment, not yet given an input at all) without
-        /// touching the others.
+        /// Combines this month's food, shelter, hygiene, hard labor and
+        /// stress into a -1..+1 score, scaled by the max-years-per-month
+        /// setting. One factor per named input the design calls out, so a
+        /// later prompt can fill in doctors/environment (not yet given an
+        /// input at all) without touching the others.
         /// </summary>
         private void ApplyLifestyleShift(PersonState person, double maxShiftYears)
         {
@@ -563,7 +633,7 @@ namespace TheEmptying.Modules.People
             double hygieneScore = person.HygieneSamplesThisMonth > 0
                 ? 2.0 * (person.HygieneSumThisMonth / person.HygieneSamplesThisMonth) / 100.0 - 1.0
                 : 0.0;
-            const double hardLaborScore = 0.0; // hook: no effect until jobs exist (3.8)
+            double hardLaborScore = 1.0 - 2.0 * ((double)person.HardLaborHoursThisMonth / person.HoursTrackedThisMonth);
             double stressScore = 1.0 - 2.0 * ((double)person.HoursBadMoodThisMonth / person.HoursTrackedThisMonth);
 
             double overall = (foodScore + shelterScore + hygieneScore + hardLaborScore + stressScore) / 5.0;
@@ -585,7 +655,7 @@ namespace TheEmptying.Modules.People
         private void OnMoverArrived(PostedEvent posted)
         {
             EntityId id = posted.Data.GetEntity("mover");
-            if (_people.TryGet(id, out PersonState person) && (person.Activity == PersonActivity.Wandering || person.Activity == PersonActivity.GoingHome))
+            if (_people.TryGet(id, out PersonState person) && (person.Activity == PersonActivity.Wandering || person.Activity == PersonActivity.GoingHome || person.Activity == PersonActivity.Commuting))
             {
                 person.Activity = PersonActivity.Idle;
             }
@@ -619,11 +689,13 @@ namespace TheEmptying.Modules.People
                 writer.WriteDouble(person.HygieneSumThisMonth);
                 writer.WriteInt(person.HygieneSamplesThisMonth);
                 writer.WriteInt(person.HoursBadMoodThisMonth);
+                writer.WriteInt(person.HardLaborHoursThisMonth);
 
                 writer.WriteInt(person.Skills.Length);
                 for (int i = 0; i < person.Skills.Length; i++)
                 {
                     writer.WriteInt(person.Skills[i]);
+                    writer.WriteDouble(person.SkillProgress[i]);
                 }
 
                 List<string> needIds = person.Needs.Keys.OrderBy(k => k, StringComparer.Ordinal).ToList();
@@ -663,14 +735,17 @@ namespace TheEmptying.Modules.People
                 person.HygieneSumThisMonth = reader.ReadDouble();
                 person.HygieneSamplesThisMonth = reader.ReadInt();
                 person.HoursBadMoodThisMonth = reader.ReadInt();
+                person.HardLaborHoursThisMonth = reader.ReadInt();
 
                 int skillCount = reader.ReadInt();
                 for (int s = 0; s < skillCount; s++)
                 {
                     int value = reader.ReadInt();
+                    double progress = reader.ReadDouble();
                     if (s < person.Skills.Length)
                     {
                         person.Skills[s] = value;
+                        person.SkillProgress[s] = progress;
                     }
                 }
 
@@ -703,6 +778,20 @@ namespace TheEmptying.Modules.People
 
             yield return $"{person.FullName}, age {person.AgeLifeYears:F1} (lifespan {person.LifespanYears:F1}), health {person.Health:F0}, mood {person.Mood:F0}";
             yield return $"activity: {person.Activity}, believer: {person.IsBeliever}, class: {_classProvider(entity)}";
+
+            var skillLines = new List<string>();
+            for (int i = 0; i < person.Skills.Length; i++)
+            {
+                if (person.Skills[i] > 0)
+                {
+                    skillLines.Add($"{(Skill)i} {person.Skills[i]}");
+                }
+            }
+
+            if (skillLines.Count > 0)
+            {
+                yield return $"skills: {string.Join(", ", skillLines)}";
+            }
 
             foreach (KeyValuePair<string, PersonNeedState> need in person.Needs.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
             {

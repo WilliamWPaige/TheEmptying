@@ -1,0 +1,33 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.jobs.hired",
+            "visibility": "Witnessed",
+            "reportingScore": 1,
+            "notabilityScore": 1,
+            "description": "Someone was hired for a job."
+        },
+        {
+            "id": "event.jobs.quit",
+            "visibility": "Witnessed",
+            "reportingScore": 1,
+            "notabilityScore": 1,
+            "description": "Someone quit their job."
+        },
+        {
+            "id": "event.jobs.fired",
+            "visibility": "Witnessed",
+            "reportingScore": 1,
+            "notabilityScore": 1,
+            "description": "Someone was fired from their job."
+        },
+        {
+            "id": "event.jobs.unpaid",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "A worker's wages went unpaid for a day."
+        }
+    ]
+}

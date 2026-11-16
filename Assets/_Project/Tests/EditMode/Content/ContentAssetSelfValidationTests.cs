@@ -1,6 +1,7 @@
 using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core.Content;
+using TheEmptying.Modules.People;
 using TheEmptying.Presentation.Content;
 using UnityEngine;
 
@@ -116,7 +117,7 @@ namespace TheEmptying.Tests.EditMode.Content
             var asset = ScriptableObject.CreateInstance<RecipeAsset>();
             asset.SetForEditor("recipe.woodcutting", null,
                 new System.Collections.Generic.List<GoodAmountAsset>(), new System.Collections.Generic.List<GoodAmountAsset>(),
-                1f, WorkerTier.Laborer, false, new System.Collections.Generic.List<TheEmptying.Core.Timekeeping.Season>(), 0, string.Empty);
+                1f, WorkerTier.Laborer, Skill.Logging, false, new System.Collections.Generic.List<TheEmptying.Core.Timekeeping.Season>(), 0, string.Empty);
 
             Assert.IsTrue(asset.ValidateSelf().Any());
         }
@@ -132,7 +133,7 @@ namespace TheEmptying.Tests.EditMode.Content
             var asset = ScriptableObject.CreateInstance<RecipeAsset>();
             asset.SetForEditor("recipe.woodcutting", workplace,
                 new System.Collections.Generic.List<GoodAmountAsset>(), new System.Collections.Generic.List<GoodAmountAsset>(),
-                0f, WorkerTier.Laborer, false, new System.Collections.Generic.List<TheEmptying.Core.Timekeeping.Season>(), 0, string.Empty);
+                0f, WorkerTier.Laborer, Skill.Logging, false, new System.Collections.Generic.List<TheEmptying.Core.Timekeeping.Season>(), 0, string.Empty);
 
             Assert.IsTrue(asset.ValidateSelf().Any());
         }

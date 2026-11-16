@@ -21,7 +21,7 @@ MonoBehaviour:
     _amount: 20
   - _good: {fileID: 11400000, guid: 90e1c1c1f7f354848b44723939bf5004, type: 2}
     _amount: 10
-  _workerSlots: 0
+  _workerSlots: 1
   _managerSlots: 0
   _trainerSlots: 0
   _isBasic: 0

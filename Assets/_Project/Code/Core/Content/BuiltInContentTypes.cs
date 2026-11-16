@@ -178,6 +178,11 @@ namespace TheEmptying.Core.Content
                 context.ReportProblem(recipe.Id, "durationHours", "must be greater than 0.");
             }
 
+            if (string.IsNullOrEmpty(recipe.Skill))
+            {
+                context.ReportProblem(recipe.Id, "skill", "must not be empty.");
+            }
+
             foreach (GoodAmount input in recipe.Inputs)
             {
                 if (input.Amount < 0)

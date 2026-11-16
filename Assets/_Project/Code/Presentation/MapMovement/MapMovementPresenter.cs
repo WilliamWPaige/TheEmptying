@@ -192,6 +192,8 @@ namespace TheEmptying.Presentation.MapMovement
                 case PersonActivity.Sleeping: return new Color(0.25f, 0.35f, 0.75f);
                 case PersonActivity.Eating: return new Color(0.85f, 0.6f, 0.15f);
                 case PersonActivity.Wandering: return new Color(0.3f, 0.75f, 0.35f);
+                case PersonActivity.Commuting: return new Color(0.85f, 0.85f, 0.2f);
+                case PersonActivity.Working: return new Color(0.75f, 0.35f, 0.15f);
                 default: return new Color(0.7f, 0.7f, 0.7f);
             }
         }

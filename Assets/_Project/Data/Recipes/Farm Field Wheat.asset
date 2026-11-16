@@ -20,6 +20,7 @@ MonoBehaviour:
     _amount: 200
   _durationHours: 8
   _workerTier: 0
+  _skill: 4
   _isHardLabor: 0
   _seasonsAllowed: 000000000100000002000000i
   _growthTimeMonths: 1

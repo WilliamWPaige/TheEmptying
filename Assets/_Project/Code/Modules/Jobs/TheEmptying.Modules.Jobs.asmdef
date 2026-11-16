@@ -1,0 +1,20 @@
+{
+    "name": "TheEmptying.Modules.Jobs",
+    "rootNamespace": "TheEmptying.Modules.Jobs",
+    "references": [
+        "TheEmptying.Core",
+        "TheEmptying.Modules.MapMovement",
+        "TheEmptying.Modules.People",
+        "TheEmptying.Modules.Wealth",
+        "TheEmptying.Modules.Buildings"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

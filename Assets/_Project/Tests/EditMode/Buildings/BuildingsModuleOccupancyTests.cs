@@ -6,6 +6,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -25,7 +26,8 @@ namespace TheEmptying.Tests.EditMode.Buildings
             var wealth = new WealthModule(people);
             var land = new LandModule(mapMovement, wealth);
             buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
-            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings };
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs };
         }
 
         [Test]

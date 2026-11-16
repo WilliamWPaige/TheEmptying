@@ -1,0 +1,11 @@
+{
+    "type": "module_manifest",
+    "items": [
+        {
+            "id": "module.jobs",
+            "version": 1,
+            "dependencies": ["module.buildings", "module.wealth", "module.people", "module.map_movement"],
+            "enabled": true
+        }
+    ]
+}

@@ -82,6 +82,13 @@ namespace TheEmptying.Modules.Buildings
 
         public IEnumerable<KeyValuePair<EntityId, BuildingState>> Buildings => _buildings.Rows();
 
+        public bool TryGetBuilding(EntityId id, out BuildingState building) => _buildings.TryGet(id, out building);
+
+        public BuildingType GetBuildingType(string typeId) => _buildingTypesById.TryGetValue(typeId, out BuildingType type) ? type : null;
+
+        /// <summary>A passable cell just outside a building's footprint, for anyone (a tenant, a worker) who needs to walk to it.</summary>
+        public GridPoint? GetDoorstep(EntityId buildingId) => _buildings.TryGet(buildingId, out BuildingState building) ? FindDoorstep(building.Rect) : null;
+
         public void Initialize(ModuleContext context)
         {
             _settings = context.Settings;
@@ -680,12 +687,11 @@ namespace TheEmptying.Modules.Buildings
                 return -1;
             }
 
-            // RuleRunner expects exactly 4 choice slots (unused ones empty), not just the filled-in ones.
             long questionId = runner.AskQuestion(
                 DiscoveryQuestionCategory,
                 "New building type",
                 $"Someone wants to build a {type.Name}. Allow it?",
-                new[] { "Allow", "Forbid", "", "" },
+                new[] { "Allow", "Forbid" },
                 defaultChoiceNumber: 2);
 
             _pendingDiscoveryQuestions[questionId] = (type.Id, person);
@@ -805,7 +811,8 @@ namespace TheEmptying.Modules.Buildings
                 return TryDeliverGoods(siteId, args[1], count, out string error) ? $"Delivered {count} {args[1]} to {siteId}." : error;
             }));
 
-            context.RegisterCommand(new ConsoleCommand("buildwork", "buildwork <siteId> <hours> - adds labor hours to a construction site.", args =>
+            // Normal play no longer needs this: hired builders (Jobs, 3.8) add real labor automatically. Kept for tests and debugging.
+            context.RegisterCommand(new ConsoleCommand("buildwork", "buildwork <siteId> <hours> - adds labor hours to a construction site (test/debug only).", args =>
             {
                 if (args.Length != 2 || !EntityId.TryParse(args[0], out EntityId siteId) || !ConsoleArgs.TryParseDouble(args[1], out double hours))
                 {
@@ -871,7 +878,24 @@ namespace TheEmptying.Modules.Buildings
                 }
             }
 
-            writer.WriteStringList(_discoveryRequested.OrderBy(s => s, StringComparer.Ordinal).ToList());
+            // Settings declared at runtime (not from content) aren't restored by the core settings section,
+            // since that reads before any module's own section does and can only set a setting already
+            // declared. Each discovered type's three settings are saved and re-declared here instead, with
+            // their saved values as the "default" - CoreSections.ReadSettings then has nothing left to do for
+            // them, but they're already correct.
+            List<string> discoveredTypes = _discoveryRequested.OrderBy(s => s, StringComparer.Ordinal).ToList();
+            writer.WriteStringList(discoveredTypes);
+            foreach (string typeId in discoveredTypes)
+            {
+                bool declared = _settings.IsDeclared(AllowedSettingId(typeId));
+                writer.WriteBool(declared);
+                if (declared)
+                {
+                    writer.WriteDouble(_settings.Get(AllowedSettingId(typeId)));
+                    writer.WriteDouble(_settings.Get(MaxCountSettingId(typeId)));
+                    writer.WriteDouble(_settings.Get(AllowedClassesSettingId(typeId)));
+                }
+            }
 
             writer.WriteInt(_pendingDiscoveryQuestions.Count);
             foreach (KeyValuePair<long, (string TypeId, EntityId Person)> entry in _pendingDiscoveryQuestions.OrderBy(e => e.Key))
@@ -945,6 +969,23 @@ namespace TheEmptying.Modules.Buildings
             foreach (string typeId in reader.ReadStringList())
             {
                 _discoveryRequested.Add(typeId);
+
+                bool declared = reader.ReadBool();
+                if (declared)
+                {
+                    double allowed = reader.ReadDouble();
+                    double maxCount = reader.ReadDouble();
+                    double allowedClasses = reader.ReadDouble();
+
+                    if (!_settings.IsDeclared(AllowedSettingId(typeId)))
+                    {
+                        DeclareDiscoverySettings(typeId, allowed != 0);
+                    }
+
+                    _settings.Set(AllowedSettingId(typeId), allowed);
+                    _settings.Set(MaxCountSettingId(typeId), maxCount);
+                    _settings.Set(AllowedClassesSettingId(typeId), allowedClasses);
+                }
             }
 
             int pendingCount = reader.ReadInt();

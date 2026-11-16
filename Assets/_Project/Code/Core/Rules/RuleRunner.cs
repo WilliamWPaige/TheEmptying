@@ -867,13 +867,24 @@ namespace TheEmptying.Core.Rules
             TryResolveImmediatelyOrEnqueue(question, tick);
         }
 
-        /// <summary>Asks a question not tied to any rule instance - for modules that need to ask the player something outside the rule system.</summary>
+        /// <summary>Asks a question not tied to any rule instance - for modules that need to ask the player something outside the rule system. Fewer than 4 choices are padded with empty slots; more than 4 is rejected.</summary>
         public long AskQuestion(string category, string title, string body, string[] choiceTexts, int defaultChoiceNumber, double timeoutHours = 0)
         {
+            if (choiceTexts != null && choiceTexts.Length > 4)
+            {
+                throw new ArgumentException($"A question can have at most 4 choices; {choiceTexts.Length} were given.", nameof(choiceTexts));
+            }
+
+            var paddedChoices = new string[4];
+            if (choiceTexts != null)
+            {
+                Array.Copy(choiceTexts, paddedChoices, choiceTexts.Length);
+            }
+
             long tick = _currentTick();
             long timeoutTicks = timeoutHours > 0 ? (long)Math.Round(timeoutHours * CalendarConstants.TicksPerHour, MidpointRounding.AwayFromZero) : 0;
 
-            PendingQuestion question = AskQuestion(null, null, null, category, title, body, choiceTexts, defaultChoiceNumber, timeoutTicks, tick);
+            PendingQuestion question = AskQuestion(null, null, null, category, title, body, paddedChoices, defaultChoiceNumber, timeoutTicks, tick);
             TryResolveImmediatelyOrEnqueue(question, tick);
             return question.QuestionId;
         }

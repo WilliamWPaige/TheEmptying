@@ -79,6 +79,7 @@ namespace TheEmptying.Presentation.Content
                 ToGoodAmounts(asset.Outputs),
                 asset.DurationHours,
                 asset.WorkerTier,
+                asset.Skill.ToString(),
                 asset.IsHardLabor,
                 asset.SeasonsAllowed.ToList(),
                 asset.GrowthTimeMonths);

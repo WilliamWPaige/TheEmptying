@@ -6,6 +6,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -25,7 +26,8 @@ namespace TheEmptying.Tests.EditMode.Wealth
             var wealthModule = new WealthModule(people);
             var land = new LandModule(mapMovement, wealthModule);
             var buildings = new BuildingsModule(mapMovement, land, wealthModule, inventory, people);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealthModule, land, buildings }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var jobs = new JobsModule(buildings, wealthModule, people, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealthModule, land, buildings, jobs }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, wealthModule, people);
         }
 
