@@ -11,10 +11,12 @@ using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
 using TheEmptying.Presentation.Content;
+using TheEmptying.Presentation.Land;
 using TheEmptying.Presentation.MapMovement;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -96,7 +98,9 @@ namespace TheEmptying.Presentation
         private MapMovementModule _mapMovementModule;
         private PeopleModule _peopleModule;
         private WealthModule _wealthModule;
+        private LandModule _landModule;
         private MapMovementPresenter _mapPresenter;
+        private LandPresenter _landPresenter;
 
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
@@ -228,6 +232,7 @@ namespace TheEmptying.Presentation
             BuildUi();
             WireInput();
             BuildMapMovementPresentation();
+            BuildLandPresentation();
 
             Application.logMessageReceived += OnUnityLogMessage;
             AppendLog($"Startup report:\n{report}");
@@ -317,6 +322,7 @@ namespace TheEmptying.Presentation
             _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
             _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
             _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
+            _landModule = modules.OfType<LandModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
@@ -362,7 +368,21 @@ namespace TheEmptying.Presentation
             _mapPresenter.SetWealthModule(_wealthModule);
         }
 
-        /// <summary>Clicking a capsule shows its entity in the existing inspector: the console's own "inspect" command.</summary>
+        private void BuildLandPresentation()
+        {
+            if (_landModule == null || _mapMovementModule == null)
+            {
+                return;
+            }
+
+            InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
+            var presenterObject = new GameObject("LandPresenter");
+            _landPresenter = presenterObject.AddComponent<LandPresenter>();
+            _landPresenter.Initialize(_landModule, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
+            _landPresenter.SetPeopleModule(_peopleModule);
+        }
+
+        /// <summary>Clicking a capsule or a plot shows its entity in the existing inspector: the console's own "inspect" command.</summary>
         private void OnMoverCapsuleSelected(EntityId id)
         {
             if (!_consoleOpen)
@@ -961,6 +981,7 @@ namespace TheEmptying.Presentation
                 _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
                 _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
                 _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
+                _landModule = modules.OfType<LandModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
@@ -970,6 +991,7 @@ namespace TheEmptying.Presentation
                 _mapPresenter?.Rebind(_mapMovementModule);
                 _mapPresenter?.SetPeopleModule(_peopleModule);
                 _mapPresenter?.SetWealthModule(_wealthModule);
+                _landPresenter?.Rebind(_landModule, _mapMovementModule.Grid);
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

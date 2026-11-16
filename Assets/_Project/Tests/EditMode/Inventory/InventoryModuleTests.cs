@@ -8,6 +8,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Inventory;
+using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
@@ -23,7 +24,8 @@ namespace TheEmptying.Tests.EditMode.Inventory
             var mapMovement = new MapMovementModule();
             var people = new PeopleModule(mapMovement, module);
             var wealth = new WealthModule(people);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { module, mapMovement, people, wealth }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var land = new LandModule(mapMovement, wealth);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { module, mapMovement, people, wealth, land }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, module);
         }
 
@@ -117,7 +119,8 @@ namespace TheEmptying.Tests.EditMode.Inventory
             var firstMapMovement = new MapMovementModule();
             var firstPeople = new PeopleModule(firstMapMovement, firstModule);
             var firstWealth = new WealthModule(firstPeople);
-            (Simulation firstSim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { firstModule, firstMapMovement, firstPeople, firstWealth }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var firstLand = new LandModule(firstMapMovement, firstWealth);
+            (Simulation firstSim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { firstModule, firstMapMovement, firstPeople, firstWealth, firstLand }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             EntityId a = firstSim.Entities.Create(EntityKind.Item);
             EntityId b = firstSim.Entities.Create(EntityKind.Item);
@@ -133,7 +136,8 @@ namespace TheEmptying.Tests.EditMode.Inventory
             var secondMapMovement = new MapMovementModule();
             var secondPeople = new PeopleModule(secondMapMovement, secondModule);
             var secondWealth = new WealthModule(secondPeople);
-            (Simulation secondSim, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { secondModule, secondMapMovement, secondPeople, secondWealth }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var secondLand = new LandModule(secondMapMovement, secondWealth);
+            (Simulation secondSim, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { secondModule, secondMapMovement, secondPeople, secondWealth, secondLand }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             Assert.AreEqual(10, secondModule.GetCount(a, "good.loaf"));
             Assert.AreEqual(4, secondModule.GetCount(b, "good.plank"));

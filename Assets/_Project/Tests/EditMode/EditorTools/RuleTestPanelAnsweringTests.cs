@@ -39,7 +39,8 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                     { ""id"": ""module.map_movement"", ""version"": 1, ""dependencies"": [], ""enabled"": false },
                     { ""id"": ""module.inventory"", ""version"": 1, ""dependencies"": [], ""enabled"": false },
                     { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.inventory""], ""enabled"": false },
-                    { ""id"": ""module.wealth"", ""version"": 1, ""dependencies"": [""module.people""], ""enabled"": false }
+                    { ""id"": ""module.wealth"", ""version"": 1, ""dependencies"": [""module.people""], ""enabled"": false },
+                    { ""id"": ""module.land"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.wealth""], ""enabled"": false }
                 ]
             }");
             source.WriteDataFile("events.json", @"{

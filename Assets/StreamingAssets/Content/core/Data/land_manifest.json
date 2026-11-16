@@ -1,0 +1,6 @@
+{
+    "type": "module_manifest",
+    "items": [
+        { "id": "module.land", "version": 1, "dependencies": ["module.map_movement", "module.wealth"], "enabled": true }
+    ]
+}
