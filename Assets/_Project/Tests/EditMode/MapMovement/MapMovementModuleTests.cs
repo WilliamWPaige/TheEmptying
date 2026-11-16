@@ -9,6 +9,7 @@ using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
 using TheEmptying.Tests.EditMode.Startup;
@@ -52,7 +53,8 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             var land = new LandModule(module, wealth);
             var buildings = new BuildingsModule(module, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, module);
-            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { module, inventory, people, wealth, land, buildings, jobs }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var market = new MarketModule(buildings, wealth, inventory, people, module);
+            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { module, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, module);
         }
 

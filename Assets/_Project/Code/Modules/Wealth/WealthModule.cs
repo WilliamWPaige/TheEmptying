@@ -83,6 +83,7 @@ namespace TheEmptying.Modules.Wealth
 
             RegisterCommands(context);
             context.Subscribe<NewMonthEvent>(OnNewMonth);
+            _people.RegisterDeathHook(OnPersonDied);
 
             if (!context.IsLoading)
             {
@@ -214,6 +215,16 @@ namespace TheEmptying.Modules.Wealth
         }
 
         private MonthlyLedger CurrentLedger(AccountId account) => account.IsCrown ? _crownAccount.Current : EnsureAccount(account.Entity).Current;
+
+        /// <summary>Property of the dead: their money goes to the crown (placeholder until inheritance exists). Run synchronously before the person is destroyed - see PeopleModule.RegisterDeathHook.</summary>
+        private void OnPersonDied(EntityId person)
+        {
+            Money balance = GetBalance(AccountId.Person(person));
+            if (balance.HundredthsOfShil > 0)
+            {
+                TryTransfer(AccountId.Person(person), AccountId.Crown, balance, TransferReason.Other);
+            }
+        }
 
         #endregion
 

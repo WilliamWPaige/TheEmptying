@@ -12,6 +12,7 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
@@ -102,9 +103,11 @@ namespace TheEmptying.Presentation
         private WealthModule _wealthModule;
         private LandModule _landModule;
         private BuildingsModule _buildingsModule;
+        private JobsModule _jobsModule;
         private MapMovementPresenter _mapPresenter;
         private LandPresenter _landPresenter;
         private BuildingsPresenter _buildingsPresenter;
+        private BuildingPanelPresenter _buildingPanelPresenter;
 
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
@@ -329,6 +332,7 @@ namespace TheEmptying.Presentation
             _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
             _landModule = modules.OfType<LandModule>().FirstOrDefault();
             _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
+            _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
@@ -398,7 +402,11 @@ namespace TheEmptying.Presentation
             InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
             var presenterObject = new GameObject("BuildingsPresenter");
             _buildingsPresenter = presenterObject.AddComponent<BuildingsPresenter>();
-            _buildingsPresenter.Initialize(_buildingsModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
+            _buildingsPresenter.Initialize(_buildingsModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnBuildingSelected);
+
+            var panelObject = new GameObject("BuildingPanelPresenter");
+            _buildingPanelPresenter = panelObject.AddComponent<BuildingPanelPresenter>();
+            _buildingPanelPresenter.Initialize(_buildingsModule, _jobsModule, _uiDocument.rootVisualElement, command => _simulation.Commands.Execute(command));
         }
 
         /// <summary>Clicking a capsule or a plot shows its entity in the existing inspector: the console's own "inspect" command.</summary>
@@ -411,6 +419,13 @@ namespace TheEmptying.Presentation
 
             AppendLog($"> inspect {id}");
             AppendLog(_simulation.Commands.Execute($"inspect {id}"));
+        }
+
+        /// <summary>Clicking a building shows the same text inspector, and - for a building with job slots - the building panel on top of it.</summary>
+        private void OnBuildingSelected(EntityId id)
+        {
+            OnMoverCapsuleSelected(id);
+            _buildingPanelPresenter?.Show(id);
         }
 
         /// <summary>Converts every ScriptableObject content asset in the shipped catalog into the plain records the simulation reads.</summary>
@@ -1002,6 +1017,7 @@ namespace TheEmptying.Presentation
                 _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
                 _landModule = modules.OfType<LandModule>().FirstOrDefault();
                 _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
+                _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
@@ -1013,6 +1029,7 @@ namespace TheEmptying.Presentation
                 _mapPresenter?.SetWealthModule(_wealthModule);
                 _landPresenter?.Rebind(_landModule, _mapMovementModule.Grid);
                 _buildingsPresenter?.Rebind(_buildingsModule, _mapMovementModule.Grid);
+                _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule);
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

@@ -1,0 +1,19 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.market.shortage_started",
+            "visibility": "Public",
+            "reportingScore": 2,
+            "notabilityScore": 2,
+            "description": "A good became unavailable everywhere for a full day."
+        },
+        {
+            "id": "event.market.shortage_ended",
+            "visibility": "Public",
+            "reportingScore": 1,
+            "notabilityScore": 1,
+            "description": "A good became available again after a shortage."
+        }
+    ]
+}

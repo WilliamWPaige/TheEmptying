@@ -12,6 +12,7 @@ using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
 using TheEmptying.Tests.EditMode.Startup;
@@ -29,7 +30,8 @@ namespace TheEmptying.Tests.EditMode.Land
             land = new LandModule(mapMovement, wealth);
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
-            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs };
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market };
         }
 
         /// <summary>Paints a zone, buys one plot, leases another and leaves one owner's tax unpaid, so every piece of Land's state has something in it.</summary>

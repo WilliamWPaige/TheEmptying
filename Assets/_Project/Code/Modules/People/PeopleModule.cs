@@ -99,6 +99,14 @@ namespace TheEmptying.Modules.People
         /// <summary>Whether a person should be at work this hour; false (the default) until Jobs registers the real one.</summary>
         private Func<EntityId, int, bool> _isOnShiftProvider = (id, hour) => false;
 
+        /// <summary>
+        /// Run synchronously, still-alive EntityId in hand, before the entity is destroyed - unlike
+        /// PersonDiedEventId (delivered at the end of the tick, by which point EntityRegistry.Destroy has
+        /// already scrubbed every table's row for this id). Property of the dead's money and goods sweeps
+        /// need the dying person's own row, so they register here instead of subscribing to the event.
+        /// </summary>
+        private readonly List<Action<EntityId>> _deathHooks = new List<Action<EntityId>>();
+
         public PeopleModule(MapMovementModule mapMovement, InventoryModule inventory)
         {
             _mapMovement = mapMovement ?? throw new ArgumentNullException(nameof(mapMovement));
@@ -129,6 +137,15 @@ namespace TheEmptying.Modules.People
         }
 
         public GridPoint? GetHomeLocation(EntityId person) => _homeLocationProvider(person);
+
+        /// <summary>Wealth and Inventory-holding modules call this during their own Initialize, to sweep up a dying person's money and goods before their rows disappear.</summary>
+        public void RegisterDeathHook(Action<EntityId> hook)
+        {
+            if (hook != null)
+            {
+                _deathHooks.Add(hook);
+            }
+        }
 
         /// <summary>Adds fractional progress toward a skill's next level, applying whole levels (capped at the max) as progress crosses 1.</summary>
         public void AddSkillExperience(EntityId person, Skill skill, double amount)
@@ -644,6 +661,11 @@ namespace TheEmptying.Modules.People
 
         private void KillPerson(EntityId id, string cause, long tick)
         {
+            foreach (Action<EntityId> hook in _deathHooks)
+            {
+                hook(id);
+            }
+
             _events.Post(PersonDiedEventId, tick, new EventData().SetEntity("person", id).SetString("cause", cause));
             _entities.Destroy(id);
         }

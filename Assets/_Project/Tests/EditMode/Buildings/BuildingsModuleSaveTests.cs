@@ -12,6 +12,7 @@ using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
 using TheEmptying.Tests.EditMode.Startup;
@@ -29,14 +30,21 @@ namespace TheEmptying.Tests.EditMode.Buildings
             land = new LandModule(mapMovement, wealth);
             buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
-            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs };
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market };
         }
 
         /// <summary>A government site mid-construction, a finished private cottage, and a tenant, so every piece of Buildings' state has something in it.</summary>
         private static void PopulateBuildingsState(Simulation sim, BuildingsModule buildings, LandModule land, WealthModule wealth, PeopleModule people, InventoryModule inventory)
         {
+            buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(90, 90), out EntityId storehouseId, out _);
+            buildings.TryDeliverGoods(storehouseId, "good.plank", 20, out _); // the storehouse's own construction is free (nothing else can supply the first one)
+            buildings.TryDeliverGoods(storehouseId, "good.stone", 10, out _);
+            buildings.TryAddLaborHours(storehouseId, 9999, out _);
+            inventory.Add(storehouseId, "good.plank", 1000);
+
             buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(10, 10), out _, out _);
-            buildings.TryDeliverGoods(FindSiteByType(buildings, "building.crown_lodging"), "good.plank", 30, out _); // half-delivered, mid-construction
+            buildings.TryDeliverGoods(FindSiteByType(buildings, "building.crown_lodging"), "good.plank", 30, out _); // half-delivered, mid-construction, drawn from the storehouse
 
             EntityId owner = sim.Entities.Create(EntityKind.Person);
             land.RequestSetZone(new CellRect(50, 50, 4, 4), "zone.residential_low");

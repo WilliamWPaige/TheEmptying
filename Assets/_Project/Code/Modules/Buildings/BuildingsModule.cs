@@ -38,6 +38,7 @@ namespace TheEmptying.Modules.Buildings
 
         public const string KeepTypeId = "building.keep";
         public const string CrownLodgingTypeId = "building.crown_lodging";
+        public const string CrownStorehouseTypeId = "building.crown_storehouse";
 
         private const string DiscoveryQuestionCategory = "building_discovery";
 
@@ -57,7 +58,16 @@ namespace TheEmptying.Modules.Buildings
         private EntityTable<BuildingState> _buildings;
         private Dictionary<string, BuildingType> _buildingTypesById;
 
+        /// <summary>A discovered type's player-editable rules: whether it's allowed, the most that may exist, and which classes may own one. Module state, not settings - it changes during play.</summary>
+        private sealed class DiscoveredTypeState
+        {
+            public bool Allowed;
+            public int MaxCount;
+            public int AllowedClassesMask;
+        }
+
         private readonly HashSet<string> _discoveryRequested = new HashSet<string>();
+        private readonly Dictionary<string, DiscoveredTypeState> _discoveredTypes = new Dictionary<string, DiscoveredTypeState>();
         private readonly Dictionary<long, (string TypeId, EntityId Person)> _pendingDiscoveryQuestions = new Dictionary<long, (string TypeId, EntityId Person)>();
 
         /// <summary>Reverse index: a housed person's building, for O(1) home lookups from People's hourly schedule.</summary>
@@ -106,6 +116,8 @@ namespace TheEmptying.Modules.Buildings
 
             context.Subscribe<NewDayEvent>(OnNewDay);
             context.Subscribe<NewMonthEvent>(OnNewMonth);
+            context.Subscribe(PeopleModule.PersonDiedEventId, OnPersonDied);
+            _people.RegisterDeathHook(OnPersonDiedSweepGoods);
             context.Subscribe(RuleRunner.QuestionAnsweredEventId, OnQuestionAnswered);
 
             RegisterCommands(context);
@@ -182,7 +194,7 @@ namespace TheEmptying.Modules.Buildings
 
             if (!type.IsBasic)
             {
-                if (!_settings.IsDeclared(AllowedSettingId(typeId)))
+                if (!_discoveredTypes.ContainsKey(typeId))
                 {
                     if (_discoveryRequested.Add(typeId))
                     {
@@ -217,23 +229,23 @@ namespace TheEmptying.Modules.Buildings
 
         private bool IsAllowedFor(string typeId, EntityId person, out string reason)
         {
-            if (_settings.Get(AllowedSettingId(typeId)) == 0)
+            DiscoveredTypeState state = _discoveredTypes[typeId];
+
+            if (!state.Allowed)
             {
                 reason = $"Building type '{typeId}' is forbidden.";
                 return false;
             }
 
-            int maxCount = (int)_settings.Get(MaxCountSettingId(typeId));
             int currentCount = _buildings.Rows().Count(row => row.Value.BuildingTypeId == typeId);
-            if (currentCount >= maxCount)
+            if (currentCount >= state.MaxCount)
             {
-                reason = $"Building type '{typeId}' is already at its maximum of {maxCount}.";
+                reason = $"Building type '{typeId}' is already at its maximum of {state.MaxCount}.";
                 return false;
             }
 
-            int allowedClassesMask = (int)_settings.Get(AllowedClassesSettingId(typeId));
             SocialClass personClass = _wealth.GetClass(person);
-            if ((allowedClassesMask & (1 << (int)personClass)) == 0)
+            if ((state.AllowedClassesMask & (1 << (int)personClass)) == 0)
             {
                 reason = $"{person}'s class may not own a '{typeId}'.";
                 return false;
@@ -378,9 +390,19 @@ namespace TheEmptying.Modules.Buildings
                     return false;
                 }
             }
+            else if (site.BuildingTypeId != CrownStorehouseTypeId)
+            {
+                // A crown site draws from the crown storehouse, like any owner draws from their own
+                // inventory - crown buildings are never free. The storehouse's own construction is the
+                // one exception: nothing else can supply the very first one, so it stays free.
+                EntityId? storehouseId = FindCrownStorehouse();
+                if (!storehouseId.HasValue || !_inventory.TryRemove(storehouseId.Value, goodId, toDeliver))
+                {
+                    error = $"The crown storehouse doesn't have {toDeliver} {goodId}.";
+                    return false;
+                }
+            }
 
-            // A government site's goods aren't drawn from anywhere yet (no crown storehouse mechanic
-            // until the market/production chains exist); delivery is simply credited.
             site.Construction.DeliveredGoods[goodId] = delivered + toDeliver;
             CheckCompletion(siteId, site, type, _currentTick());
 
@@ -550,7 +572,7 @@ namespace TheEmptying.Modules.Buildings
                     continue;
                 }
 
-                Money rent = building.Owner.HasValue ? RentForClass(type.HomeClass.Value) : Money.Zero;
+                Money rent = building.BuildingTypeId == CrownLodgingTypeId ? Money.Zero : RentForClass(type.HomeClass.Value);
                 if (rent.HundredthsOfShil > balance.HundredthsOfShil)
                 {
                     continue;
@@ -581,9 +603,10 @@ namespace TheEmptying.Modules.Buildings
             }
 
             _buildings.TryGet(bestBuilding, out BuildingState chosen);
-            bool crownLodging = !chosen.Owner.HasValue;
+            bool crownLodging = chosen.BuildingTypeId == CrownLodgingTypeId;
+            AccountId landlord = chosen.Owner.HasValue ? AccountId.Person(chosen.Owner.Value) : AccountId.Crown;
 
-            if (crownLodging || _wealth.TryTransfer(AccountId.Person(personId), AccountId.Person(chosen.Owner.Value), bestRent, TransferReason.Rent))
+            if (crownLodging || _wealth.TryTransfer(AccountId.Person(personId), landlord, bestRent, TransferReason.Rent))
             {
                 chosen.Households[bestHouseholdIndex].Occupant = personId;
                 _homeByPerson[personId] = bestBuilding;
@@ -595,13 +618,14 @@ namespace TheEmptying.Modules.Buildings
             foreach (KeyValuePair<EntityId, BuildingState> row in _buildings.Rows())
             {
                 BuildingState building = row.Value;
-                if (building.Construction != null || building.Households.Count == 0 || !building.Owner.HasValue)
+                if (building.Construction != null || building.Households.Count == 0 || building.BuildingTypeId == CrownLodgingTypeId)
                 {
-                    continue; // crown lodging (no owner) charges no rent, so is never evicted
+                    continue; // crown lodging charges no rent, so is never evicted
                 }
 
                 BuildingType type = _buildingTypesById[building.BuildingTypeId];
                 Money rent = RentForClass(type.HomeClass.Value);
+                AccountId landlord = building.Owner.HasValue ? AccountId.Person(building.Owner.Value) : AccountId.Crown;
 
                 foreach (HouseholdState household in building.Households)
                 {
@@ -610,13 +634,84 @@ namespace TheEmptying.Modules.Buildings
                         continue;
                     }
 
-                    if (!_wealth.TryTransfer(AccountId.Person(household.Occupant.Value), AccountId.Person(building.Owner.Value), rent, TransferReason.Rent))
+                    if (!_wealth.TryTransfer(AccountId.Person(household.Occupant.Value), landlord, rent, TransferReason.Rent))
                     {
                         _homeByPerson.Remove(household.Occupant.Value);
                         household.Occupant = null;
                     }
                 }
             }
+        }
+
+        /// <summary>Property of the dead: their buildings return to the crown (tenants stay, now renting from the crown), and their own household slot (owned or rented) is vacated.</summary>
+        private void OnPersonDied(PostedEvent posted)
+        {
+            EntityId person = posted.Data.GetEntity("person");
+
+            if (_homeByPerson.TryGetValue(person, out EntityId homeBuildingId) && _buildings.TryGet(homeBuildingId, out BuildingState home))
+            {
+                foreach (HouseholdState household in home.Households)
+                {
+                    if (household.Occupant == person)
+                    {
+                        household.Occupant = null;
+                        household.IsOwnerOccupied = false;
+                        break;
+                    }
+                }
+
+                _homeByPerson.Remove(person);
+            }
+
+            foreach (KeyValuePair<EntityId, BuildingState> row in _buildings.Rows())
+            {
+                if (row.Value.Owner == person)
+                {
+                    row.Value.Owner = null;
+                }
+            }
+        }
+
+        /// <summary>
+        /// Property of the dead: their goods go to the crown storehouse, if one exists yet. Run
+        /// synchronously before the person is destroyed - see PeopleModule.RegisterDeathHook. Unlike
+        /// OnPersonDied above, this can't wait for the deferred event: by the time it's delivered,
+        /// EntityRegistry.Destroy has already scrubbed the dead person's own inventory row.
+        /// </summary>
+        private void OnPersonDiedSweepGoods(EntityId person)
+        {
+            EntityId? storehouseId = FindCrownStorehouse();
+            if (storehouseId.HasValue)
+            {
+                foreach (KeyValuePair<string, int> good in _inventory.GetAll(person).ToList())
+                {
+                    if (_inventory.TryRemove(person, good.Key, good.Value))
+                    {
+                        _inventory.Add(storehouseId.Value, good.Key, good.Value);
+                    }
+                }
+            }
+        }
+
+        private EntityId? FindCrownStorehouse()
+        {
+            foreach (KeyValuePair<EntityId, BuildingState> row in _buildings.Rows())
+            {
+                if (row.Value.BuildingTypeId == CrownStorehouseTypeId && row.Value.Construction == null)
+                {
+                    return row.Key;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>The crown's own goods reserve, if a complete one exists yet. Market's crown construction sites take materials from here first.</summary>
+        public bool TryFindCrownStorehouse(out EntityId storehouseId)
+        {
+            EntityId? found = FindCrownStorehouse();
+            storehouseId = found ?? EntityId.None;
+            return found.HasValue;
         }
 
         #endregion
@@ -714,7 +809,7 @@ namespace TheEmptying.Modules.Buildings
             _pendingDiscoveryQuestions.Remove(questionId);
 
             bool allowed = (int)posted.Data.GetDouble("choice") == 1;
-            DeclareDiscoverySettings(pending.TypeId, allowed);
+            RecordDiscoveryDecision(pending.TypeId, allowed);
 
             if (allowed)
             {
@@ -722,36 +817,43 @@ namespace TheEmptying.Modules.Buildings
             }
         }
 
-        private void DeclareDiscoverySettings(string typeId, bool allowed)
+        private void RecordDiscoveryDecision(string typeId, bool allowed)
         {
-            if (_settings.IsDeclared(AllowedSettingId(typeId)))
+            if (_discoveredTypes.ContainsKey(typeId))
             {
                 return;
             }
 
-            _settings.Declare(new SettingDefinition
-            {
-                Id = AllowedSettingId(typeId), ValueType = SettingValueType.Boolean, Default = allowed ? 1 : 0, Minimum = 0, Maximum = 1,
-                Category = "Buildings", Description = $"Whether '{typeId}' may be built, decided the first time someone asked for one."
-            });
-
-            _settings.Declare(new SettingDefinition
-            {
-                Id = MaxCountSettingId(typeId), ValueType = SettingValueType.Integer, Default = allowed ? 999 : 0, Minimum = 0, Maximum = 999,
-                Category = "Buildings", Description = $"The most '{typeId}' buildings allowed to exist at once; 0 means none."
-            });
-
-            _settings.Declare(new SettingDefinition
-            {
-                Id = AllowedClassesSettingId(typeId), ValueType = SettingValueType.Integer, Default = 7, Minimum = 0, Maximum = 7,
-                Category = "Buildings", Description = $"Bitmask (1=lower, 2=middle, 4=upper) of classes who may own a '{typeId}'."
-            });
+            _discoveredTypes[typeId] = new DiscoveredTypeState { Allowed = allowed, MaxCount = allowed ? 999 : 0, AllowedClassesMask = 7 };
         }
 
-        private static string AllowedSettingId(string typeId) => $"setting.buildings.discovered.{StripBuildingPrefix(typeId)}.allowed";
-        private static string MaxCountSettingId(string typeId) => $"setting.buildings.discovered.{StripBuildingPrefix(typeId)}.max_count";
-        private static string AllowedClassesSettingId(string typeId) => $"setting.buildings.discovered.{StripBuildingPrefix(typeId)}.allowed_classes";
-        private static string StripBuildingPrefix(string typeId) => typeId.StartsWith("building.") ? typeId.Substring("building.".Length) : typeId;
+        /// <summary>The player (or a minister) changing a discovered type's rules. Applied next tick: it only changes stored state, read fresh by the next request.</summary>
+        public bool TrySetDiscoveredTypeConfig(string typeId, bool? allowed, int? maxCount, int? allowedClassesMask, out string error)
+        {
+            if (!_discoveredTypes.TryGetValue(typeId, out DiscoveredTypeState state))
+            {
+                error = $"'{typeId}' hasn't been discovered yet.";
+                return false;
+            }
+
+            if (allowed.HasValue)
+            {
+                state.Allowed = allowed.Value;
+            }
+
+            if (maxCount.HasValue)
+            {
+                state.MaxCount = maxCount.Value;
+            }
+
+            if (allowedClassesMask.HasValue)
+            {
+                state.AllowedClassesMask = allowedClassesMask.Value;
+            }
+
+            error = null;
+            return true;
+        }
 
         #endregion
 
@@ -801,7 +903,9 @@ namespace TheEmptying.Modules.Buildings
                     : error;
             }));
 
-            context.RegisterCommand(new ConsoleCommand("deliver", "deliver <siteId> <good> <count> - delivers goods to a construction site, from the owner's inventory.", args =>
+            // Normal play no longer needs this: Market's bulk orders (3.9) now source and deliver
+            // construction materials automatically. Kept for tests and debugging.
+            context.RegisterCommand(new ConsoleCommand("deliver", "deliver <siteId> <good> <count> - delivers goods to a construction site, from the owner's inventory (or the crown storehouse) (test/debug only).", args =>
             {
                 if (args.Length != 3 || !EntityId.TryParse(args[0], out EntityId siteId) || !ConsoleArgs.TryParseInt(args[2], out int count))
                 {
@@ -878,23 +982,17 @@ namespace TheEmptying.Modules.Buildings
                 }
             }
 
-            // Settings declared at runtime (not from content) aren't restored by the core settings section,
-            // since that reads before any module's own section does and can only set a setting already
-            // declared. Each discovered type's three settings are saved and re-declared here instead, with
-            // their saved values as the "default" - CoreSections.ReadSettings then has nothing left to do for
-            // them, but they're already correct.
-            List<string> discoveredTypes = _discoveryRequested.OrderBy(s => s, StringComparer.Ordinal).ToList();
-            writer.WriteStringList(discoveredTypes);
-            foreach (string typeId in discoveredTypes)
+            writer.WriteStringList(_discoveryRequested.OrderBy(s => s, StringComparer.Ordinal).ToList());
+
+            List<string> decidedTypeIds = _discoveredTypes.Keys.OrderBy(s => s, StringComparer.Ordinal).ToList();
+            writer.WriteInt(decidedTypeIds.Count);
+            foreach (string typeId in decidedTypeIds)
             {
-                bool declared = _settings.IsDeclared(AllowedSettingId(typeId));
-                writer.WriteBool(declared);
-                if (declared)
-                {
-                    writer.WriteDouble(_settings.Get(AllowedSettingId(typeId)));
-                    writer.WriteDouble(_settings.Get(MaxCountSettingId(typeId)));
-                    writer.WriteDouble(_settings.Get(AllowedClassesSettingId(typeId)));
-                }
+                DiscoveredTypeState state = _discoveredTypes[typeId];
+                writer.WriteString(typeId);
+                writer.WriteBool(state.Allowed);
+                writer.WriteInt(state.MaxCount);
+                writer.WriteInt(state.AllowedClassesMask);
             }
 
             writer.WriteInt(_pendingDiscoveryQuestions.Count);
@@ -969,23 +1067,18 @@ namespace TheEmptying.Modules.Buildings
             foreach (string typeId in reader.ReadStringList())
             {
                 _discoveryRequested.Add(typeId);
+            }
 
-                bool declared = reader.ReadBool();
-                if (declared)
+            int decidedCount = reader.ReadInt();
+            for (int i = 0; i < decidedCount; i++)
+            {
+                string typeId = reader.ReadString();
+                _discoveredTypes[typeId] = new DiscoveredTypeState
                 {
-                    double allowed = reader.ReadDouble();
-                    double maxCount = reader.ReadDouble();
-                    double allowedClasses = reader.ReadDouble();
-
-                    if (!_settings.IsDeclared(AllowedSettingId(typeId)))
-                    {
-                        DeclareDiscoverySettings(typeId, allowed != 0);
-                    }
-
-                    _settings.Set(AllowedSettingId(typeId), allowed);
-                    _settings.Set(MaxCountSettingId(typeId), maxCount);
-                    _settings.Set(AllowedClassesSettingId(typeId), allowedClasses);
-                }
+                    Allowed = reader.ReadBool(),
+                    MaxCount = reader.ReadInt(),
+                    AllowedClassesMask = reader.ReadInt()
+                };
             }
 
             int pendingCount = reader.ReadInt();

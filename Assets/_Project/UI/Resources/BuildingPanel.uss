@@ -1,0 +1,93 @@
+.building-panel-root {
+    position: absolute;
+    top: 48px;
+    right: 8px;
+    width: 340px;
+    max-height: 70%;
+    background-color: rgb(20, 20, 24);
+    border-radius: 6px;
+    padding: 10px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.building-panel-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.building-panel-title {
+    color: rgb(255, 255, 255);
+    font-size: 15px;
+    -unity-font-style: bold;
+    white-space: normal;
+    flex-grow: 1;
+}
+
+.building-panel-close {
+    width: 22px;
+    height: 22px;
+}
+
+.building-panel-slots {
+    flex-grow: 1;
+}
+
+.building-panel-group {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    padding: 6px;
+    margin-bottom: 6px;
+}
+
+.building-panel-group-title {
+    color: rgb(230, 230, 230);
+    font-size: 13px;
+    -unity-font-style: bold;
+    margin-bottom: 4px;
+}
+
+.building-panel-occupant-row {
+    flex-direction: row;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 2px;
+}
+
+.building-panel-occupant-label {
+    color: rgb(200, 200, 200);
+    font-size: 12px;
+    flex-grow: 1;
+}
+
+.building-panel-fire-button {
+    height: 20px;
+    width: 48px;
+    font-size: 11px;
+}
+
+.building-panel-edit-row {
+    flex-direction: row;
+    align-items: center;
+    margin-top: 2px;
+}
+
+.building-panel-edit-label {
+    color: rgb(180, 180, 180);
+    font-size: 11px;
+    width: 90px;
+}
+
+.building-panel-apply-button {
+    height: 20px;
+    margin-top: 4px;
+}
+
+.building-panel-readonly-note {
+    color: rgb(150, 150, 150);
+    font-size: 11px;
+    -unity-font-style: italic;
+    margin-top: 2px;
+}

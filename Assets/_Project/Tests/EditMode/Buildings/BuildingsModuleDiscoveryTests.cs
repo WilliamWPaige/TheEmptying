@@ -10,6 +10,7 @@ using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
 using TheEmptying.Tests.EditMode.Startup;
@@ -27,7 +28,8 @@ namespace TheEmptying.Tests.EditMode.Buildings
             var land = new LandModule(mapMovement, wealth);
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, buildings, land, wealth);
         }
 
@@ -110,7 +112,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
         }
 
         [Test]
-        public void SettingsChange_AppliesToTheNextRequest()
+        public void ConfigChange_AppliesToTheNextRequest()
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, BuildingsModule buildingsModule, LandModule land, WealthModule wealth) = Build(core);
@@ -121,7 +123,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             sim.AnswerQuestion(questionId, 1); // Allow, with a default max count
             sim.Step();
 
-            sim.Settings.Set("setting.buildings.discovered.bakery.max_count", 0);
+            Assert.IsTrue(buildingsModule.TrySetDiscoveredTypeConfig("building.bakery", allowed: null, maxCount: 0, allowedClassesMask: null, out string setError), setError);
 
             Assert.IsFalse(buildingsModule.TryRequestPrivateBuilding(owner, "building.bakery", out _, out string error), "A max count of 0 should refuse any further request.");
             Assert.IsNotNull(error);

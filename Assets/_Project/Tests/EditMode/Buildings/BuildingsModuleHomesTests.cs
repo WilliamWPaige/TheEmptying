@@ -11,6 +11,7 @@ using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
 using TheEmptying.Tests.EditMode.Startup;
@@ -28,7 +29,8 @@ namespace TheEmptying.Tests.EditMode.Buildings
             var land = new LandModule(mapMovement, wealth);
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             simulation.Settings.Set(PeopleModule.HomelessHealthDamagePerNightSettingId, 0); // isolate homes/rent from the unrelated homelessness-death mechanic
 
             // The 8 starting immigrants are homeless too, and would otherwise compete with
@@ -57,11 +59,20 @@ namespace TheEmptying.Tests.EditMode.Buildings
             }
         }
 
-        private static EntityId BuildAndFinishCrownLodging(BuildingsModule buildingsModule, GridPoint at)
+        private static EntityId BuildAndFinishCrownLodging(BuildingsModule buildingsModule, InventoryModule inventory, GridPoint at)
         {
+            // Crown sites draw materials from the crown storehouse, like any owner draws from their own
+            // inventory (3.9) - so a complete, well-stocked storehouse has to exist first.
+            Assert.IsTrue(buildingsModule.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(at.X + 20, at.Y + 20), out EntityId storehouseId, out string storehouseError), storehouseError);
+            buildingsModule.TryDeliverGoods(storehouseId, "good.plank", 20, out _); // the storehouse's own construction is free (nothing else can supply the first one)
+            buildingsModule.TryDeliverGoods(storehouseId, "good.stone", 10, out _);
+            buildingsModule.TryAddLaborHours(storehouseId, 9999, out _);
+            inventory.Add(storehouseId, "good.plank", 1000);
+            inventory.Add(storehouseId, "good.stone", 1000);
+
             Assert.IsTrue(buildingsModule.TryPlaceGovernmentBuilding("building.crown_lodging", at, out EntityId id, out string error), error);
-            buildingsModule.TryDeliverGoods(id, "good.plank", 60, out _);
-            buildingsModule.TryDeliverGoods(id, "good.stone", 20, out _);
+            Assert.IsTrue(buildingsModule.TryDeliverGoods(id, "good.plank", 60, out string plankError), plankError);
+            Assert.IsTrue(buildingsModule.TryDeliverGoods(id, "good.stone", 20, out string stoneError), stoneError);
             buildingsModule.TryAddLaborHours(id, 80, out _);
             return id;
         }
@@ -87,7 +98,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             using var core = new TempCoreContentCopy();
             (Simulation sim, BuildingsModule buildingsModule, _, _, PeopleModule people, InventoryModule inventory) = Build(core);
 
-            BuildAndFinishCrownLodging(buildingsModule, new GridPoint(10, 10));
+            BuildAndFinishCrownLodging(buildingsModule, inventory, new GridPoint(10, 10));
             EntityId person = people.SpawnPerson(30, 30);
             inventory.Add(person, "good.loaf", 10000); // food isn't the thing under test
 
@@ -155,7 +166,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             using var core = new TempCoreContentCopy();
             (Simulation sim, BuildingsModule buildingsModule, _, WealthModule wealth, PeopleModule people, InventoryModule inventory) = Build(core);
 
-            BuildAndFinishCrownLodging(buildingsModule, new GridPoint(10, 10));
+            BuildAndFinishCrownLodging(buildingsModule, inventory, new GridPoint(10, 10));
 
             EntityId tenant = people.SpawnPerson(30, 30);
             inventory.Add(tenant, "good.loaf", 10000);

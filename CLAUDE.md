@@ -79,6 +79,7 @@ The simulation is plain C#. It must run headless, in edit-mode tests, with no sc
 - Technical definitions the simulation reads directly — event definitions, settings, rules — stay as JSON files in the core content source, maintained by Claude Code.
 - Every content item has a permanent, readable text ID such as `resource.iron_ore`. IDs are never renamed or reused.
 - Any tunable number should be a named setting, so it can appear as a slider in the custom difficulty panel. Log new settings in the slider registry.
+- Settings are for tunable numbers known at startup, not for anything that changes during play. Anything that changes during play (a discovered building type's allowed status, maximums and the like) is module state, saved in that module's own save section like any other per-entity data — never a setting, even a runtime-declared one, since the core settings section is restored before any module gets its own data back and can't correctly round-trip a value nothing has declared yet.
 
 ### The rule system
 

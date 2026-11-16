@@ -34,6 +34,15 @@ namespace TheEmptying.Modules.Land
         public const string LeaseEndedEventId = "event.land.lease_ended";
         public const string TaxUnpaidEventId = "event.land.tax_unpaid";
 
+        /// <summary>
+        /// Land has no declared dependency on People (Wealth depends on
+        /// People; Land depends on Wealth, not People directly), so this is
+        /// the event's string ID, not PeopleModule.PersonDiedEventId -
+        /// events are the one channel a module can listen on without a code
+        /// reference.
+        /// </summary>
+        private const string PersonDiedEventId = "event.people.person_died";
+
         public static readonly string[] ZoneIds =
         {
             "zone.residential_low", "zone.residential_middle", "zone.residential_high",
@@ -101,6 +110,7 @@ namespace TheEmptying.Modules.Land
             _wealth.AddPropertyValueProvider(GetPropertyValue);
 
             context.Subscribe<NewMonthEvent>(OnNewMonth);
+            context.Subscribe(PersonDiedEventId, OnPersonDied);
             context.RegisterSystem(new ZoneActionSystem(this), 1, 0, 0);
 
             RegisterCommands(context);
@@ -419,6 +429,23 @@ namespace TheEmptying.Modules.Land
             {
                 plot.Leaseholder = null;
                 _events.Post(LeaseEndedEventId, tick, new EventData().SetEntity("plot", plotId).SetEntity("leaseholder", leaseholder).SetString("reason", "unpaid"));
+            }
+        }
+
+        /// <summary>Property of the dead: their plots return to the crown (an owned plot) or the lease simply ends (a leased one).</summary>
+        private void OnPersonDied(PostedEvent posted)
+        {
+            EntityId person = posted.Data.GetEntity("person");
+            foreach (KeyValuePair<EntityId, PlotState> row in _plots.Rows())
+            {
+                if (row.Value.Owner == person)
+                {
+                    row.Value.Owner = null;
+                }
+                else if (row.Value.Leaseholder == person)
+                {
+                    row.Value.Leaseholder = null;
+                }
             }
         }
 
