@@ -7,6 +7,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -25,7 +26,8 @@ namespace TheEmptying.Tests.EditMode.Land
             var people = new PeopleModule(mapMovement, inventory);
             wealth = new WealthModule(people);
             land = new LandModule(mapMovement, wealth);
-            return new IModule[] { mapMovement, inventory, people, wealth, land };
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings };
         }
 
         /// <summary>Paints a zone, buys one plot, leases another and leaves one owner's tax unpaid, so every piece of Land's state has something in it.</summary>

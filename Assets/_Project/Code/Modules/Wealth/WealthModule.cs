@@ -58,7 +58,9 @@ namespace TheEmptying.Modules.Wealth
 
         private Func<EntityId, SocialClass> _jobTierProvider = _ => SocialClass.Lower;
         private Func<EntityId, SocialClass?> _powerProvider = _ => null;
-        private Func<EntityId, Money> _propertyValueProvider = _ => Money.Zero;
+
+        /// <summary>Land (plots) and Buildings (construction value) each add their own; summed, not replaced.</summary>
+        private readonly List<Func<EntityId, Money>> _propertyValueProviders = new List<Func<EntityId, Money>>();
 
         public WealthModule(PeopleModule people)
         {
@@ -109,7 +111,15 @@ namespace TheEmptying.Modules.Wealth
 
         public void SetJobTierProvider(Func<EntityId, SocialClass> provider) => _jobTierProvider = provider ?? (_ => SocialClass.Lower);
         public void SetPowerProvider(Func<EntityId, SocialClass?> provider) => _powerProvider = provider ?? (_ => null);
-        public void SetPropertyValueProvider(Func<EntityId, Money> provider) => _propertyValueProvider = provider ?? (_ => Money.Zero);
+
+        /// <summary>Adds a source of property value (land, buildings...); every registered source is summed by GetWealth.</summary>
+        public void AddPropertyValueProvider(Func<EntityId, Money> provider)
+        {
+            if (provider != null)
+            {
+                _propertyValueProviders.Add(provider);
+            }
+        }
 
         /// <summary>No births yet: set the child's parent directly, so the monthly class check can apply "children take their parent's class" until adulthood.</summary>
         public void SetParent(EntityId child, EntityId parent) => EnsureAccount(child).ParentId = parent;
@@ -121,8 +131,17 @@ namespace TheEmptying.Modules.Wealth
         public Money GetBalance(AccountId account) =>
             account.IsCrown ? _crownAccount.Balance : (_wealth.TryGet(account.Entity, out PersonWealthState s) ? s.Balance : Money.Zero);
 
-        /// <summary>Cash plus property value (property is a hook returning zero until 3.6/3.7).</summary>
-        public Money GetWealth(EntityId person) => GetBalance(AccountId.Person(person)) + _propertyValueProvider(person);
+        /// <summary>Cash plus every registered source of property value (land, buildings).</summary>
+        public Money GetWealth(EntityId person)
+        {
+            Money total = GetBalance(AccountId.Person(person));
+            foreach (Func<EntityId, Money> provider in _propertyValueProviders)
+            {
+                total += provider(person);
+            }
+
+            return total;
+        }
 
         public SocialClass GetClass(EntityId person) => _wealth.TryGet(person, out PersonWealthState s) ? s.Class : SocialClass.Lower;
 

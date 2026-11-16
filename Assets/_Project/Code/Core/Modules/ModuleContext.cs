@@ -5,6 +5,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Randomness;
+using TheEmptying.Core.Rules;
 using TheEmptying.Core.Scheduling;
 
 namespace TheEmptying.Core.Modules
@@ -50,6 +51,17 @@ namespace TheEmptying.Core.Modules
         /// <summary>The simulation's current tick, for console commands (and anything else outside a scheduled Update) that need one to post an event.</summary>
         public long CurrentTick => _currentTick();
 
+        private readonly Func<RuleRunner> _ruleRunner;
+
+        /// <summary>
+        /// For a module to ask the player an ad-hoc question (building
+        /// discovery and the like), the same way a rule's Ask Player block
+        /// does. Null until the rule runner activates (after every module
+        /// initializes), so only call this well after Initialize, such as
+        /// from a console command or a later tick.
+        /// </summary>
+        public RuleRunner RuleRunner => _ruleRunner?.Invoke();
+
         internal ModuleContext(
             string moduleId,
             EventBus events,
@@ -61,6 +73,7 @@ namespace TheEmptying.Core.Modules
             SettingsRegistry settings,
             ContentDatabase content,
             Func<long> currentTick,
+            Func<RuleRunner> ruleRunner,
             Action<string, string, Exception> onFailure,
             bool isLoading)
         {
@@ -74,6 +87,7 @@ namespace TheEmptying.Core.Modules
             Settings = settings;
             Content = content;
             _currentTick = currentTick;
+            _ruleRunner = ruleRunner;
             _onFailure = onFailure;
             IsLoading = isLoading;
         }

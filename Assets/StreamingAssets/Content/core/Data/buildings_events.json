@@ -1,0 +1,12 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.buildings.building_completed",
+            "visibility": "Public",
+            "reportingScore": 2,
+            "notabilityScore": 2,
+            "description": "A building finished construction."
+        }
+    ]
+}

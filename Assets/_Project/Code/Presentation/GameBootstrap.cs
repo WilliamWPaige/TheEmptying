@@ -11,10 +11,12 @@ using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
+using TheEmptying.Presentation.Buildings;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.Land;
 using TheEmptying.Presentation.MapMovement;
@@ -99,8 +101,10 @@ namespace TheEmptying.Presentation
         private PeopleModule _peopleModule;
         private WealthModule _wealthModule;
         private LandModule _landModule;
+        private BuildingsModule _buildingsModule;
         private MapMovementPresenter _mapPresenter;
         private LandPresenter _landPresenter;
+        private BuildingsPresenter _buildingsPresenter;
 
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
@@ -233,6 +237,7 @@ namespace TheEmptying.Presentation
             WireInput();
             BuildMapMovementPresentation();
             BuildLandPresentation();
+            BuildBuildingsPresentation();
 
             Application.logMessageReceived += OnUnityLogMessage;
             AppendLog($"Startup report:\n{report}");
@@ -323,6 +328,7 @@ namespace TheEmptying.Presentation
             _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
             _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
             _landModule = modules.OfType<LandModule>().FirstOrDefault();
+            _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
@@ -380,6 +386,19 @@ namespace TheEmptying.Presentation
             _landPresenter = presenterObject.AddComponent<LandPresenter>();
             _landPresenter.Initialize(_landModule, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
             _landPresenter.SetPeopleModule(_peopleModule);
+        }
+
+        private void BuildBuildingsPresentation()
+        {
+            if (_buildingsModule == null || _mapMovementModule == null)
+            {
+                return;
+            }
+
+            InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
+            var presenterObject = new GameObject("BuildingsPresenter");
+            _buildingsPresenter = presenterObject.AddComponent<BuildingsPresenter>();
+            _buildingsPresenter.Initialize(_buildingsModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
         }
 
         /// <summary>Clicking a capsule or a plot shows its entity in the existing inspector: the console's own "inspect" command.</summary>
@@ -982,6 +1001,7 @@ namespace TheEmptying.Presentation
                 _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
                 _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
                 _landModule = modules.OfType<LandModule>().FirstOrDefault();
+                _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
@@ -992,6 +1012,7 @@ namespace TheEmptying.Presentation
                 _mapPresenter?.SetPeopleModule(_peopleModule);
                 _mapPresenter?.SetWealthModule(_wealthModule);
                 _landPresenter?.Rebind(_landModule, _mapMovementModule.Grid);
+                _buildingsPresenter?.Rebind(_buildingsModule, _mapMovementModule.Grid);
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

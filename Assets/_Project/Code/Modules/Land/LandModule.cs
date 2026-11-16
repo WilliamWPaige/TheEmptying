@@ -98,7 +98,7 @@ namespace TheEmptying.Modules.Land
             int centerY = _grid.Depth / 2;
             _crownGrounds = new CellRect(centerX - groundsSize / 2, centerY - groundsSize / 2, groundsSize, groundsSize);
 
-            _wealth.SetPropertyValueProvider(GetPropertyValue);
+            _wealth.AddPropertyValueProvider(GetPropertyValue);
 
             context.Subscribe<NewMonthEvent>(OnNewMonth);
             context.RegisterSystem(new ZoneActionSystem(this), 1, 0, 0);

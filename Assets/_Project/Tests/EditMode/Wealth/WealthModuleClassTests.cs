@@ -6,6 +6,7 @@ using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -24,7 +25,8 @@ namespace TheEmptying.Tests.EditMode.Wealth
             var people = new PeopleModule(mapMovement, inventory);
             var wealthModule = new WealthModule(people);
             var land = new LandModule(mapMovement, wealthModule);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealthModule, land }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var buildings = new BuildingsModule(mapMovement, land, wealthModule, inventory, people);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealthModule, land, buildings }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             // These tests step several months to exercise the monthly class check; everyone
             // spawned here is homeless by definition (3.4, no housing yet), and the resulting

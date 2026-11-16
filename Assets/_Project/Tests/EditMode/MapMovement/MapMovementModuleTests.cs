@@ -4,6 +4,7 @@ using TheEmptying.Core;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -48,7 +49,8 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             var people = new PeopleModule(module, inventory);
             var wealth = new WealthModule(people);
             var land = new LandModule(module, wealth);
-            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { module, inventory, people, wealth, land }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var buildings = new BuildingsModule(module, land, wealth, inventory, people);
+            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { module, inventory, people, wealth, land, buildings }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, module);
         }
 

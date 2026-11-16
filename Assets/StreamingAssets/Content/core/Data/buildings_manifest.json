@@ -1,0 +1,6 @@
+{
+    "type": "module_manifest",
+    "items": [
+        { "id": "module.buildings", "version": 1, "dependencies": ["module.map_movement", "module.land", "module.wealth", "module.inventory", "module.people"], "enabled": true }
+    ]
+}

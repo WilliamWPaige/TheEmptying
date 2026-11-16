@@ -8,6 +8,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -26,7 +27,8 @@ namespace TheEmptying.Tests.EditMode.People
             var people = new PeopleModule(mapMovement, inventory);
             var wealth = new WealthModule(people);
             var land = new LandModule(mapMovement, wealth);
-            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, people);
         }
 
@@ -34,7 +36,8 @@ namespace TheEmptying.Tests.EditMode.People
         {
             people = new PeopleModule(mapMovement, inventory);
             var wealth = new WealthModule(people);
-            return new IModule[] { mapMovement, inventory, people, wealth, new LandModule(mapMovement, wealth) };
+            var land = new LandModule(mapMovement, wealth);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, new BuildingsModule(mapMovement, land, wealth, inventory, people) };
         }
 
         private static List<string> Names(PeopleModule module) =>

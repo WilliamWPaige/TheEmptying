@@ -5,6 +5,7 @@ namespace TheEmptying.Modules.People
         Idle,
         Sleeping,
         Eating,
-        Wandering
+        Wandering,
+        GoingHome
     }
 }

@@ -61,8 +61,10 @@ namespace TheEmptying.Core.Startup
             (RuleRegistry ruleRegistry, RuleCompileReport ruleReport) = RuleCompiler.Compile(database, simulation.Blocks, simulation.Settings, simulation.EventDefinitions, errorMode);
             simulation.Rules = ruleRegistry;
 
-            // 7. Initialize modules.
-            simulation.Modules.InitializeModules(isLoading, database);
+            // 7. Initialize modules. The rule runner doesn't exist yet (step 8), but a
+            // module only needs it well after Initialize (e.g. from a console command),
+            // by which point this accessor will resolve to the real thing.
+            simulation.Modules.InitializeModules(isLoading, database, () => simulation.RuleRunner);
 
             // 8. Activate the rule runner (after modules initialize).
             var ruleRunner = new RuleRunner(ruleRegistry, simulation.Events, simulation.Scheduler, simulation.Random, simulation.Settings, simulation.EventDefinitions, simulation.Memory, logSink, errorMode, () => simulation.Clock.CurrentTick);

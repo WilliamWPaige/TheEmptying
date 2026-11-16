@@ -90,6 +90,9 @@ namespace TheEmptying.Modules.People
         /// <summary>A person's social class. Defaults to Lower (correct for brand-new people) until Wealth registers the real one.</summary>
         private Func<EntityId, SocialClass> _classProvider = _ => SocialClass.Lower;
 
+        /// <summary>A housed person's home cell; null (the default, meaning homeless) until Buildings registers the real one.</summary>
+        private Func<EntityId, GridPoint?> _homeLocationProvider = _ => null;
+
         public PeopleModule(MapMovementModule mapMovement, InventoryModule inventory)
         {
             _mapMovement = mapMovement ?? throw new ArgumentNullException(nameof(mapMovement));
@@ -108,6 +111,9 @@ namespace TheEmptying.Modules.People
 
         /// <summary>Wealth calls this during its own Initialize, since it's the module that actually computes class.</summary>
         public void SetClassProvider(Func<EntityId, SocialClass> provider) => _classProvider = provider ?? (_ => SocialClass.Lower);
+
+        /// <summary>Buildings calls this during its own Initialize, since it's the module that actually tracks who lives where.</summary>
+        public void SetHomeLocationProvider(Func<EntityId, GridPoint?> provider) => _homeLocationProvider = provider ?? (_ => null);
 
         public void Initialize(ModuleContext context)
         {
@@ -155,8 +161,7 @@ namespace TheEmptying.Modules.People
             }
         }
 
-        /// <summary>Always homeless until housing exists (3.6/3.7); the one place that will change.</summary>
-        private static bool IsHomeless(PersonState person) => true;
+        public bool IsHomeless(EntityId id) => _homeLocationProvider(id) == null;
 
         #endregion
 
@@ -323,7 +328,7 @@ namespace TheEmptying.Modules.People
                     }
                 }
 
-                bool homeless = IsHomeless(person);
+                bool homeless = IsHomeless(id);
                 if (homeless && date.Hour == nightStartHour)
                 {
                     person.Health = Math.Max(0.0, person.Health - homelessHealthDamage);
@@ -430,6 +435,18 @@ namespace TheEmptying.Modules.People
             bool isTired = person.Needs.TryGetValue("need.rest", out PersonNeedState rest) && rest.Meter <= lowThreshold;
             if (isTired || isNight)
             {
+                GridPoint? home = _homeLocationProvider(id);
+                if (home.HasValue && _mapMovement.GetCell(id) != home.Value)
+                {
+                    if (person.Activity != PersonActivity.GoingHome || !_mapMovement.IsMover(id))
+                    {
+                        _mapMovement.TryMoveTo(id, home.Value);
+                    }
+
+                    person.Activity = PersonActivity.GoingHome;
+                    return;
+                }
+
                 if (person.Activity != PersonActivity.Sleeping)
                 {
                     _mapMovement.Stop(id);
@@ -568,7 +585,7 @@ namespace TheEmptying.Modules.People
         private void OnMoverArrived(PostedEvent posted)
         {
             EntityId id = posted.Data.GetEntity("mover");
-            if (_people.TryGet(id, out PersonState person) && person.Activity == PersonActivity.Wandering)
+            if (_people.TryGet(id, out PersonState person) && (person.Activity == PersonActivity.Wandering || person.Activity == PersonActivity.GoingHome))
             {
                 person.Activity = PersonActivity.Idle;
             }
