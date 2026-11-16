@@ -36,8 +36,9 @@ namespace TheEmptying.Tests.EditMode.EditorTools
             source.WriteDataFile("manifest.json", @"{
                 ""type"": ""module_manifest"",
                 ""items"": [
-                    { ""id"": ""module.demo_hunger"", ""version"": 1, ""dependencies"": [], ""enabled"": false },
-                    { ""id"": ""module.map_movement"", ""version"": 1, ""dependencies"": [], ""enabled"": false }
+                    { ""id"": ""module.map_movement"", ""version"": 1, ""dependencies"": [], ""enabled"": false },
+                    { ""id"": ""module.inventory"", ""version"": 1, ""dependencies"": [], ""enabled"": false },
+                    { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.inventory""], ""enabled"": false }
                 ]
             }");
             source.WriteDataFile("events.json", @"{

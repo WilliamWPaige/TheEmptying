@@ -7,13 +7,15 @@ namespace TheEmptying.Tests.EditMode.MapMovement
 {
     public class AStarPathfinderTests
     {
+        private readonly AStarPathfinder _pathfinder = new AStarPathfinder();
+
         private static MapGrid OpenGrid(int size = 10) => new MapGrid(size, size, 3.0);
 
         [Test]
         public void FindPath_OpenGrid_UsesDiagonalShortcut()
         {
             MapGrid grid = OpenGrid();
-            PathResult result = AStarPathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(3, 3));
+            PathResult result = _pathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(3, 3));
 
             Assert.IsTrue(result.Found);
             // A pure diagonal run is 4 cells (start + 3 diagonal steps), strictly
@@ -32,7 +34,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
                 grid.SetWalkable(new GridPoint(5, y), false);
             }
 
-            PathResult result = AStarPathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(9, 0));
+            PathResult result = _pathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(9, 0));
 
             Assert.IsTrue(result.Found);
             Assert.IsTrue(result.Cells.All(c => grid.IsWalkable(c)));
@@ -47,7 +49,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             grid.SetWalkable(new GridPoint(3, 2), false);
             grid.SetWalkable(new GridPoint(2, 3), false);
 
-            PathResult result = AStarPathfinder.FindPath(grid, new GridPoint(2, 2), new GridPoint(3, 3));
+            PathResult result = _pathfinder.FindPath(grid, new GridPoint(2, 2), new GridPoint(3, 3));
 
             Assert.IsTrue(result.Found);
             Assert.Greater(result.Cells.Count, 2, "A direct diagonal step would cut the corner between the two blocked cells.");
@@ -62,7 +64,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
                 grid.SetWalkable(new GridPoint(5, y), false);
             }
 
-            PathResult result = AStarPathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(9, 0));
+            PathResult result = _pathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(9, 0));
 
             Assert.IsFalse(result.Found);
             Assert.AreEqual(0, result.Cells.Count);
@@ -74,7 +76,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             MapGrid grid = OpenGrid();
             grid.SetWalkable(new GridPoint(5, 5), false);
 
-            PathResult result = AStarPathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(5, 5));
+            PathResult result = _pathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(5, 5));
 
             Assert.IsFalse(result.Found);
         }
@@ -83,7 +85,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
         public void FindPath_StartEqualsGoal_ReturnsASingleCellPath()
         {
             MapGrid grid = OpenGrid();
-            PathResult result = AStarPathfinder.FindPath(grid, new GridPoint(4, 4), new GridPoint(4, 4));
+            PathResult result = _pathfinder.FindPath(grid, new GridPoint(4, 4), new GridPoint(4, 4));
 
             Assert.IsTrue(result.Found);
             CollectionAssert.AreEqual(new[] { new GridPoint(4, 4) }, result.Cells);
@@ -98,8 +100,8 @@ namespace TheEmptying.Tests.EditMode.MapMovement
                 grid.SetWalkable(new GridPoint(10, y), false);
             }
 
-            PathResult first = AStarPathfinder.FindPath(grid, new GridPoint(0, 8), new GridPoint(19, 8));
-            PathResult second = AStarPathfinder.FindPath(grid, new GridPoint(0, 8), new GridPoint(19, 8));
+            PathResult first = _pathfinder.FindPath(grid, new GridPoint(0, 8), new GridPoint(19, 8));
+            PathResult second = _pathfinder.FindPath(grid, new GridPoint(0, 8), new GridPoint(19, 8));
 
             Assert.IsTrue(first.Found);
             CollectionAssert.AreEqual(first.Cells, second.Cells);
@@ -113,7 +115,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             // expensive so the optimal path detours around it instead.
             grid.SetMovementCost(new GridPoint(2, 0), 100f);
 
-            PathResult result = AStarPathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(4, 0));
+            PathResult result = _pathfinder.FindPath(grid, new GridPoint(0, 0), new GridPoint(4, 0));
 
             Assert.IsTrue(result.Found);
             Assert.IsFalse(result.Cells.Contains(new GridPoint(2, 0)), "The expensive cell should be routed around.");

@@ -5,8 +5,9 @@ using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
-using TheEmptying.Modules.DemoHunger;
+using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.People;
 using TheEmptying.Tests.EditMode.Startup;
 
 namespace TheEmptying.Tests.EditMode.MapMovement
@@ -22,6 +23,12 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             }
         }
 
+        private static IModule[] Modules(MapMovementModule mapMovement)
+        {
+            var inventory = new InventoryModule();
+            return new IModule[] { mapMovement, inventory, new PeopleModule(mapMovement, inventory) };
+        }
+
         [Test]
         public void InterruptedRun_SaveAndLoadMidWalk_MatchesAnUnbrokenRun()
         {
@@ -31,7 +38,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             const int m = 35; // after the load
 
             var uninterruptedModule = new MapMovementModule();
-            (Simulation uninterruptedSim, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { uninterruptedModule, new DemoHungerModule() });
+            (Simulation uninterruptedSim, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, Modules(uninterruptedModule), contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             SpawnAndSendMovers(uninterruptedModule);
 
             for (int i = 0; i < n + m; i++)
@@ -42,7 +49,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             ulong uninterruptedHash = uninterruptedSim.ComputeStateHash();
 
             var firstModule = new MapMovementModule();
-            (Simulation firstSim, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { firstModule, new DemoHungerModule() });
+            (Simulation firstSim, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, Modules(firstModule), contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             SpawnAndSendMovers(firstModule);
 
             for (int i = 0; i < n; i++)
@@ -55,7 +62,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             stream.Position = 0;
 
             var secondModule = new MapMovementModule();
-            (Simulation secondSim, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { secondModule, new DemoHungerModule() });
+            (Simulation secondSim, _) = GameSave.Load(stream, new[] { core.FolderPath }, Modules(secondModule), contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             for (int i = 0; i < m; i++)
             {

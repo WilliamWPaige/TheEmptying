@@ -18,6 +18,7 @@ namespace TheEmptying.Editor.Content
             problemCount += ValidateType<ZoneAsset>();
             problemCount += ValidateType<BuildingTypeAsset>();
             problemCount += ValidateType<RecipeAsset>();
+            problemCount += ValidateType<NameListAsset>();
 
             if (problemCount == 0)
             {

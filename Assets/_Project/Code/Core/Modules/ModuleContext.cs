@@ -35,8 +35,20 @@ namespace TheEmptying.Core.Modules
         /// <summary>Current setting values (declared from data or by a module). Read-only here; settings change through the "set" console command.</summary>
         public SettingsRegistry Settings { get; }
 
+        /// <summary>
+        /// The loaded content database (goods, needs, zones, name lists and so
+        /// on): populated by the time Initialize runs, since content loads
+        /// between the declaration phase and module initialization.
+        /// </summary>
+        public ContentDatabase Content { get; }
+
         /// <summary>True when this Initialize is part of a load, not a new game. Modules must not run new-game setup when this is true.</summary>
         public bool IsLoading { get; }
+
+        private readonly Func<long> _currentTick;
+
+        /// <summary>The simulation's current tick, for console commands (and anything else outside a scheduled Update) that need one to post an event.</summary>
+        public long CurrentTick => _currentTick();
 
         internal ModuleContext(
             string moduleId,
@@ -47,6 +59,8 @@ namespace TheEmptying.Core.Modules
             RandomService randomService,
             ConsoleCommandRegistry commands,
             SettingsRegistry settings,
+            ContentDatabase content,
+            Func<long> currentTick,
             Action<string, string, Exception> onFailure,
             bool isLoading)
         {
@@ -58,6 +72,8 @@ namespace TheEmptying.Core.Modules
             Random = randomService.GetStream(moduleId);
             Commands = commands;
             Settings = settings;
+            Content = content;
+            _currentTick = currentTick;
             _onFailure = onFailure;
             IsLoading = isLoading;
         }

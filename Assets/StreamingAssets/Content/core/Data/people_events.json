@@ -1,0 +1,33 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.people.person_died",
+            "visibility": "Public",
+            "reportingScore": 5,
+            "notabilityScore": 5,
+            "description": "A person died. Carries the cause."
+        },
+        {
+            "id": "event.people.need_low",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "A person's need dropped to its low threshold."
+        },
+        {
+            "id": "event.people.need_critical",
+            "visibility": "Hidden",
+            "reportingScore": 1,
+            "notabilityScore": 1,
+            "description": "A person's need dropped to its critical threshold."
+        },
+        {
+            "id": "event.people.need_recovered",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "A person's need recovered back to normal."
+        }
+    ]
+}

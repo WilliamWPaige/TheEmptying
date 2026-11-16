@@ -50,6 +50,7 @@ namespace TheEmptying.Modules.MapMovement
         private MapGrid _grid;
         private EntityTable<MoverState> _movers;
         private readonly Queue<PathRequest> _requestQueue = new Queue<PathRequest>();
+        private readonly AStarPathfinder _pathfinder = new AStarPathfinder();
         private SettingsRegistry _settings;
         private EventBus _events;
         private EntityRegistry _entities;
@@ -113,7 +114,55 @@ namespace TheEmptying.Modules.MapMovement
             return id;
         }
 
+        /// <summary>Makes an already-existing entity a mover at the given cell (for modules, such as people, that create their own entities). False if it's already a mover or the cell isn't passable.</summary>
+        public bool MakeMover(EntityId entity, GridPoint atCell)
+        {
+            if (_movers.Has(entity) || !_grid.IsPassable(atCell))
+            {
+                return false;
+            }
+
+            var state = new MoverState();
+            (state.X, state.Y) = _grid.CellCenterWorldPosition(atCell);
+            _movers.Add(entity, state);
+            return true;
+        }
+
         public bool IsMover(EntityId entity) => _movers.Has(entity);
+
+        /// <summary>The mover's current cell. Throws if entity isn't a mover.</summary>
+        public GridPoint GetCell(EntityId entity)
+        {
+            MoverState state = _movers.Get(entity);
+            return _grid.WorldToCell(state.X, state.Y);
+        }
+
+        public bool TryGetPosition(EntityId entity, out double x, out double y)
+        {
+            if (_movers.TryGet(entity, out MoverState state))
+            {
+                x = state.X;
+                y = state.Y;
+                return true;
+            }
+
+            x = 0;
+            y = 0;
+            return false;
+        }
+
+        /// <summary>Cancels any path, destination and pending request for a mover, leaving it standing where it is. No-op if entity isn't a mover.</summary>
+        public void Stop(EntityId entity)
+        {
+            if (!_movers.TryGet(entity, out MoverState state))
+            {
+                return;
+            }
+
+            state.Path.Clear();
+            state.Destination = null;
+            state.HasPendingRequest = false;
+        }
 
         /// <summary>Queues a path request from the mover's current cell to destination. False if entity isn't a mover.</summary>
         public bool TryMoveTo(EntityId entity, GridPoint destination)
@@ -163,7 +212,7 @@ namespace TheEmptying.Modules.MapMovement
                     continue;
                 }
 
-                PathResult result = AStarPathfinder.FindPath(_grid, request.Start, request.Goal);
+                PathResult result = _pathfinder.FindPath(_grid, request.Start, request.Goal);
 
                 if (!result.Found)
                 {

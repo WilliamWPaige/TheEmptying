@@ -4,8 +4,9 @@ using TheEmptying.Core;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
-using TheEmptying.Modules.DemoHunger;
+using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.People;
 using TheEmptying.Tests.EditMode.Startup;
 
 namespace TheEmptying.Tests.EditMode.MapMovement
@@ -41,7 +42,9 @@ namespace TheEmptying.Tests.EditMode.MapMovement
         private static (Simulation Simulation, MapMovementModule Module) Build(TempCoreContentCopy core, ulong seed = 1)
         {
             var module = new MapMovementModule();
-            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { module, new DemoHungerModule() });
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(module, inventory);
+            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { module, inventory, people }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, module);
         }
 

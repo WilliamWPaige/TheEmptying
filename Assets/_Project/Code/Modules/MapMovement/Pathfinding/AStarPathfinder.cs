@@ -8,8 +8,11 @@ namespace TheEmptying.Modules.MapMovement.Pathfinding
     /// cell, weighted by each cell's movement cost. Ties are always broken
     /// the same way (lowest total cost, then lowest heuristic, then lowest
     /// cell index), so the same input always returns the same path.
+    /// One instance per simulation (owned by the movement module): its
+    /// scratch buffers are reused across searches, but never shared as
+    /// global mutable state between simulations.
     /// </summary>
-    public static class AStarPathfinder
+    public sealed class AStarPathfinder
     {
         private const float Sqrt2 = 1.4142135f;
 
@@ -38,14 +41,14 @@ namespace TheEmptying.Modules.MapMovement.Pathfinding
         // enough to matter with hundreds of movers re-pathing every tick. A
         // stamp marks which cells belong to the current search, so "reset
         // before a search" is O(1) instead of O(cell count).
-        private static float[] _gScore = Array.Empty<float>();
-        private static int[] _cameFrom = Array.Empty<int>();
-        private static int[] _touchedStamp = Array.Empty<int>();
-        private static bool[] _closed = Array.Empty<bool>();
-        private static int _currentStamp;
-        private static readonly BinaryMinHeap Heap = new BinaryMinHeap(256);
+        private float[] _gScore = Array.Empty<float>();
+        private int[] _cameFrom = Array.Empty<int>();
+        private int[] _touchedStamp = Array.Empty<int>();
+        private bool[] _closed = Array.Empty<bool>();
+        private int _currentStamp;
+        private readonly BinaryMinHeap _heap = new BinaryMinHeap(256);
 
-        public static PathResult FindPath(MapGrid grid, GridPoint start, GridPoint goal)
+        public PathResult FindPath(MapGrid grid, GridPoint start, GridPoint goal)
         {
             if (grid == null)
             {
@@ -77,17 +80,17 @@ namespace TheEmptying.Modules.MapMovement.Pathfinding
             int startIndex = grid.IndexOf(start);
             int goalIndex = grid.IndexOf(goal);
 
-            Heap.Clear();
+            _heap.Clear();
             _gScore[startIndex] = 0f;
             _touchedStamp[startIndex] = stamp;
             _closed[startIndex] = false;
 
             float hStart = Heuristic(start, goal);
-            Heap.Push(hStart * HeuristicWeight, hStart, startIndex);
+            _heap.Push(hStart * HeuristicWeight, hStart, startIndex);
 
-            while (Heap.Count > 0)
+            while (_heap.Count > 0)
             {
-                int currentIndex = Heap.PopMin();
+                int currentIndex = _heap.PopMin();
 
                 if (_touchedStamp[currentIndex] == stamp && _closed[currentIndex])
                 {
@@ -144,7 +147,7 @@ namespace TheEmptying.Modules.MapMovement.Pathfinding
                         _cameFrom[neighborIndex] = currentIndex;
 
                         float h = Heuristic(neighbor, goal);
-                        Heap.Push(tentativeG + h * HeuristicWeight, h, neighborIndex);
+                        _heap.Push(tentativeG + h * HeuristicWeight, h, neighborIndex);
                     }
                 }
             }
@@ -152,7 +155,7 @@ namespace TheEmptying.Modules.MapMovement.Pathfinding
             return PathResult.NoPath;
         }
 
-        private static void EnsureBufferCapacity(int cellCount)
+        private void EnsureBufferCapacity(int cellCount)
         {
             if (_gScore.Length >= cellCount)
             {

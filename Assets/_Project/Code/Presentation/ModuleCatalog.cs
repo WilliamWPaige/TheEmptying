@@ -1,6 +1,7 @@
 using TheEmptying.Core.Modules;
-using TheEmptying.Modules.DemoHunger;
+using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.People;
 
 namespace TheEmptying.Presentation
 {
@@ -13,6 +14,12 @@ namespace TheEmptying.Presentation
     /// </summary>
     public static class ModuleCatalog
     {
-        public static IModule[] CreateModules() => new IModule[] { new DemoHungerModule(), new MapMovementModule() };
+        public static IModule[] CreateModules()
+        {
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            return new IModule[] { mapMovement, inventory, people };
+        }
     }
 }

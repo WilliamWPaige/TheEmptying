@@ -28,6 +28,7 @@ namespace TheEmptying.Presentation.Content
             AddSorted(definitions, catalog.Zones, ToRecord, BuiltInContentTypes.ZoneTypeName);
             AddSorted(definitions, catalog.BuildingTypes, ToRecord, BuiltInContentTypes.BuildingTypeTypeName);
             AddSorted(definitions, catalog.Recipes, ToRecord, BuiltInContentTypes.RecipeTypeName);
+            AddSorted(definitions, catalog.NameLists, ToRecord, BuiltInContentTypes.NameListTypeName);
 
             return definitions;
         }
@@ -81,6 +82,9 @@ namespace TheEmptying.Presentation.Content
                 asset.IsHardLabor,
                 asset.SeasonsAllowed.ToList(),
                 asset.GrowthTimeMonths);
+
+        public static NameList ToRecord(NameListAsset asset) =>
+            new NameList(asset.Id, asset.Kind, asset.Names.ToList());
 
         private static List<GoodAmount> ToGoodAmounts(IReadOnlyList<GoodAmountAsset> amounts)
         {

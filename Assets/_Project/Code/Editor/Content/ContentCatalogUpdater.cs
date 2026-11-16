@@ -45,7 +45,8 @@ namespace TheEmptying.Editor.Content
                 ContentAssetDuplicateCheck.FindAllOfSameType<NeedAsset>(),
                 ContentAssetDuplicateCheck.FindAllOfSameType<ZoneAsset>(),
                 ContentAssetDuplicateCheck.FindAllOfSameType<BuildingTypeAsset>(),
-                ContentAssetDuplicateCheck.FindAllOfSameType<RecipeAsset>());
+                ContentAssetDuplicateCheck.FindAllOfSameType<RecipeAsset>(),
+                ContentAssetDuplicateCheck.FindAllOfSameType<NameListAsset>());
 
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();

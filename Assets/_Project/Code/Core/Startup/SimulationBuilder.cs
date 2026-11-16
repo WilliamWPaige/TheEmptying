@@ -62,7 +62,7 @@ namespace TheEmptying.Core.Startup
             simulation.Rules = ruleRegistry;
 
             // 7. Initialize modules.
-            simulation.Modules.InitializeModules(isLoading);
+            simulation.Modules.InitializeModules(isLoading, database);
 
             // 8. Activate the rule runner (after modules initialize).
             var ruleRunner = new RuleRunner(ruleRegistry, simulation.Events, simulation.Scheduler, simulation.Random, simulation.Settings, simulation.EventDefinitions, simulation.Memory, logSink, errorMode, () => simulation.Clock.CurrentTick);

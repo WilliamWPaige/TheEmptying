@@ -16,6 +16,7 @@ namespace TheEmptying.Core.Content
         public const string ZoneTypeName = "zone";
         public const string BuildingTypeTypeName = "building_type";
         public const string RecipeTypeName = "recipe";
+        public const string NameListTypeName = "name_list";
 
         public static void RegisterAll(ContentTypeRegistry registry)
         {
@@ -28,6 +29,7 @@ namespace TheEmptying.Core.Content
             registry.Register(new ContentTypeDefinition(ZoneTypeName, typeof(Zone), ValidateZone));
             registry.Register(new ContentTypeDefinition(BuildingTypeTypeName, typeof(BuildingType), ValidateBuildingType));
             registry.Register(new ContentTypeDefinition(RecipeTypeName, typeof(Recipe), ValidateRecipe));
+            registry.Register(new ContentTypeDefinition(NameListTypeName, typeof(NameList), ValidateNameList));
         }
 
         /// <summary>Registers every loaded event_definition content item into the EventDefinitionRegistry. The four calendar definitions stay registered in code.</summary>
@@ -200,6 +202,17 @@ namespace TheEmptying.Core.Content
                 {
                     context.ReportProblem(recipe.Id, "outputs", $"References '{output.Good.Id}', which does not exist.");
                 }
+            }
+        }
+
+        private static void ValidateNameList(ContentDefinition definition, ContentValidationContext context)
+        {
+            var nameList = (NameList)definition;
+            CheckIdPrefix(nameList.Id, "name.", context);
+
+            if (nameList.Names.Count == 0)
+            {
+                context.ReportProblem(nameList.Id, "names", "must not be empty.");
             }
         }
     }

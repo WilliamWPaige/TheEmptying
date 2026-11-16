@@ -64,3 +64,6 @@ MonoBehaviour:
   - {fileID: 11400000, guid: 2be26a1494881864da8907cacd2c7cd3, type: 2}
   - {fileID: 11400000, guid: fe2533efd6cf9d54193e4b99c1e991d1, type: 2}
   - {fileID: 11400000, guid: 81ac05b492a4f4c40a5c303ca838ce27, type: 2}
+  _nameLists:
+  - {fileID: 11400000, guid: 7d0851e1e194bbf4cb2ddff699ec7aee, type: 2}
+  - {fileID: 11400000, guid: c2e0a20ba7558be40a339785b7d715ff, type: 2}

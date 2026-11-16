@@ -19,7 +19,7 @@ namespace TheEmptying.Tests.EditMode.Content
         private static ContentCatalog MakeCatalog(List<GoodAsset> goods)
         {
             var catalog = ScriptableObject.CreateInstance<ContentCatalog>();
-            catalog.SetContentsForEditor(goods, new List<NeedAsset>(), new List<ZoneAsset>(), new List<BuildingTypeAsset>(), new List<RecipeAsset>());
+            catalog.SetContentsForEditor(goods, new List<NeedAsset>(), new List<ZoneAsset>(), new List<BuildingTypeAsset>(), new List<RecipeAsset>(), new List<NameListAsset>());
             return catalog;
         }
 

@@ -1,0 +1,6 @@
+{
+    "type": "module_manifest",
+    "items": [
+        { "id": "module.people", "version": 1, "dependencies": ["module.map_movement", "module.inventory"], "enabled": true }
+    ]
+}

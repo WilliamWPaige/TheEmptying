@@ -176,7 +176,7 @@ namespace TheEmptying.Core.Modules
         }
 
         /// <summary>Phase 4: initializes enabled modules in dependency order. Call after content has loaded (phase 3, owned by the caller).</summary>
-        public void InitializeModules(bool isLoading = false)
+        public void InitializeModules(bool isLoading = false, ContentDatabase content = null)
         {
             if (_order == null)
             {
@@ -190,7 +190,7 @@ namespace TheEmptying.Core.Modules
                     continue;
                 }
 
-                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, _commands, _settings, HandleModuleFailure, isLoading);
+                var context = new ModuleContext(id, _events, _scheduler, _entities, _eventDefinitions, _random, _commands, _settings, content, _currentTick, HandleModuleFailure, isLoading);
                 _contexts[id] = context;
 
                 try

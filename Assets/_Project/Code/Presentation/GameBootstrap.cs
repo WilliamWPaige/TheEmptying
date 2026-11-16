@@ -12,6 +12,7 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.People;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.MapMovement;
 using UnityEngine;
@@ -91,6 +92,7 @@ namespace TheEmptying.Presentation
         private string _savesFolder;
 
         private MapMovementModule _mapMovementModule;
+        private PeopleModule _peopleModule;
         private MapMovementPresenter _mapPresenter;
 
         public bool IsPaused => _paused;
@@ -310,6 +312,7 @@ namespace TheEmptying.Presentation
             List<ContentAssetDefinition> contentAssets = LoadContentAssetDefinitions();
             IModule[] modules = ModuleCatalog.CreateModules();
             _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
+            _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
@@ -351,6 +354,7 @@ namespace TheEmptying.Presentation
             var presenterObject = new GameObject("MapMovementPresenter");
             _mapPresenter = presenterObject.AddComponent<MapMovementPresenter>();
             _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, OnMoverCapsuleSelected);
+            _mapPresenter.SetPeopleModule(_peopleModule);
         }
 
         /// <summary>Clicking a capsule shows its entity in the existing inspector: the console's own "inspect" command.</summary>
@@ -947,6 +951,7 @@ namespace TheEmptying.Presentation
 
                 IModule[] modules = ModuleCatalog.CreateModules();
                 _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
+                _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
@@ -954,6 +959,7 @@ namespace TheEmptying.Presentation
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _mapPresenter?.Rebind(_mapMovementModule);
+                _mapPresenter?.SetPeopleModule(_peopleModule);
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

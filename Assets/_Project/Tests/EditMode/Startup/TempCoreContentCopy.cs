@@ -1,5 +1,8 @@
 using System;
+using System.Collections.Generic;
 using System.IO;
+using TheEmptying.Core.Content;
+using TheEmptying.Presentation.Content;
 using UnityEngine;
 
 namespace TheEmptying.Tests.EditMode.Startup
@@ -12,6 +15,18 @@ namespace TheEmptying.Tests.EditMode.Startup
     /// </summary>
     internal sealed class TempCoreContentCopy : IDisposable
     {
+        /// <summary>
+        /// The real shipped ScriptableObject content (needs, name lists and so
+        /// on), converted the same way GameBootstrap does. Any test that spawns
+        /// people needs this passed as SimulationBuilder.Build's contentAssets,
+        /// since that content never exists as plain JSON in StreamingAssets.
+        /// </summary>
+        public static IEnumerable<ContentAssetDefinition> LoadRealContentAssets()
+        {
+            var catalog = Resources.Load<ContentCatalog>("ContentCatalog");
+            return catalog == null ? new List<ContentAssetDefinition>() : ContentAssetConverter.BuildDefinitions(catalog);
+        }
+
         public string FolderPath { get; }
 
         public TempCoreContentCopy()

@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.People;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using EntityId = TheEmptying.Core.Entities.EntityId;
@@ -11,13 +12,17 @@ namespace TheEmptying.Presentation.MapMovement
     /// Gray-box rendering for the map and its movers: a flat ground plane
     /// with grid lines, a capsule per mover that moves smoothly between
     /// ticks, and click-to-inspect. Pure presentation: reads the module,
-    /// never writes to it.
+    /// never writes to it. A mover that's also a person (PeopleModule, set
+    /// via SetPeopleModule) is colored by activity and gets a name label
+    /// visible when the camera is close enough to read it.
     /// </summary>
     public sealed class MapMovementPresenter : MonoBehaviour
     {
         private const float CapsuleHeight = 2f;
+        private const float NameLabelVisibleDistance = 40f;
 
         private MapMovementModule _module;
+        private PeopleModule _peopleModule;
         private Camera _camera;
         private InputAction _selectAction;
         private Action<EntityId> _onCapsuleSelected;
@@ -37,6 +42,12 @@ namespace TheEmptying.Presentation.MapMovement
             _onCapsuleSelected = onCapsuleSelected;
 
             BuildGround();
+        }
+
+        /// <summary>Optional: a mover that's also a person gets activity coloring and a name label. Call again after a load (with the new Simulation's module) to keep this in sync.</summary>
+        public void SetPeopleModule(PeopleModule peopleModule)
+        {
+            _peopleModule = peopleModule;
         }
 
         /// <summary>After a load swaps in a new Simulation (and a new module instance), drop every stale capsule and start tracking the new module's movers fresh.</summary>
@@ -107,12 +118,74 @@ namespace TheEmptying.Presentation.MapMovement
                     var collider = capsule.AddComponent<CapsuleCollider>();
                     collider.height = 2f;
                     capsule.AddComponent<MoverCapsuleTag>().EntityId = entry.Key;
+                    CreateNameLabel(capsule);
                     _capsules[entry.Key] = capsule;
                 }
 
                 Vector3 previous = _previousPositions.TryGetValue(entry.Key, out Vector3 p) ? p : entry.Value;
                 capsule.transform.position = Vector3.Lerp(previous, entry.Value, _tickProgress01);
+
+                UpdatePersonAppearance(entry.Key, capsule);
             }
+        }
+
+        /// <summary>Colors the capsule by activity and keeps its name label current, if (and only if) this mover is a person.</summary>
+        private void UpdatePersonAppearance(EntityId id, GameObject capsule)
+        {
+            TextMesh label = capsule.GetComponentInChildren<TextMesh>(true);
+
+            if (_peopleModule == null || !_peopleModule.TryGetPerson(id, out PersonState person))
+            {
+                if (label != null)
+                {
+                    label.gameObject.SetActive(false);
+                }
+
+                return;
+            }
+
+            capsule.GetComponent<Renderer>().material.color = ColorForActivity(person.Activity);
+
+            if (label == null)
+            {
+                return;
+            }
+
+            label.text = person.FullName;
+            bool closeEnoughToRead = _camera != null && Vector3.Distance(_camera.transform.position, capsule.transform.position) <= NameLabelVisibleDistance;
+            label.gameObject.SetActive(closeEnoughToRead);
+
+            if (closeEnoughToRead)
+            {
+                label.transform.rotation = Quaternion.LookRotation(label.transform.position - _camera.transform.position);
+            }
+        }
+
+        private static Color ColorForActivity(PersonActivity activity)
+        {
+            switch (activity)
+            {
+                case PersonActivity.Sleeping: return new Color(0.25f, 0.35f, 0.75f);
+                case PersonActivity.Eating: return new Color(0.85f, 0.6f, 0.15f);
+                case PersonActivity.Wandering: return new Color(0.3f, 0.75f, 0.35f);
+                default: return new Color(0.7f, 0.7f, 0.7f);
+            }
+        }
+
+        private static void CreateNameLabel(GameObject capsule)
+        {
+            var labelObject = new GameObject("NameLabel");
+            labelObject.transform.SetParent(capsule.transform, false);
+            labelObject.transform.localPosition = new Vector3(0f, 1.4f, 0f);
+
+            var textMesh = labelObject.AddComponent<TextMesh>();
+            textMesh.anchor = TextAnchor.LowerCenter;
+            textMesh.alignment = TextAlignment.Center;
+            textMesh.fontSize = 32;
+            textMesh.characterSize = 0.1f;
+            textMesh.color = Color.white;
+
+            labelObject.SetActive(false);
         }
 
         private void HandleSelection()

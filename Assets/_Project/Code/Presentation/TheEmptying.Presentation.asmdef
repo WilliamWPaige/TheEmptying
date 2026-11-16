@@ -3,8 +3,9 @@
     "rootNamespace": "TheEmptying.Presentation",
     "references": [
         "TheEmptying.Core",
-        "TheEmptying.Modules.DemoHunger",
         "TheEmptying.Modules.MapMovement",
+        "TheEmptying.Modules.Inventory",
+        "TheEmptying.Modules.People",
         "Unity.InputSystem",
         "Newtonsoft.Json"
     ],
