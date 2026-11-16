@@ -9,6 +9,7 @@ using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Wealth;
 using TheEmptying.Tests.EditMode.Startup;
 
 namespace TheEmptying.Tests.EditMode.People
@@ -20,7 +21,8 @@ namespace TheEmptying.Tests.EditMode.People
             var mapMovement = new MapMovementModule();
             var inventory = new InventoryModule();
             var people = new PeopleModule(mapMovement, inventory);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var wealth = new WealthModule(people);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, people);
         }
 

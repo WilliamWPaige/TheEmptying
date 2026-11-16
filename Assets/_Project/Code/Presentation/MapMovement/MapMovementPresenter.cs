@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Wealth;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using EntityId = TheEmptying.Core.Entities.EntityId;
@@ -23,6 +24,7 @@ namespace TheEmptying.Presentation.MapMovement
 
         private MapMovementModule _module;
         private PeopleModule _peopleModule;
+        private WealthModule _wealthModule;
         private Camera _camera;
         private InputAction _selectAction;
         private Action<EntityId> _onCapsuleSelected;
@@ -48,6 +50,12 @@ namespace TheEmptying.Presentation.MapMovement
         public void SetPeopleModule(PeopleModule peopleModule)
         {
             _peopleModule = peopleModule;
+        }
+
+        /// <summary>Optional: adds a small class marker to a person's name label. Call again after a load to keep this in sync.</summary>
+        public void SetWealthModule(WealthModule wealthModule)
+        {
+            _wealthModule = wealthModule;
         }
 
         /// <summary>After a load swaps in a new Simulation (and a new module instance), drop every stale capsule and start tracking the new module's movers fresh.</summary>
@@ -151,13 +159,29 @@ namespace TheEmptying.Presentation.MapMovement
                 return;
             }
 
-            label.text = person.FullName;
+            label.text = person.FullName + ClassMarker(id);
             bool closeEnoughToRead = _camera != null && Vector3.Distance(_camera.transform.position, capsule.transform.position) <= NameLabelVisibleDistance;
             label.gameObject.SetActive(closeEnoughToRead);
 
             if (closeEnoughToRead)
             {
                 label.transform.rotation = Quaternion.LookRotation(label.transform.position - _camera.transform.position);
+            }
+        }
+
+        /// <summary>A small marker appended to a person's name label: nothing for lower class, "+" for middle, "++" for upper.</summary>
+        private string ClassMarker(EntityId id)
+        {
+            if (_wealthModule == null)
+            {
+                return "";
+            }
+
+            switch (_wealthModule.GetClass(id))
+            {
+                case TheEmptying.Core.Content.SocialClass.Upper: return " ++";
+                case TheEmptying.Core.Content.SocialClass.Middle: return " +";
+                default: return "";
             }
         }
 

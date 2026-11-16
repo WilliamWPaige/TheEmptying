@@ -56,6 +56,14 @@ namespace TheEmptying.Modules.People
         public const string NeedCriticalEventId = "event.people.need_critical";
         public const string NeedRecoveredEventId = "event.people.need_recovered";
 
+        /// <summary>
+        /// People has no declared dependency on Wealth (Wealth depends on
+        /// People, not the other way), so this is the event's string ID, not
+        /// WealthModule.ClassChangedEventId - events are the one channel a
+        /// module can listen on without a code reference.
+        /// </summary>
+        private const string ClassChangedEventId = "event.wealth.class_changed";
+
         private const string FoodGoodId = "good.loaf";
 
         private sealed class HourlySystem : ISimSystem
@@ -79,6 +87,9 @@ namespace TheEmptying.Modules.People
         private List<string> _firstNames = new List<string>();
         private List<string> _familyNames = new List<string>();
 
+        /// <summary>A person's social class. Defaults to Lower (correct for brand-new people) until Wealth registers the real one.</summary>
+        private Func<EntityId, SocialClass> _classProvider = _ => SocialClass.Lower;
+
         public PeopleModule(MapMovementModule mapMovement, InventoryModule inventory)
         {
             _mapMovement = mapMovement ?? throw new ArgumentNullException(nameof(mapMovement));
@@ -95,6 +106,9 @@ namespace TheEmptying.Modules.People
 
         public bool TryGetPerson(EntityId id, out PersonState person) => _people.TryGet(id, out person);
 
+        /// <summary>Wealth calls this during its own Initialize, since it's the module that actually computes class.</summary>
+        public void SetClassProvider(Func<EntityId, SocialClass> provider) => _classProvider = provider ?? (_ => SocialClass.Lower);
+
         public void Initialize(ModuleContext context)
         {
             _settings = context.Settings;
@@ -107,6 +121,7 @@ namespace TheEmptying.Modules.People
 
             context.Subscribe<NewMonthEvent>(OnNewMonth);
             context.Subscribe(MapMovementModule.MoverArrivedEventId, OnMoverArrived);
+            context.Subscribe(ClassChangedEventId, OnClassChanged);
             context.RegisterSystem(new HourlySystem(this), CalendarConstants.TicksPerHour, 0, 0);
 
             RegisterCommands(context);
@@ -140,13 +155,6 @@ namespace TheEmptying.Modules.People
             }
         }
 
-        /// <summary>
-        /// A person's social class. Hard-coded to Lower until 3.5 builds wealth
-        /// and class tracking; every need gating decision reads through here so
-        /// swapping in the real rule later only touches this one method.
-        /// </summary>
-        private static SocialClass GetPersonClass(PersonState person) => SocialClass.Lower;
-
         /// <summary>Always homeless until housing exists (3.6/3.7); the one place that will change.</summary>
         private static bool IsHomeless(PersonState person) => true;
 
@@ -177,6 +185,7 @@ namespace TheEmptying.Modules.People
 
                 PersonState person = CreatePerson(minAge, maxAge);
                 _people.Add(id, person);
+                SyncNeedsToClass(id, person);
 
                 _inventory.Add(id, FoodGoodId, provisions);
             }
@@ -196,6 +205,7 @@ namespace TheEmptying.Modules.People
 
             PersonState person = CreatePerson(minAge, maxAge);
             _people.Add(id, person);
+            SyncNeedsToClass(id, person);
 
             int provisions = (int)_settings.Get(StartingProvisionsLoavesSettingId);
             _inventory.Add(id, FoodGoodId, provisions);
@@ -214,13 +224,20 @@ namespace TheEmptying.Modules.People
                 IsBeliever = _random.Chance((float)_settings.Get(BelieverChanceSettingId))
             };
 
-            InitializeNeeds(person);
             return person;
         }
 
-        private void InitializeNeeds(PersonState person)
+        /// <summary>
+        /// Adds any need this person's current class (and believer status)
+        /// makes applicable but they don't have yet, and removes any need
+        /// they have that no longer applies - called at spawn (everything
+        /// starts empty, so it only adds) and again whenever Wealth reports a
+        /// class change (so a drop loses middle/upper needs, not just a rise
+        /// gaining them).
+        /// </summary>
+        private void SyncNeedsToClass(EntityId id, PersonState person)
         {
-            SocialClass personClass = GetPersonClass(person);
+            SocialClass personClass = _classProvider(id);
 
             foreach (Need need in _needsById.Values)
             {
@@ -229,17 +246,26 @@ namespace TheEmptying.Modules.People
                     continue; // state needs (shelter, safety, prestige) aren't tracked as meters
                 }
 
-                if (need.MinimumClass > personClass)
-                {
-                    continue;
-                }
+                bool applies = need.MinimumClass <= personClass && (!need.BelieversOnly || person.IsBeliever);
+                bool has = person.Needs.ContainsKey(need.Id);
 
-                if (need.BelieversOnly && !person.IsBeliever)
+                if (applies && !has)
                 {
-                    continue;
+                    person.Needs[need.Id] = new PersonNeedState();
                 }
+                else if (!applies && has)
+                {
+                    person.Needs.Remove(need.Id);
+                }
+            }
+        }
 
-                person.Needs[need.Id] = new PersonNeedState();
+        private void OnClassChanged(PostedEvent posted)
+        {
+            EntityId id = posted.Data.GetEntity("person");
+            if (_people.TryGet(id, out PersonState person))
+            {
+                SyncNeedsToClass(id, person);
             }
         }
 
@@ -659,7 +685,7 @@ namespace TheEmptying.Modules.People
             }
 
             yield return $"{person.FullName}, age {person.AgeLifeYears:F1} (lifespan {person.LifespanYears:F1}), health {person.Health:F0}, mood {person.Mood:F0}";
-            yield return $"activity: {person.Activity}, believer: {person.IsBeliever}";
+            yield return $"activity: {person.Activity}, believer: {person.IsBeliever}, class: {_classProvider(entity)}";
 
             foreach (KeyValuePair<string, PersonNeedState> need in person.Needs.OrderBy(kvp => kvp.Key, StringComparer.Ordinal))
             {

@@ -26,6 +26,18 @@ All in `Docs/Design/`:
 
 Docs beat code. If a task shows a spec is wrong or incomplete, say so and propose the doc change. Design-level questions go to William.
 
+The PDFs above are exports and can go stale. At the start of every prompt, read the design sections that prompt needs from the live docs through the Claude Docs connector, not the PDFs. The live docs (owned by William, Claude Docs artifacts):
+
+| File | Live doc |
+| --- | --- |
+| `01-Concept.pdf` | https://claude.ai/artifact/QJcdiqfvc7cwBHwjVfBzT7 |
+| `02-Systems.pdf` | https://claude.ai/artifact/WbrazKPeCvBNwbEaHL2P3u |
+| `03-SystemDesign.pdf` | https://claude.ai/artifact/4ut8WiQFYSCFLiA78QZzi2 |
+| `04-ReviewAndLock.pdf` | https://claude.ai/artifact/LTPrYVJgSvuNoX5sFe1aw7 |
+| `05-TechnicalFramework.pdf` | https://claude.ai/artifact/GBX7xrwi7mLWtVyysCAJ6A |
+
+`03b-SystemDesign-Earlier.pdf` has no live doc; it's frozen history and only read for the sections `03-SystemDesign.pdf` says carry over. If a live doc's content has changed since its PDF in `Docs/Design/` was exported, re-export that PDF (via the Claude Docs connector's export, as PDF, overwriting the file in place) before using it, so the PDFs stay a usable fallback and a record of what was built against.
+
 ## Architecture rules (never break these)
 
 ### Three layers

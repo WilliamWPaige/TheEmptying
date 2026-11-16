@@ -1,0 +1,17 @@
+{
+    "name": "TheEmptying.Modules.Wealth",
+    "rootNamespace": "TheEmptying.Modules.Wealth",
+    "references": [
+        "TheEmptying.Core",
+        "TheEmptying.Modules.People"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

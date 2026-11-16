@@ -11,6 +11,7 @@ using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Wealth;
 using TheEmptying.Tests.EditMode.Startup;
 
 namespace TheEmptying.Tests.EditMode.People
@@ -22,14 +23,15 @@ namespace TheEmptying.Tests.EditMode.People
             var mapMovement = new MapMovementModule();
             var inventory = new InventoryModule();
             var people = new PeopleModule(mapMovement, inventory);
-            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var wealth = new WealthModule(people);
+            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, people);
         }
 
         private static IModule[] Modules(out PeopleModule people, InventoryModule inventory, MapMovementModule mapMovement)
         {
             people = new PeopleModule(mapMovement, inventory);
-            return new IModule[] { mapMovement, inventory, people };
+            return new IModule[] { mapMovement, inventory, people, new WealthModule(people) };
         }
 
         private static List<string> Names(PeopleModule module) =>

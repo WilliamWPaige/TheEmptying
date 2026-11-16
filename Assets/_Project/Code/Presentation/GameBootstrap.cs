@@ -13,6 +13,7 @@ using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Wealth;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.MapMovement;
 using UnityEngine;
@@ -56,6 +57,7 @@ namespace TheEmptying.Presentation
         private VisualElement _hudPanel;
         private Label _dateLabel;
         private Label _speedLabel;
+        private Label _treasuryLabel;
 
         private VisualElement _questionPopupRoot;
         private Label _questionPopupCounter;
@@ -93,6 +95,7 @@ namespace TheEmptying.Presentation
 
         private MapMovementModule _mapMovementModule;
         private PeopleModule _peopleModule;
+        private WealthModule _wealthModule;
         private MapMovementPresenter _mapPresenter;
 
         public bool IsPaused => _paused;
@@ -313,6 +316,7 @@ namespace TheEmptying.Presentation
             IModule[] modules = ModuleCatalog.CreateModules();
             _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
             _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
+            _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
@@ -355,6 +359,7 @@ namespace TheEmptying.Presentation
             _mapPresenter = presenterObject.AddComponent<MapMovementPresenter>();
             _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, OnMoverCapsuleSelected);
             _mapPresenter.SetPeopleModule(_peopleModule);
+            _mapPresenter.SetWealthModule(_wealthModule);
         }
 
         /// <summary>Clicking a capsule shows its entity in the existing inspector: the console's own "inspect" command.</summary>
@@ -534,10 +539,12 @@ namespace TheEmptying.Presentation
             };
 
             _dateLabel = new Label { style = { color = Color.white, marginRight = 16 } };
-            _speedLabel = new Label { style = { color = Color.white } };
+            _speedLabel = new Label { style = { color = Color.white, marginRight = 16 } };
+            _treasuryLabel = new Label { style = { color = Color.white } };
 
             _hudPanel.Add(_dateLabel);
             _hudPanel.Add(_speedLabel);
+            _hudPanel.Add(_treasuryLabel);
             root.Add(_hudPanel);
 
             RefreshHud();
@@ -552,6 +559,7 @@ namespace TheEmptying.Presentation
 
             _dateLabel.text = _simulation.Clock.CurrentDate.ToString();
             _speedLabel.text = _paused ? "Paused" : $"{(int)_speed}x";
+            _treasuryLabel.text = _wealthModule != null ? $"Treasury: {_wealthModule.GetBalance(AccountId.Crown)}" : "";
         }
 
         #region Console
@@ -952,6 +960,7 @@ namespace TheEmptying.Presentation
                 IModule[] modules = ModuleCatalog.CreateModules();
                 _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
                 _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
+                _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
@@ -960,6 +969,7 @@ namespace TheEmptying.Presentation
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _mapPresenter?.Rebind(_mapMovementModule);
                 _mapPresenter?.SetPeopleModule(_peopleModule);
+                _mapPresenter?.SetWealthModule(_wealthModule);
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

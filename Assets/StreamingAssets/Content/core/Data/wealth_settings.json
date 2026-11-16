@@ -1,0 +1,16 @@
+{
+    "type": "setting_definition",
+    "items": [
+        { "id": "setting.wealth.crown_starting_shil", "valueType": "Number", "default": 5000, "minimum": 0, "maximum": 10000000, "category": "Wealth", "description": "The crown's treasury at the start of a new game." },
+        { "id": "setting.wealth.immigrant_starting_shil_min", "valueType": "Integer", "default": 0, "minimum": 0, "maximum": 1000000, "category": "Wealth", "description": "Lowest random starting balance for a starting immigrant." },
+        { "id": "setting.wealth.immigrant_starting_shil_max", "valueType": "Integer", "default": 300, "minimum": 0, "maximum": 1000000, "category": "Wealth", "description": "Highest random starting balance for a starting immigrant." },
+        { "id": "setting.wealth.laborer_wage_per_day_shil", "valueType": "Number", "default": 20, "minimum": 1, "maximum": 100000, "category": "Wealth", "description": "Placeholder. A laborer's daily pay; the anchor every class wealth threshold scales from." },
+        { "id": "setting.wealth.skilled_wage_per_day_shil", "valueType": "Number", "default": 40, "minimum": 0, "maximum": 100000, "category": "Wealth", "description": "Placeholder. A skilled worker's daily pay (smith, cook, builder)." },
+        { "id": "setting.wealth.expert_wage_per_day_shil", "valueType": "Number", "default": 60, "minimum": 0, "maximum": 100000, "category": "Wealth", "description": "Placeholder. An expert's daily pay (doctor, researcher)." },
+        { "id": "setting.wealth.soldier_wage_per_day_shil", "valueType": "Number", "default": 30, "minimum": 0, "maximum": 100000, "category": "Wealth", "description": "Placeholder. A government soldier's daily pay, fed on duty." },
+        { "id": "setting.wealth.middle_class_wealth_days", "valueType": "Number", "default": 60, "minimum": 0, "maximum": 1000000, "category": "Wealth", "description": "Wealth needed for middle class, in days of the laborer wage." },
+        { "id": "setting.wealth.upper_class_wealth_days", "valueType": "Number", "default": 600, "minimum": 0, "maximum": 1000000, "category": "Wealth", "description": "Wealth needed for upper class, in days of the laborer wage." },
+        { "id": "setting.wealth.months_below_before_drop", "valueType": "Integer", "default": 2, "minimum": 1, "maximum": 24, "category": "Wealth", "description": "Consecutive months a person must qualify for a lower class before they actually drop." },
+        { "id": "setting.wealth.content_to_stay_lower_chance", "valueType": "Number", "default": 0.3, "minimum": 0, "maximum": 1, "category": "Wealth", "description": "Placeholder. Chance a new person rolls zero ambition - content to stay lower class." }
+    ]
+}

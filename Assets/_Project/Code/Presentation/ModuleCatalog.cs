@@ -2,6 +2,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Wealth;
 
 namespace TheEmptying.Presentation
 {
@@ -19,7 +20,8 @@ namespace TheEmptying.Presentation
             var mapMovement = new MapMovementModule();
             var inventory = new InventoryModule();
             var people = new PeopleModule(mapMovement, inventory);
-            return new IModule[] { mapMovement, inventory, people };
+            var wealth = new WealthModule(people);
+            return new IModule[] { mapMovement, inventory, people, wealth };
         }
     }
 }
