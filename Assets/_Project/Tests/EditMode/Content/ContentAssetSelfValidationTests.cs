@@ -69,7 +69,7 @@ namespace TheEmptying.Tests.EditMode.Content
             var asset = ScriptableObject.CreateInstance<BuildingTypeAsset>();
             asset.SetForEditor("building.cottage", "Cottage", 2, 2,
                 new System.Collections.Generic.List<GoodAmountAsset> { new GoodAmountAsset(null, 5) },
-                0, 0, 0, true, new System.Collections.Generic.List<ZoneAsset>(), 1, SocialClass.Lower, string.Empty);
+                0, 0, 0, true, false, new System.Collections.Generic.List<ZoneAsset>(), 1, SocialClass.Lower, string.Empty);
 
             Assert.IsTrue(asset.ValidateSelf().Any());
         }
@@ -83,9 +83,31 @@ namespace TheEmptying.Tests.EditMode.Content
             var asset = ScriptableObject.CreateInstance<BuildingTypeAsset>();
             asset.SetForEditor("building.cottage", "Cottage", 2, 2,
                 new System.Collections.Generic.List<GoodAmountAsset> { new GoodAmountAsset(good, -5) },
-                0, 0, 0, true, new System.Collections.Generic.List<ZoneAsset>(), 1, SocialClass.Lower, string.Empty);
+                0, 0, 0, true, false, new System.Collections.Generic.List<ZoneAsset>(), 1, SocialClass.Lower, string.Empty);
 
             Assert.IsTrue(asset.ValidateSelf().Any());
+        }
+
+        [Test]
+        public void BuildingTypeAsset_NonGovernmentWithNoZones_IsReported()
+        {
+            var asset = ScriptableObject.CreateInstance<BuildingTypeAsset>();
+            asset.SetForEditor("building.cottage", "Cottage", 2, 2,
+                new System.Collections.Generic.List<GoodAmountAsset>(),
+                0, 0, 0, true, false, new System.Collections.Generic.List<ZoneAsset>(), 1, SocialClass.Lower, string.Empty);
+
+            Assert.IsTrue(asset.ValidateSelf().Any());
+        }
+
+        [Test]
+        public void BuildingTypeAsset_GovernmentWithNoZones_IsNotReported()
+        {
+            var asset = ScriptableObject.CreateInstance<BuildingTypeAsset>();
+            asset.SetForEditor("building.crown_storehouse", "Crown Storehouse", 4, 4,
+                new System.Collections.Generic.List<GoodAmountAsset>(),
+                0, 0, 0, false, true, new System.Collections.Generic.List<ZoneAsset>(), 0, null, string.Empty);
+
+            Assert.IsFalse(asset.ValidateSelf().Any());
         }
 
         [Test]
@@ -104,7 +126,7 @@ namespace TheEmptying.Tests.EditMode.Content
         {
             var workplace = ScriptableObject.CreateInstance<BuildingTypeAsset>();
             workplace.SetForEditor("building.woodcutters_camp", "Woodcutter's Camp", 3, 3,
-                new System.Collections.Generic.List<GoodAmountAsset>(), 2, 0, 0, false,
+                new System.Collections.Generic.List<GoodAmountAsset>(), 2, 0, 0, false, false,
                 new System.Collections.Generic.List<ZoneAsset>(), 0, null, string.Empty);
 
             var asset = ScriptableObject.CreateInstance<RecipeAsset>();

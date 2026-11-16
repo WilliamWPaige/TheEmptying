@@ -32,6 +32,10 @@ namespace TheEmptying.Core.Content
         [JsonProperty("isBasic")]
         public bool IsBasic { get; }
 
+        /// <summary>Placeable anywhere, regardless of zones (the crown's own buildings). A non-government building type must allow at least one zone.</summary>
+        [JsonProperty("isGovernment")]
+        public bool IsGovernment { get; }
+
         [JsonProperty("allowedZones")]
         public IReadOnlyList<ContentRef<Zone>> AllowedZones { get; }
 
@@ -54,6 +58,7 @@ namespace TheEmptying.Core.Content
             int managerSlots,
             int trainerSlots,
             bool isBasic,
+            bool isGovernment,
             IReadOnlyList<ContentRef<Zone>> allowedZones,
             int householdsProvided,
             SocialClass? homeClass)
@@ -67,6 +72,7 @@ namespace TheEmptying.Core.Content
             ManagerSlots = managerSlots;
             TrainerSlots = trainerSlots;
             IsBasic = isBasic;
+            IsGovernment = isGovernment;
             AllowedZones = allowedZones ?? Array.Empty<ContentRef<Zone>>();
             HouseholdsProvided = householdsProvided;
             HomeClass = homeClass;

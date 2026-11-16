@@ -1,4 +1,5 @@
 using Newtonsoft.Json;
+using TheEmptying.Core.Economy;
 
 namespace TheEmptying.Core.Content
 {
@@ -11,22 +12,16 @@ namespace TheEmptying.Core.Content
         [JsonProperty("category")]
         public GoodCategory Category { get; }
 
-        /// <summary>
-        /// In half-shil units: twice the price in shil. 0.5 shil is the
-        /// smallest fraction among the starting goods, so half-shil is the
-        /// smallest unit the current content needs; every starting price is a
-        /// whole number of them.
-        /// </summary>
-        [JsonProperty("basePriceHalfShil")]
-        public int BasePriceHalfShil { get; }
+        [JsonProperty("basePrice")]
+        public Money BasePrice { get; }
 
         [JsonConstructor]
-        public Good(string id, string name, GoodCategory category, int basePriceHalfShil)
+        public Good(string id, string name, GoodCategory category, Money basePrice)
         {
             Id = id;
             Name = name;
             Category = category;
-            BasePriceHalfShil = basePriceHalfShil;
+            BasePrice = basePrice;
         }
     }
 }

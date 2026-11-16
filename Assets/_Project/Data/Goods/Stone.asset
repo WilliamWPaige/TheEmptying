@@ -15,5 +15,5 @@ MonoBehaviour:
   _id: good.stone
   _displayName: Stone
   _category: 0
-  _basePriceHalfShil: 5
+  _basePriceShil: 2.5
   _description: 

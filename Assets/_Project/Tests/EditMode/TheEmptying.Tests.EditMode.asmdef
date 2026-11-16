@@ -4,6 +4,7 @@
     "references": [
         "TheEmptying.Core",
         "TheEmptying.Modules.DemoHunger",
+        "TheEmptying.Modules.MapMovement",
         "TheEmptying.Presentation",
         "TheEmptying.Editor",
         "UnityEngine.TestRunner",

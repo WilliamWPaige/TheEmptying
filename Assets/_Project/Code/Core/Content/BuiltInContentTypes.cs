@@ -111,9 +111,9 @@ namespace TheEmptying.Core.Content
             var good = (Good)definition;
             CheckIdPrefix(good.Id, "good.", context);
 
-            if (good.BasePriceHalfShil < 0)
+            if (good.BasePrice.HundredthsOfShil < 0)
             {
-                context.ReportProblem(good.Id, "basePriceHalfShil", "must not be negative.");
+                context.ReportProblem(good.Id, "basePrice", "must not be negative.");
             }
         }
 
@@ -138,6 +138,11 @@ namespace TheEmptying.Core.Content
         {
             var buildingType = (BuildingType)definition;
             CheckIdPrefix(buildingType.Id, "building.", context);
+
+            if (!buildingType.IsGovernment && buildingType.AllowedZones.Count == 0)
+            {
+                context.ReportProblem(buildingType.Id, "allowedZones", "must allow at least one zone, unless the building type is marked government.");
+            }
 
             foreach (GoodAmount cost in buildingType.ConstructionCost)
             {

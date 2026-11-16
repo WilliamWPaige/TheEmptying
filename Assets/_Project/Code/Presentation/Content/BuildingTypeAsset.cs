@@ -19,6 +19,9 @@ namespace TheEmptying.Presentation.Content
         [SerializeField, Tooltip("Allowed in its zones by default. Unchecked means it must be discovered before it can be set up.")]
         private bool _isBasic;
 
+        [SerializeField, Tooltip("Placeable anywhere, regardless of zones (the crown's own buildings). A non-government building type must allow at least one zone.")]
+        private bool _isGovernment;
+
         [SerializeField] private List<ZoneAsset> _allowedZones = new List<ZoneAsset>();
         [SerializeField] private bool _isHome;
         [SerializeField] private int _householdsProvided;
@@ -37,6 +40,7 @@ namespace TheEmptying.Presentation.Content
         public int ManagerSlots => _managerSlots;
         public int TrainerSlots => _trainerSlots;
         public bool IsBasic => _isBasic;
+        public bool IsGovernment => _isGovernment;
         public IReadOnlyList<ZoneAsset> AllowedZones => _allowedZones;
         public int HouseholdsProvided => _isHome ? _householdsProvided : 0;
         public SocialClass? HomeClass => _isHome ? _homeClass : (SocialClass?)null;
@@ -68,6 +72,11 @@ namespace TheEmptying.Presentation.Content
                     yield return "Allowed zones has an empty entry.";
                 }
             }
+
+            if (!_isGovernment && _allowedZones.Count == 0)
+            {
+                yield return "Must allow at least one zone, unless marked government.";
+            }
         }
 
 #if UNITY_EDITOR
@@ -81,6 +90,7 @@ namespace TheEmptying.Presentation.Content
             int managerSlots,
             int trainerSlots,
             bool isBasic,
+            bool isGovernment,
             List<ZoneAsset> allowedZones,
             int householdsProvided,
             SocialClass? homeClass,
@@ -95,6 +105,7 @@ namespace TheEmptying.Presentation.Content
             _managerSlots = managerSlots;
             _trainerSlots = trainerSlots;
             _isBasic = isBasic;
+            _isGovernment = isGovernment;
             _allowedZones = allowedZones ?? new List<ZoneAsset>();
             _isHome = homeClass.HasValue;
             _householdsProvided = householdsProvided;

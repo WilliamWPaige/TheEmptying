@@ -1,0 +1,50 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.map_movement.cell_size_meters",
+            "valueType": "Number",
+            "default": 3,
+            "minimum": 1,
+            "maximum": 50,
+            "category": "Map",
+            "description": "Placeholder. The size of one grid cell, in meters."
+        },
+        {
+            "id": "setting.map_movement.map_width_cells",
+            "valueType": "Integer",
+            "default": 256,
+            "minimum": 1,
+            "maximum": 4096,
+            "category": "Map",
+            "description": "Placeholder. The map's width, in cells."
+        },
+        {
+            "id": "setting.map_movement.map_depth_cells",
+            "valueType": "Integer",
+            "default": 256,
+            "minimum": 1,
+            "maximum": 4096,
+            "category": "Map",
+            "description": "Placeholder. The map's depth, in cells."
+        },
+        {
+            "id": "setting.map_movement.max_path_searches_per_tick",
+            "valueType": "Integer",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100000,
+            "category": "Map",
+            "description": "Placeholder. The most path searches run in a single tick, so results never depend on frame rate."
+        },
+        {
+            "id": "setting.map_movement.walking_speed_kmh",
+            "valueType": "Number",
+            "default": 5,
+            "minimum": 0.1,
+            "maximum": 1000,
+            "category": "Map",
+            "description": "Placeholder. How fast a mover walks, in kilometers per hour."
+        }
+    ]
+}

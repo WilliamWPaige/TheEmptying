@@ -6,6 +6,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.DemoHunger;
+using TheEmptying.Modules.MapMovement;
 
 namespace TheEmptying.Tests.EditMode.Startup
 {
@@ -26,7 +27,7 @@ namespace TheEmptying.Tests.EditMode.Startup
             using var core = new TempCoreContentCopy();
             string[] sources = { core.FolderPath };
 
-            (Simulation simulation, _) = SimulationBuilder.Build(1, sources, new IModule[] { new DemoHungerModule(EntityCountForThisTestOnly) });
+            (Simulation simulation, _) = SimulationBuilder.Build(1, sources, new IModule[] { new DemoHungerModule(EntityCountForThisTestOnly), new MapMovementModule() });
 
             long tickCount = CalendarConstants.TicksPerDay;
 

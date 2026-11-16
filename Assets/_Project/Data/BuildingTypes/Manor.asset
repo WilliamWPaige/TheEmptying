@@ -27,6 +27,7 @@ MonoBehaviour:
   _managerSlots: 0
   _trainerSlots: 0
   _isBasic: 1
+  _isGovernment: 0
   _allowedZones:
   - {fileID: 11400000, guid: 10c2d39c1d1b220448fed96e448e3192, type: 2}
   _isHome: 1

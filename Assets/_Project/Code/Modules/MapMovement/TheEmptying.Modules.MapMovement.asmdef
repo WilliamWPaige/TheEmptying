@@ -1,0 +1,16 @@
+{
+    "name": "TheEmptying.Modules.MapMovement",
+    "rootNamespace": "TheEmptying.Modules.MapMovement",
+    "references": [
+        "TheEmptying.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

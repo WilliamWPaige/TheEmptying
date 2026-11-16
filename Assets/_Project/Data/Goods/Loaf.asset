@@ -15,5 +15,5 @@ MonoBehaviour:
   _id: good.loaf
   _displayName: Loaf
   _category: 2
-  _basePriceHalfShil: 4
+  _basePriceShil: 2
   _description: 

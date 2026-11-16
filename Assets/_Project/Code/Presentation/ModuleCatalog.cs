@@ -1,5 +1,6 @@
 using TheEmptying.Core.Modules;
 using TheEmptying.Modules.DemoHunger;
+using TheEmptying.Modules.MapMovement;
 
 namespace TheEmptying.Presentation
 {
@@ -12,6 +13,6 @@ namespace TheEmptying.Presentation
     /// </summary>
     public static class ModuleCatalog
     {
-        public static IModule[] CreateModules() => new IModule[] { new DemoHungerModule() };
+        public static IModule[] CreateModules() => new IModule[] { new DemoHungerModule(), new MapMovementModule() };
     }
 }

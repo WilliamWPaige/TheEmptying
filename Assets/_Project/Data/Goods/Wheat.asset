@@ -15,5 +15,5 @@ MonoBehaviour:
   _id: good.wheat
   _displayName: Wheat
   _category: 0
-  _basePriceHalfShil: 1
+  _basePriceShil: 0.5
   _description: 

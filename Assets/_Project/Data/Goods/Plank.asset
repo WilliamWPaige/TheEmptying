@@ -15,5 +15,5 @@ MonoBehaviour:
   _id: good.plank
   _displayName: Plank
   _category: 1
-  _basePriceHalfShil: 4
+  _basePriceShil: 2
   _description: 

@@ -11,10 +11,13 @@ using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.MapMovement;
 using TheEmptying.Presentation.Content;
+using TheEmptying.Presentation.MapMovement;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
+using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation
 {
@@ -86,6 +89,9 @@ namespace TheEmptying.Presentation
         private string _coreContentFolder;
         private string _modsFolder;
         private string _savesFolder;
+
+        private MapMovementModule _mapMovementModule;
+        private MapMovementPresenter _mapPresenter;
 
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
@@ -216,6 +222,7 @@ namespace TheEmptying.Presentation
             StartupReport report = BuildSimulation();
             BuildUi();
             WireInput();
+            BuildMapMovementPresentation();
 
             Application.logMessageReceived += OnUnityLogMessage;
             AppendLog($"Startup report:\n{report}");
@@ -238,12 +245,15 @@ namespace TheEmptying.Presentation
             for (int i = 0; i < ticksToRun; i++)
             {
                 _simulation.Step();
+                _mapPresenter?.OnTickAdvanced();
             }
 
             if (ticksToRun > 0)
             {
                 RefreshHud();
             }
+
+            _mapPresenter?.SetTickProgress((float)(leftover * ticksPerRealSecond));
         }
 
         /// <summary>
@@ -298,13 +308,61 @@ namespace TheEmptying.Presentation
         {
             List<string> sources = ResolveSourceFolders();
             List<ContentAssetDefinition> contentAssets = LoadContentAssetDefinitions();
-            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this, contentAssets: contentAssets);
+            IModule[] modules = ModuleCatalog.CreateModules();
+            _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
+
+            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
 
             BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
 
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
             return report;
+        }
+
+        /// <summary>
+        /// A flat ground plane, a mover capsule per entity the map/movement
+        /// module is tracking, and a simple strategy camera, all built in
+        /// code to match the map's actual size (no scene authoring needed).
+        /// </summary>
+        private void BuildMapMovementPresentation()
+        {
+            if (_mapMovementModule == null)
+            {
+                return;
+            }
+
+            InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
+
+            Camera camera = Camera.main;
+            if (camera != null)
+            {
+                var cameraController = camera.gameObject.AddComponent<StrategyCameraController>();
+                cameraController.Initialize(gameplayMap);
+
+                MapGrid grid = _mapMovementModule.Grid;
+                var mapCenter = new Vector3(
+                    (float)(grid.Width * grid.CellSizeMeters) * 0.5f,
+                    0f,
+                    (float)(grid.Depth * grid.CellSizeMeters) * 0.5f);
+                cameraController.PlaceAbove(mapCenter, 80f);
+            }
+
+            var presenterObject = new GameObject("MapMovementPresenter");
+            _mapPresenter = presenterObject.AddComponent<MapMovementPresenter>();
+            _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, OnMoverCapsuleSelected);
+        }
+
+        /// <summary>Clicking a capsule shows its entity in the existing inspector: the console's own "inspect" command.</summary>
+        private void OnMoverCapsuleSelected(EntityId id)
+        {
+            if (!_consoleOpen)
+            {
+                SetConsoleOpen(true);
+            }
+
+            AppendLog($"> inspect {id}");
+            AppendLog(_simulation.Commands.Execute($"inspect {id}"));
         }
 
         /// <summary>Converts every ScriptableObject content asset in the shipped catalog into the plain records the simulation reads.</summary>
@@ -887,11 +945,15 @@ namespace TheEmptying.Presentation
                     header = SaveFile.ReadHeader(headerStream);
                 }
 
+                IModule[] modules = ModuleCatalog.CreateModules();
+                _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
+
                 using var stream = File.OpenRead(path);
-                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), ModuleCatalog.CreateModules(), ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
+                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
 
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
+                _mapPresenter?.Rebind(_mapMovementModule);
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

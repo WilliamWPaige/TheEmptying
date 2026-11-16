@@ -28,11 +28,18 @@ namespace TheEmptying.Tests.EditMode.EditorTools
 
         private static void WriteRequiredContent(TempContentSource source)
         {
-            // module.demo_hunger must have a manifest entry (ModuleCatalog.CreateModules
-            // includes it) for RuleTestSession.Build's real SimulationBuilder.Build call
-            // to succeed; disabled, so it needs nothing beyond the entry itself. The same
-            // manifest also feeds EditorContext.Build below, so both calls agree.
-            source.WriteDataFile("manifest.json", "{\"type\":\"module_manifest\",\"items\":[{\"id\":\"module.demo_hunger\",\"version\":1,\"dependencies\":[],\"enabled\":false}]}");
+            // Every module ModuleCatalog.CreateModules() returns needs a manifest
+            // entry for RuleTestSession.Build's real SimulationBuilder.Build call
+            // to succeed; disabled, so neither needs anything beyond the entry
+            // itself. The same manifest also feeds EditorContext.Build below, so
+            // both calls agree.
+            source.WriteDataFile("manifest.json", @"{
+                ""type"": ""module_manifest"",
+                ""items"": [
+                    { ""id"": ""module.demo_hunger"", ""version"": 1, ""dependencies"": [], ""enabled"": false },
+                    { ""id"": ""module.map_movement"", ""version"": 1, ""dependencies"": [], ""enabled"": false }
+                ]
+            }");
             source.WriteDataFile("events.json", @"{
                 ""type"": ""event_definition"",
                 ""items"": [ { ""id"": ""go"", ""visibility"": ""Public"", ""reportingScore"": 0, ""notabilityScore"": 0, ""description"": ""test event"" } ]

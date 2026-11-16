@@ -18,13 +18,12 @@ MonoBehaviour:
   _footprintDepth: 10
   _constructionCost:
   - _good: {fileID: 11400000, guid: a3c576ca20607a84a87ba353e34b0f70, type: 2}
-    _amount: 20
-  - _good: {fileID: 11400000, guid: 90e1c1c1f7f354848b44723939bf5004, type: 2}
-    _amount: 10
+    _amount: 5
   _workerSlots: 1
   _managerSlots: 0
   _trainerSlots: 0
   _isBasic: 1
+  _isGovernment: 0
   _allowedZones:
   - {fileID: 11400000, guid: fad39ae9aed8c8e409a6ddef52d18eb9, type: 2}
   _isHome: 0

@@ -15,5 +15,5 @@ MonoBehaviour:
   _id: good.block
   _displayName: Block
   _category: 1
-  _basePriceHalfShil: 20
+  _basePriceShil: 10
   _description: 

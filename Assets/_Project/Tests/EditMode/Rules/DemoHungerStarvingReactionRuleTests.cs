@@ -7,6 +7,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.DemoHunger;
+using TheEmptying.Modules.MapMovement;
 using TheEmptying.Tests.EditMode.Startup;
 
 namespace TheEmptying.Tests.EditMode.Rules
@@ -24,7 +25,7 @@ namespace TheEmptying.Tests.EditMode.Rules
         public void HungerCrossingBelowThreshold_PostsAStarvingEventForThatEntity_ViaTheRule()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { new DemoHungerModule() });
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
 
             sim.Settings.Set(DemoHungerModule.DecayPerHourSettingId, 20);
 
@@ -48,7 +49,7 @@ namespace TheEmptying.Tests.EditMode.Rules
             // can cross the threshold and starve again later, exactly as the original
             // oldHunger/newHunger check in C# would have allowed.
             using var core = new TempCoreContentCopy();
-            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { new DemoHungerModule() });
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
 
             sim.Settings.Set(DemoHungerModule.DecayPerHourSettingId, 20);
 
@@ -107,7 +108,7 @@ namespace TheEmptying.Tests.EditMode.Rules
 
             using var core = new TempCoreContentCopy();
             const ulong seed = 777;
-            (Simulation sim, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { new DemoHungerModule() });
+            (Simulation sim, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
 
             var actual = new List<(long Tick, long EntityIndex)>();
             sim.Events.Subscribe(DemoHungerModule.StarvingEventId, posted => actual.Add((posted.Tick, posted.Data.GetEntity("entity").Index)));

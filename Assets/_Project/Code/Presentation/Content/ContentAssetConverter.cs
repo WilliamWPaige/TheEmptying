@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
+using TheEmptying.Core.Economy;
 
 namespace TheEmptying.Presentation.Content
 {
@@ -45,7 +46,7 @@ namespace TheEmptying.Presentation.Content
         }
 
         public static Good ToRecord(GoodAsset asset) =>
-            new Good(asset.Id, asset.DisplayName, asset.Category, asset.BasePriceHalfShil);
+            new Good(asset.Id, asset.DisplayName, asset.Category, Money.FromShil((double)asset.BasePriceShil));
 
         public static Need ToRecord(NeedAsset asset) =>
             new Need(asset.Id, asset.DisplayName, asset.Kind, asset.HoursToEmpty, asset.MinimumClass, asset.BelieversOnly);
@@ -64,6 +65,7 @@ namespace TheEmptying.Presentation.Content
                 asset.ManagerSlots,
                 asset.TrainerSlots,
                 asset.IsBasic,
+                asset.IsGovernment,
                 asset.AllowedZones.Where(z => z != null).Select(z => new ContentRef<Zone>(z.Id)).ToList(),
                 asset.HouseholdsProvided,
                 asset.HomeClass);

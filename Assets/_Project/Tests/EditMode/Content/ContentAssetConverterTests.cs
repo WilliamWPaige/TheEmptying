@@ -9,10 +9,10 @@ namespace TheEmptying.Tests.EditMode.Content
     /// <summary>Converting a catalog's ScriptableObject content into records: ordinal Id order and repeatability.</summary>
     public class ContentAssetConverterTests
     {
-        private static GoodAsset MakeGood(string id, string name, int basePriceHalfShil)
+        private static GoodAsset MakeGood(string id, string name, float basePriceShil)
         {
             var asset = ScriptableObject.CreateInstance<GoodAsset>();
-            asset.SetForEditor(id, name, GoodCategory.Raw, basePriceHalfShil, string.Empty);
+            asset.SetForEditor(id, name, GoodCategory.Raw, basePriceShil, string.Empty);
             return asset;
         }
 
@@ -54,7 +54,7 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(a.Id, b.Id);
             Assert.AreEqual(a.Name, b.Name);
             Assert.AreEqual(a.Category, b.Category);
-            Assert.AreEqual(a.BasePriceHalfShil, b.BasePriceHalfShil);
+            Assert.AreEqual(a.BasePrice, b.BasePrice);
         }
 
         [Test]

@@ -10,7 +10,7 @@ namespace TheEmptying.Presentation.Content
         [SerializeField] private string _id;
         [SerializeField] private string _displayName;
         [SerializeField] private GoodCategory _category;
-        [SerializeField, Tooltip("In half-shil units: twice the price in shil.")] private int _basePriceHalfShil;
+        [SerializeField, Tooltip("Price in shil (fractions allowed, e.g. 2.5). Converted to whole hundredths of a shil.")] private float _basePriceShil;
         [SerializeField, TextArea] private string _description;
 
         public override string Id => _id;
@@ -19,7 +19,7 @@ namespace TheEmptying.Presentation.Content
 
         public string DisplayName => _displayName;
         public GoodCategory Category => _category;
-        public int BasePriceHalfShil => _basePriceHalfShil;
+        public float BasePriceShil => _basePriceShil;
         public string Description => _description;
 
         public override IEnumerable<string> ValidateSelf()
@@ -29,19 +29,19 @@ namespace TheEmptying.Presentation.Content
                 yield return problem;
             }
 
-            if (_basePriceHalfShil < 0)
+            if (_basePriceShil < 0f)
             {
                 yield return "Base price must not be negative.";
             }
         }
 
 #if UNITY_EDITOR
-        public void SetForEditor(string id, string displayName, GoodCategory category, int basePriceHalfShil, string description)
+        public void SetForEditor(string id, string displayName, GoodCategory category, float basePriceShil, string description)
         {
             _id = id;
             _displayName = displayName;
             _category = category;
-            _basePriceHalfShil = basePriceHalfShil;
+            _basePriceShil = basePriceShil;
             _description = description;
         }
 #endif

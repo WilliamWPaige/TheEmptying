@@ -15,5 +15,5 @@ MonoBehaviour:
   _id: good.furniture
   _displayName: Furniture
   _category: 2
-  _basePriceHalfShil: 80
+  _basePriceShil: 40
   _description: 

@@ -15,5 +15,5 @@ MonoBehaviour:
   _id: good.flour
   _displayName: Flour
   _category: 1
-  _basePriceHalfShil: 6
+  _basePriceShil: 3
   _description: 

@@ -25,6 +25,7 @@ MonoBehaviour:
   _managerSlots: 0
   _trainerSlots: 0
   _isBasic: 0
+  _isGovernment: 1
   _allowedZones: []
   _isHome: 0
   _householdsProvided: 0

@@ -8,6 +8,7 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.DemoHunger;
+using TheEmptying.Modules.MapMovement;
 using TheEmptying.Tests.EditMode.Content;
 
 namespace TheEmptying.Tests.EditMode.Startup
@@ -40,8 +41,8 @@ namespace TheEmptying.Tests.EditMode.Startup
             using var core = new TempCoreContentCopy();
             string[] sources = { core.FolderPath };
 
-            (Simulation simA, _) = SimulationBuilder.Build(1, sources, new IModule[] { new DemoHungerModule() });
-            (Simulation simB, _) = SimulationBuilder.Build(1, sources, new IModule[] { new DemoHungerModule() });
+            (Simulation simA, _) = SimulationBuilder.Build(1, sources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
+            (Simulation simB, _) = SimulationBuilder.Build(1, sources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
 
             RunTicks(simA, CalendarConstants.TicksPerDay * 2);
             RunTicks(simB, CalendarConstants.TicksPerDay * 2);
@@ -56,12 +57,12 @@ namespace TheEmptying.Tests.EditMode.Startup
             string[] sources = { core.FolderPath };
             const ulong seed = 777;
 
-            (Simulation unbroken, _) = SimulationBuilder.Build(seed, sources, new IModule[] { new DemoHungerModule() });
+            (Simulation unbroken, _) = SimulationBuilder.Build(seed, sources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
             var unbrokenStarving = SubscribeToStarvingEvents(unbroken, new List<(EntityId, long)>());
             RunTicks(unbroken, CalendarConstants.TicksPerDay * 2);
             ulong unbrokenHash = unbroken.ComputeStateHash();
 
-            (Simulation day1, _) = SimulationBuilder.Build(seed, sources, new IModule[] { new DemoHungerModule() });
+            (Simulation day1, _) = SimulationBuilder.Build(seed, sources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
             var interruptedStarving = SubscribeToStarvingEvents(day1, new List<(EntityId, long)>());
             RunTicks(day1, CalendarConstants.TicksPerDay);
 
@@ -69,7 +70,7 @@ namespace TheEmptying.Tests.EditMode.Startup
             GameSave.Save(day1, new SaveHeaderInfo { KingdomName = "K", Population = day1.Entities.Count }, stream);
             stream.Position = 0;
 
-            (Simulation day2, _) = GameSave.Load(stream, sources, new IModule[] { new DemoHungerModule() });
+            (Simulation day2, _) = GameSave.Load(stream, sources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
             SubscribeToStarvingEvents(day2, interruptedStarving);
             RunTicks(day2, CalendarConstants.TicksPerDay);
 
@@ -86,8 +87,8 @@ namespace TheEmptying.Tests.EditMode.Startup
             using var core = new TempCoreContentCopy();
             string[] sources = { core.FolderPath };
 
-            (Simulation simA, _) = SimulationBuilder.Build(1, sources, new IModule[] { new DemoHungerModule() });
-            (Simulation simB, _) = SimulationBuilder.Build(2, sources, new IModule[] { new DemoHungerModule() });
+            (Simulation simA, _) = SimulationBuilder.Build(1, sources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
+            (Simulation simB, _) = SimulationBuilder.Build(2, sources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
 
             RunTicks(simA, CalendarConstants.TicksPerDay);
             RunTicks(simB, CalendarConstants.TicksPerDay);
@@ -110,20 +111,20 @@ namespace TheEmptying.Tests.EditMode.Startup
             string[] onSources = { core.FolderPath };
             string[] offSources = { core.FolderPath, modOff.FolderPath };
 
-            (Simulation on, _) = SimulationBuilder.Build(1, onSources, new IModule[] { new DemoHungerModule() });
+            (Simulation on, _) = SimulationBuilder.Build(1, onSources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
             on.Step();
 
             using var stream = new MemoryStream();
             GameSave.Save(on, new SaveHeaderInfo { KingdomName = "K", Population = on.Entities.Count }, stream);
             stream.Position = 0;
 
-            (Simulation off, StartupReport report) = SimulationBuilder.Build(1, offSources, new IModule[] { new DemoHungerModule() });
+            (Simulation off, StartupReport report) = SimulationBuilder.Build(1, offSources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
 
             Assert.IsFalse(off.Modules.IsActive(DemoHungerModule.ModuleId), "The module should be disabled by the mod's manifest.");
             Assert.Greater(report.DisabledModuleReasons.Count, 0);
             Assert.AreEqual(0, off.Entities.Count, "Initialize (where the demo module creates its people) should never have run.");
 
-            (Simulation loaded, _) = GameSave.Load(stream, offSources, new IModule[] { new DemoHungerModule() });
+            (Simulation loaded, _) = GameSave.Load(stream, offSources, new IModule[] { new DemoHungerModule(), new MapMovementModule() });
 
             Assert.IsFalse(loaded.Modules.IsActive(DemoHungerModule.ModuleId));
             Assert.IsTrue(loaded.OrphanedModuleSections.ContainsKey(DemoHungerModule.ModuleId), "The save's demo-hunger section should be kept untouched as an orphan.");
