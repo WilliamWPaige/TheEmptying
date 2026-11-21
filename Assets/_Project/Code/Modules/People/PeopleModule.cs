@@ -61,8 +61,14 @@ namespace TheEmptying.Modules.People
         public const string FounderMaxAgeSettingId = "setting.people.founder_max_age";
         public const string FounderLifespanMinYearsSettingId = "setting.people.founder_lifespan_min_years";
         public const string FounderLifespanMaxYearsSettingId = "setting.people.founder_lifespan_max_years";
-        public const string FounderSkillMaxLevelSettingId = "setting.people.founder_skill_max_level";
-        public const string FounderSkillAverageLevelSettingId = "setting.people.founder_skill_average_level";
+        // 3.9j: founders are good workers but not identical - replaces the old flat
+        // founder_skill_max_level/founder_skill_average_level pair.
+        public const string FounderCoreTradeSkillMinSettingId = "setting.people.founder_core_trade_skill_min";
+        public const string FounderCoreTradeSkillMaxSettingId = "setting.people.founder_core_trade_skill_max";
+        public const string FounderSpecialtySkillMinSettingId = "setting.people.founder_specialty_skill_min";
+        public const string FounderSpecialtySkillMaxSettingId = "setting.people.founder_specialty_skill_max";
+        public const string FounderOtherSkillMinSettingId = "setting.people.founder_other_skill_min";
+        public const string FounderOtherSkillMaxSettingId = "setting.people.founder_other_skill_max";
         public const string MonarchMinAgeSettingId = "setting.people.monarch_min_age";
         public const string MonarchMaxAgeSettingId = "setting.people.monarch_max_age";
 
@@ -212,6 +218,13 @@ namespace TheEmptying.Modules.People
             _ => activity.ToString()
         };
 
+        /// <summary>A plain, player-facing label for a skill (e.g. a founder's specialty in the People panel) - "Mining" reads as "quarrying" everywhere else in the design.</summary>
+        public static string DescribeSkill(Skill skill) => skill switch
+        {
+            Skill.Mining => "quarrying",
+            _ => skill.ToString().ToLowerInvariant()
+        };
+
         /// <summary>Wealth and Inventory-holding modules call this during their own Initialize, to sweep up a dying person's money and goods before their rows disappear.</summary>
         public void RegisterDeathHook(Action<EntityId> hook)
         {
@@ -322,8 +335,12 @@ namespace TheEmptying.Modules.People
             int maxAge = (int)_settings.Get(FounderMaxAgeSettingId);
             int lifespanMin = (int)_settings.Get(FounderLifespanMinYearsSettingId);
             int lifespanMax = (int)_settings.Get(FounderLifespanMaxYearsSettingId);
-            int skillMax = (int)_settings.Get(FounderSkillMaxLevelSettingId);
-            int skillAverage = (int)_settings.Get(FounderSkillAverageLevelSettingId);
+            int coreMin = (int)_settings.Get(FounderCoreTradeSkillMinSettingId);
+            int coreMax = (int)_settings.Get(FounderCoreTradeSkillMaxSettingId);
+            int specialtyMin = (int)_settings.Get(FounderSpecialtySkillMinSettingId);
+            int specialtyMax = (int)_settings.Get(FounderSpecialtySkillMaxSettingId);
+            int otherMin = (int)_settings.Get(FounderOtherSkillMinSettingId);
+            int otherMax = (int)_settings.Get(FounderOtherSkillMaxSettingId);
 
             var founderIds = new List<EntityId>(founderCount);
 
@@ -338,7 +355,7 @@ namespace TheEmptying.Modules.People
                 person.IsFounder = true;
                 person.NeverRefusesOrFails = true;
                 person.NeedsClassOverride = SocialClass.Lower;
-                ApplyFounderSkills(person, skillMax, skillAverage);
+                ApplyFounderSkills(person, coreMin, coreMax, specialtyMin, specialtyMax, otherMin, otherMax);
 
                 founderIds.Add(id.Value);
             }
@@ -383,18 +400,31 @@ namespace TheEmptying.Modules.People
             return id;
         }
 
-        private static void ApplyFounderSkills(PersonState person, int skillMax, int skillAverage)
+        /// <summary>A founder's five core trades - the ones "up to 2 founders farm, the rest build or gather" draws on.</summary>
+        private static readonly Skill[] CoreTradeSkills = { Skill.Construction, Skill.Mining, Skill.Logging, Skill.Hauling, Skill.Farming };
+
+        /// <summary>
+        /// 3.9j: founders are good but not identical - every core trade rolls in [coreMin, coreMax],
+        /// one of them (the founder's specialty) rolls higher still in [specialtyMin, specialtyMax],
+        /// and everything else rolls in [otherMin, otherMax]. Seeded (uses the module's own SimRandom),
+        /// so a save/load round trip and a fresh run from the same seed pick the same specialty and
+        /// the same rolls.
+        /// </summary>
+        private void ApplyFounderSkills(PersonState person, int coreMin, int coreMax, int specialtyMin, int specialtyMax, int otherMin, int otherMax)
         {
             for (int i = 0; i < person.Skills.Length; i++)
             {
-                person.Skills[i] = skillAverage;
+                person.Skills[i] = _random.NextInt(otherMin, otherMax + 1);
             }
 
-            person.Skills[(int)Skill.Construction] = skillMax;
-            person.Skills[(int)Skill.Mining] = skillMax;
-            person.Skills[(int)Skill.Logging] = skillMax;
-            person.Skills[(int)Skill.Hauling] = skillMax;
-            person.Skills[(int)Skill.Farming] = skillMax;
+            foreach (Skill trade in CoreTradeSkills)
+            {
+                person.Skills[(int)trade] = _random.NextInt(coreMin, coreMax + 1);
+            }
+
+            Skill specialty = CoreTradeSkills[_random.NextInt(0, CoreTradeSkills.Length)];
+            person.Skills[(int)specialty] = _random.NextInt(specialtyMin, specialtyMax + 1);
+            person.FounderSpecialty = specialty;
         }
 
         /// <summary>Spawns one more person at a random passable cell, ages minAge to maxAge, with the usual starting provisions. For benchmarks and tests; not used by new-game setup, which goes through SpawnStartingImmigrants instead.</summary>
@@ -1165,6 +1195,11 @@ namespace TheEmptying.Modules.People
                 writer.WriteBool(person.IsFounder);
                 writer.WriteBool(person.IsMonarch);
                 writer.WriteBool(person.NeverRefusesOrFails);
+                writer.WriteBool(person.FounderSpecialty.HasValue);
+                if (person.FounderSpecialty.HasValue)
+                {
+                    writer.WriteInt((int)person.FounderSpecialty.Value);
+                }
                 writer.WriteBool(person.NeedsClassOverride.HasValue);
                 if (person.NeedsClassOverride.HasValue)
                 {
@@ -1232,6 +1267,7 @@ namespace TheEmptying.Modules.People
                 person.IsFounder = reader.ReadBool();
                 person.IsMonarch = reader.ReadBool();
                 person.NeverRefusesOrFails = reader.ReadBool();
+                person.FounderSpecialty = reader.ReadBool() ? (Skill)reader.ReadInt() : (Skill?)null;
                 person.NeedsClassOverride = reader.ReadBool() ? (SocialClass)reader.ReadInt() : (SocialClass?)null;
 
                 person.HoursTrackedThisMonth = reader.ReadInt();

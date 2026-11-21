@@ -7,7 +7,7 @@
         { "id": "setting.market.price_floor_percent_of_base", "valueType": "Number", "default": 50, "minimum": 1, "maximum": 100, "category": "Market", "description": "A good's market price never falls below this percent of its base price." },
         { "id": "setting.market.price_ceiling_percent_of_base", "valueType": "Number", "default": 300, "minimum": 100, "maximum": 1000, "category": "Market", "description": "A good's market price never rises above this percent of its base price." },
         { "id": "setting.market.stall_count_per_market", "valueType": "Integer", "default": 12, "minimum": 1, "maximum": 100, "category": "Market", "description": "Placeholder. Stalls available at each market building." },
-        { "id": "setting.market.stall_rent_shil_per_month", "valueType": "Number", "default": 30, "minimum": 0, "maximum": 100000, "category": "Market", "description": "Placeholder. Monthly rent for one stall, paid to the crown." },
+        { "id": "setting.market.stall_rent_copper_per_month", "valueType": "Number", "default": 30, "minimum": 0, "maximum": 100000, "category": "Market", "description": "Placeholder. Monthly rent for one stall, paid to the crown." },
         { "id": "setting.market.loaves_wanted_per_day", "valueType": "Integer", "default": 3, "minimum": 1, "maximum": 20, "category": "Market", "description": "Placeholder. Loaves a person wants on hand per day; they shop when they have less than two days' worth." },
         { "id": "setting.market.delivery_hours_per_20_cells", "valueType": "Number", "default": 1, "minimum": 0.1, "maximum": 100, "category": "Market", "description": "Placeholder. Transit time for a bulk order: hours per 20 cells of distance, no hauler job yet." }
     ]

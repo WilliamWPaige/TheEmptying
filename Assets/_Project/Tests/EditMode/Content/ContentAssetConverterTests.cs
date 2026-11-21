@@ -9,10 +9,10 @@ namespace TheEmptying.Tests.EditMode.Content
     /// <summary>Converting a catalog's ScriptableObject content into records: ordinal Id order and repeatability.</summary>
     public class ContentAssetConverterTests
     {
-        private static GoodAsset MakeGood(string id, string name, float basePriceShil)
+        private static GoodAsset MakeGood(string id, string name, float basePriceCopper)
         {
             var asset = ScriptableObject.CreateInstance<GoodAsset>();
-            asset.SetForEditor(id, name, GoodCategory.Raw, basePriceShil, string.Empty);
+            asset.SetForEditor(id, name, GoodCategory.Raw, basePriceCopper, string.Empty);
             return asset;
         }
 

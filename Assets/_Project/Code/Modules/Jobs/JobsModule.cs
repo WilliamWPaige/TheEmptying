@@ -36,7 +36,7 @@ namespace TheEmptying.Modules.Jobs
         public const string SwitchRequiresPercentMoreSettingId = "setting.jobs.switch_requires_percent_more";
         public const string UnpaidDaysBeforeQuitSettingId = "setting.jobs.unpaid_days_before_quit";
         public const string BadMoodDaysBeforeQuitSettingId = "setting.jobs.bad_mood_days_before_quit";
-        public const string DistancePenaltyPerCellShilSettingId = "setting.jobs.distance_penalty_per_cell_shil";
+        public const string DistancePenaltyPerCellCopperSettingId = "setting.jobs.distance_penalty_per_cell_copper";
         public const string SkillGainPerWorkHourSettingId = "setting.jobs.skill_gain_per_work_hour";
         public const string FireSkillShortfallSettingId = "setting.jobs.fire_skill_shortfall";
         public const string BuilderSlotsPerSiteSettingId = "setting.jobs.builder_slots_per_site";
@@ -149,7 +149,7 @@ namespace TheEmptying.Modules.Jobs
                     if (jobs.Builder == null)
                     {
                         int count = (int)_settings.Get(BuilderSlotsPerSiteSettingId);
-                        Money pay = Money.FromShil(_settings.Get(WealthModule.SkilledWagePerDaySettingId));
+                        Money pay = Money.FromCopper(_settings.Get(WealthModule.SkilledWagePerDaySettingId));
                         jobs.Builder = NewGroup(WorkerTier.Skilled, Skill.Construction, pay, count);
                     }
                 }
@@ -185,19 +185,19 @@ namespace TheEmptying.Modules.Jobs
             if (jobs.Worker == null && type.WorkerSlots > 0)
             {
                 (WorkerTier tier, Skill skill) = ResolveWorkerTierAndSkill(typeId);
-                Money pay = Money.FromShil(_settings.Get(tier == WorkerTier.Skilled ? WealthModule.SkilledWagePerDaySettingId : WealthModule.LaborerWagePerDaySettingId));
+                Money pay = Money.FromCopper(_settings.Get(tier == WorkerTier.Skilled ? WealthModule.SkilledWagePerDaySettingId : WealthModule.LaborerWagePerDaySettingId));
                 jobs.Worker = NewGroup(tier, skill, pay, type.WorkerSlots);
             }
 
             if (jobs.Manager == null && type.ManagerSlots > 0)
             {
-                Money pay = Money.FromShil(_settings.Get(WealthModule.SkilledWagePerDaySettingId));
+                Money pay = Money.FromCopper(_settings.Get(WealthModule.SkilledWagePerDaySettingId));
                 jobs.Manager = NewGroup(WorkerTier.Skilled, Skill.Administration, pay, type.ManagerSlots);
             }
 
             if (jobs.Trainer == null && type.TrainerSlots > 0)
             {
-                Money pay = Money.FromShil(_settings.Get(WealthModule.SkilledWagePerDaySettingId));
+                Money pay = Money.FromCopper(_settings.Get(WealthModule.SkilledWagePerDaySettingId));
                 jobs.Trainer = NewGroup(WorkerTier.Skilled, Skill.Administration, pay, type.TrainerSlots);
             }
         }
@@ -523,7 +523,7 @@ namespace TheEmptying.Modules.Jobs
             }
 
             double percentMore = _settings.Get(SwitchRequiresPercentMoreSettingId);
-            double distancePenaltyPerCell = _settings.Get(DistancePenaltyPerCellShilSettingId);
+            double distancePenaltyPerCell = _settings.Get(DistancePenaltyPerCellCopperSettingId);
             int adultAge = (int)_settings.Get(PeopleModule.AdultAgeYearsSettingId);
 
             var applicantsByOpening = new Dictionary<OpeningKey, List<EntityId>>();
@@ -575,7 +575,7 @@ namespace TheEmptying.Modules.Jobs
 
                     GridPoint? workplace = _buildings.GetDoorstep(opening.Building);
                     int distance = workplace.HasValue ? ManhattanDistance(origin, workplace.Value) : 0;
-                    double score = group.PayPerDay.HundredthsOfShil - distancePenaltyPerCell * 100.0 * distance;
+                    double score = group.PayPerDay.HundredthsOfCopper - distancePenaltyPerCell * 100.0 * distance;
 
                     if (score > bestScore)
                     {
@@ -590,7 +590,7 @@ namespace TheEmptying.Modules.Jobs
                     continue;
                 }
 
-                if (isEmployed && bestPay.HundredthsOfShil < currentPay.HundredthsOfShil * (1.0 + percentMore / 100.0))
+                if (isEmployed && bestPay.HundredthsOfCopper < currentPay.HundredthsOfCopper * (1.0 + percentMore / 100.0))
                 {
                     continue; // not enough of a raise to give up a job they already have
                 }
@@ -882,7 +882,7 @@ namespace TheEmptying.Modules.Jobs
 
             writer.WriteInt((int)group.Tier);
             writer.WriteInt((int)group.Skill);
-            writer.WriteLong(group.PayPerDay.HundredthsOfShil);
+            writer.WriteLong(group.PayPerDay.HundredthsOfCopper);
             writer.WriteInt((int)group.Coverage);
             writer.WriteInt(group.MinimumOnDuty);
             writer.WriteInt(group.MinimumSkill);
@@ -932,7 +932,7 @@ namespace TheEmptying.Modules.Jobs
             {
                 Tier = (WorkerTier)reader.ReadInt(),
                 Skill = (Skill)reader.ReadInt(),
-                PayPerDay = Money.FromHundredthsOfShil(reader.ReadLong()),
+                PayPerDay = Money.FromHundredthsOfCopper(reader.ReadLong()),
                 Coverage = (JobCoverage)reader.ReadInt(),
                 MinimumOnDuty = reader.ReadInt(),
                 MinimumSkill = reader.ReadInt(),

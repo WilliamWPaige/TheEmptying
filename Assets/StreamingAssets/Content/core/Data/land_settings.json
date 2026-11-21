@@ -13,18 +13,18 @@
         { "id": "setting.land.plot_size.industrial", "valueType": "Integer", "default": 6, "minimum": 1, "maximum": 100, "category": "Land", "description": "Placeholder. An industrial plot is this many cells square." },
         { "id": "setting.land.plot_size.farm", "valueType": "Integer", "default": 12, "minimum": 1, "maximum": 100, "category": "Land", "description": "Placeholder. A farm plot is this many cells square." },
 
-        { "id": "setting.land.plot_price.residential_low", "valueType": "Number", "default": 3000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a residential low plot, in shil." },
-        { "id": "setting.land.plot_price.residential_middle", "valueType": "Number", "default": 8000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a residential middle plot, in shil." },
-        { "id": "setting.land.plot_price.residential_high", "valueType": "Number", "default": 20000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a residential high plot, in shil." },
-        { "id": "setting.land.plot_price.commercial", "valueType": "Number", "default": 6000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a commercial plot, in shil." },
-        { "id": "setting.land.plot_price.industrial", "valueType": "Number", "default": 4000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of an industrial plot, in shil." },
-        { "id": "setting.land.plot_price.farm", "valueType": "Number", "default": 2000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a farm plot, in shil." },
+        { "id": "setting.land.plot_price.residential_low", "valueType": "Number", "default": 3000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a residential low plot, in copper." },
+        { "id": "setting.land.plot_price.residential_middle", "valueType": "Number", "default": 8000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a residential middle plot, in copper." },
+        { "id": "setting.land.plot_price.residential_high", "valueType": "Number", "default": 20000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a residential high plot, in copper." },
+        { "id": "setting.land.plot_price.commercial", "valueType": "Number", "default": 6000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a commercial plot, in copper." },
+        { "id": "setting.land.plot_price.industrial", "valueType": "Number", "default": 4000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of an industrial plot, in copper." },
+        { "id": "setting.land.plot_price.farm", "valueType": "Number", "default": 2000, "minimum": 0, "maximum": 10000000, "category": "Land", "description": "Placeholder. Base price of a farm plot, in copper." },
 
-        { "id": "setting.land.tax_per_month.residential_low", "valueType": "Number", "default": 20, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a residential low plot, in shil." },
-        { "id": "setting.land.tax_per_month.residential_middle", "valueType": "Number", "default": 60, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a residential middle plot, in shil." },
-        { "id": "setting.land.tax_per_month.residential_high", "valueType": "Number", "default": 150, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a residential high plot, in shil." },
-        { "id": "setting.land.tax_per_month.commercial", "valueType": "Number", "default": 60, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a commercial plot, in shil." },
-        { "id": "setting.land.tax_per_month.industrial", "valueType": "Number", "default": 40, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for an industrial plot, in shil." },
-        { "id": "setting.land.tax_per_month.farm", "valueType": "Number", "default": 20, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a farm plot, in shil." }
+        { "id": "setting.land.tax_per_month.residential_low", "valueType": "Number", "default": 20, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a residential low plot, in copper." },
+        { "id": "setting.land.tax_per_month.residential_middle", "valueType": "Number", "default": 60, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a residential middle plot, in copper." },
+        { "id": "setting.land.tax_per_month.residential_high", "valueType": "Number", "default": 150, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a residential high plot, in copper." },
+        { "id": "setting.land.tax_per_month.commercial", "valueType": "Number", "default": 60, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a commercial plot, in copper." },
+        { "id": "setting.land.tax_per_month.industrial", "valueType": "Number", "default": 40, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for an industrial plot, in copper." },
+        { "id": "setting.land.tax_per_month.farm", "valueType": "Number", "default": 20, "minimum": 0, "maximum": 1000000, "category": "Land", "description": "Placeholder. Monthly land tax for a farm plot, in copper." }
     ]
 }

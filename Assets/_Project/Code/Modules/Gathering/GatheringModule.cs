@@ -122,6 +122,13 @@ namespace TheEmptying.Modules.Gathering
             // were building finishes, instead of sitting idle (ProcessBuild clears their task to None
             // the moment it notices the site is done) until the next morning's NewDayEvent.
             context.Subscribe(BuildingsModule.BuildingCompletedEventId, _ => AssignTasks());
+            // 3.9j: a hand test found a founder stuck idle indefinitely with a real (not None) task -
+            // their gather/build spot, once picked, is never revisited unless the task's kind
+            // changes, so a spot that turns out to have no path from here (a disconnected passable
+            // patch; grid.IsPassable alone can't tell) traps them on it forever, retrying the same
+            // dead end every hour. Re-picking the spot the moment its commute fails closes that trap
+            // within the hour instead of leaving it open for the rest of the game.
+            context.Subscribe(MapMovementModule.MoverNoPathEventId, OnMoverNoPath);
             context.RegisterSystem(new HourlySystem(this), CalendarConstants.TicksPerHour, 0, 0);
 
             RegisterCommands(context);
@@ -223,6 +230,26 @@ namespace TheEmptying.Modules.Gathering
             }
         }
 
+        /// <summary>Whether any adult, non-monarch, non-employed person currently has no gathering task at all - see UpdateHourly.</summary>
+        private bool AnyEligibleAdultIsUntasked()
+        {
+            int adultAge = (int)_settings.Get(PeopleModule.AdultAgeYearsSettingId);
+
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.People)
+            {
+                EntityId personId = row.Key;
+                PersonState person = row.Value;
+                bool eligible = person.AgeLifeYears >= adultAge && !_people.IsMonarch(personId) && !_jobs.IsEmployed(personId);
+
+                if (eligible && GetTaskKind(personId) == GatherTaskKind.None)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
         private void ClearTask(EntityId personId, string reason)
         {
             if (_tasks.TryGet(personId, out GatherTaskState task))
@@ -288,6 +315,38 @@ namespace TheEmptying.Modules.Gathering
             }
 
             return _buildings.GetDoorstep(siteId) ?? anchor;
+        }
+
+        /// <summary>
+        /// 3.9j: if the failed commute was to this person's current gather/build spot, pick a fresh
+        /// one - a passable cell isn't necessarily a reachable one (a disconnected patch, say), and
+        /// without this the same dead end would be retried every hour forever.
+        /// </summary>
+        private void OnMoverNoPath(PostedEvent posted)
+        {
+            EntityId personId = posted.Data.GetEntity("mover");
+            if (!_tasks.TryGet(personId, out GatherTaskState task) || task.Kind == GatherTaskKind.None)
+            {
+                return;
+            }
+
+            var failedGoal = new GridPoint((int)posted.Data.GetLong("goalX"), (int)posted.Data.GetLong("goalY"));
+            if (task.Spot != failedGoal)
+            {
+                return; // this failed move wasn't this person's gather/build commute
+            }
+
+            GridPoint anchor = GetStockpileAnchor();
+
+            if (task.Kind == GatherTaskKind.Build && task.TargetSite.HasValue)
+            {
+                task.Spot = FindFreeBuildSpot(personId, task.TargetSite.Value, anchor);
+            }
+            else
+            {
+                int radius = (int)_settings.Get(RadiusCellsSettingId);
+                task.Spot = FindGatherSpot(anchor, radius, OtherGatherSpots(personId)) ?? anchor;
+            }
         }
 
         /// <summary>Every spot currently claimed by another active, non-Build hand-gathering task - so gatherers spread out from each other the same way builders do.</summary>
@@ -521,6 +580,19 @@ namespace TheEmptying.Modules.Gathering
 
         private void UpdateHourly(long tick)
         {
+            // 3.9j: AssignTasks only reruns on specific triggers (a new day, a site starting or
+            // finishing, the stockpile going up) - but a founder can also become eligible again
+            // between those triggers, e.g. fired from a real job mid-day (JobsModule's unpaid-day
+            // payroll check and the player's "fire" command both act independently of those
+            // triggers). Without this, such a founder's hand-gathering task stays at None - and
+            // nothing else ever looks at them again - until the next trigger happens to fire, which
+            // could be most of a day away. Checking every hour closes that gap to at most an hour,
+            // the same granularity the rest of this system already works at.
+            if (AnyEligibleAdultIsUntasked())
+            {
+                AssignTasks();
+            }
+
             GameDate date = GameDate.FromTick(tick);
             int hour = date.Hour;
             double logHoursPerUnit = _settings.Get(HandLogHoursPerUnitSettingId);
@@ -564,6 +636,18 @@ namespace TheEmptying.Modules.Gathering
                         ProcessFarm(personId, person, task, wheatPerHarvest, skillGainPerHour, tick);
                         break;
                 }
+            }
+
+            // 3.9j: a Build task's own site can finish partway through the loop above (another
+            // builder's labor hour completes it) - that builder's own ProcessBuild call then clears
+            // them to None right here, mid-pass, before the deferred completion event (and the
+            // AssignTasks() it triggers) is delivered at the very end of this tick, well after
+            // PeopleModule's own hourly system already ran and chose this hour's activity from the
+            // stale None. Re-checking now, synchronously, fixes the task in time for that same
+            // choice instead of leaving it to next hour.
+            if (AnyEligibleAdultIsUntasked())
+            {
+                AssignTasks();
             }
         }
 

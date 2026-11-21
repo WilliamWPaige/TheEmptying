@@ -44,11 +44,11 @@ namespace TheEmptying.Tests.EditMode.Land
             sim.Step();
 
             EntityId owner = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(3000)); // exactly enough to buy, nothing left for tax
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(3000)); // exactly enough to buy, nothing left for tax
             land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(50, 50), out _, out _);
 
             EntityId leaseholder = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(leaseholder), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(leaseholder), Money.FromCopper(1000));
             land.TryLeasePlot(leaseholder, "zone.residential_low", new GridPoint(60, 60), out _, out _);
         }
 

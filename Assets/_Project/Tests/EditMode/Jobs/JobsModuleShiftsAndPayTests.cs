@@ -67,7 +67,7 @@ namespace TheEmptying.Tests.EditMode.Jobs
         {
             land.RequestSetZone(new CellRect(plotAt.X, plotAt.Y, 6, 6), "zone.commercial");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(10000));
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.commercial", plotAt, out _, out string buyError), buyError);
 
             EntityId bakeryId;
@@ -178,8 +178,8 @@ namespace TheEmptying.Tests.EditMode.Jobs
 
             StepDays(sim, 1); // one full day's shift end
 
-            Assert.Greater(wealth.GetBalance(AccountId.Person(worker)).HundredthsOfShil, workerBefore.HundredthsOfShil);
-            Assert.Less(wealth.GetBalance(AccountId.Person(owner)).HundredthsOfShil, ownerBefore.HundredthsOfShil);
+            Assert.Greater(wealth.GetBalance(AccountId.Person(worker)).HundredthsOfCopper, workerBefore.HundredthsOfCopper);
+            Assert.Less(wealth.GetBalance(AccountId.Person(owner)).HundredthsOfCopper, ownerBefore.HundredthsOfCopper);
         }
 
         [Test]
@@ -245,7 +245,7 @@ namespace TheEmptying.Tests.EditMode.Jobs
             Money workerBalanceBefore = wealth.GetBalance(AccountId.Person(worker));
             StepDays(sim, 1);
 
-            Assert.AreEqual(workerBalanceBefore.HundredthsOfShil, wealth.GetBalance(AccountId.Person(worker)).HundredthsOfShil, "A penniless crown can't pay, so the worker's balance shouldn't move.");
+            Assert.AreEqual(workerBalanceBefore.HundredthsOfCopper, wealth.GetBalance(AccountId.Person(worker)).HundredthsOfCopper, "A penniless crown can't pay, so the worker's balance shouldn't move.");
         }
 
         [Test]
@@ -267,13 +267,13 @@ namespace TheEmptying.Tests.EditMode.Jobs
             (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             EntityId storehouseId = BuildAndFinishCrownStorehouse(sim, buildings, new GridPoint(10, 10));
-            StepDays(sim, 2); // the storehouse's one worker slot opens, and a founder (top-skilled, no commute) should fill it
+            StepDays(sim, 2); // the storehouse's one worker slot opens, and a founder (no commute, nobody else around) should fill it
 
             Assert.IsTrue(jobs.TryGetJobs(storehouseId, out JobsState state));
             Assert.IsNotNull(state.Worker);
             EntityId? hired = state.Worker.Occupants[0];
             Assert.IsTrue(hired.HasValue, "Someone should have been hired into the storehouse's worker slot.");
-            Assert.IsTrue(people.IsFounder(hired.Value), "A founder should be the one hired: maxed Hauling skill, right next door.");
+            Assert.IsTrue(people.IsFounder(hired.Value), "A founder should be the one hired: right next door, with nobody else around to apply.");
 
             // Drain the crown treasury entirely, so it stays unable to pay for many days running.
             Money crownBalance = wealth.GetBalance(AccountId.Crown);

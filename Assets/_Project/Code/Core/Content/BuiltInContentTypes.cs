@@ -113,7 +113,7 @@ namespace TheEmptying.Core.Content
             var good = (Good)definition;
             CheckIdPrefix(good.Id, "good.", context);
 
-            if (good.BasePrice.HundredthsOfShil < 0)
+            if (good.BasePrice.HundredthsOfCopper < 0)
             {
                 context.ReportProblem(good.Id, "basePrice", "must not be negative.");
             }

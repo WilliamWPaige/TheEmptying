@@ -94,7 +94,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
         {
             land.RequestSetZone(new CellRect(plotAt.X, plotAt.Y, 4, 4), "zone.residential_low");
             sim.Step(); // zone requests apply on the next tick
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", plotAt, out _, out string buyError), buyError);
             Assert.IsTrue(buildingsModule.TryRequestPrivateBuilding(owner, "building.cottage", out EntityId cottageId, out string requestError), requestError);
             inventory.Add(owner, "good.plank", 40);
@@ -144,7 +144,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
 
             EntityId tenant = people.SpawnPerson(30, 30);
             inventory.Add(tenant, "good.loaf", 10000);
-            wealth.Grant(AccountId.Person(tenant), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(tenant), Money.FromCopper(1000));
 
             StepDays(sim, 1); // finds and rents the cottage, paying the first month up front
             Assert.IsFalse(people.IsHomeless(tenant));
@@ -152,7 +152,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             Money ownerBalanceBeforeSecondMonth = wealth.GetBalance(AccountId.Person(owner));
             StepMonths(sim, 1);
 
-            Assert.Greater(wealth.GetBalance(AccountId.Person(owner)).HundredthsOfShil, ownerBalanceBeforeSecondMonth.HundredthsOfShil, "The owner should have received a second month's rent.");
+            Assert.Greater(wealth.GetBalance(AccountId.Person(owner)).HundredthsOfCopper, ownerBalanceBeforeSecondMonth.HundredthsOfCopper, "The owner should have received a second month's rent.");
         }
 
         [Test]
@@ -167,7 +167,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
 
             EntityId tenant = people.SpawnPerson(30, 30);
             inventory.Add(tenant, "good.loaf", 10000);
-            wealth.Grant(AccountId.Person(tenant), Money.FromShil(140)); // exactly one month's rent, nothing left over
+            wealth.Grant(AccountId.Person(tenant), Money.FromCopper(140)); // exactly one month's rent, nothing left over
 
             StepDays(sim, 1); // finds and rents the cottage (pays the first month up front)
             Assert.IsFalse(people.IsHomeless(tenant));

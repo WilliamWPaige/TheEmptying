@@ -68,16 +68,16 @@ namespace TheEmptying.Tests.EditMode.Wealth
             using var core = new TempCoreContentCopy();
             (Simulation sim, WealthModule wealth, PeopleModule people, InventoryModule inventory) = Build(core);
 
-            sim.Settings.Set(WealthModule.LaborerWagePerDaySettingId, 10); // middle at 60*10 = 600 shil
+            sim.Settings.Set(WealthModule.LaborerWagePerDaySettingId, 10); // middle at 60*10 = 600 copper
             EntityId id = SpawnWellFedPerson(people, inventory, 30, 30);
-            wealth.Grant(AccountId.Person(id), Money.FromShil(600));
+            wealth.Grant(AccountId.Person(id), Money.FromCopper(600));
 
             StepMonths(sim, 1);
-            Assert.AreEqual(SocialClass.Middle, wealth.GetClass(id), "600 shil at wage 10 is exactly 60 days - middle class.");
+            Assert.AreEqual(SocialClass.Middle, wealth.GetClass(id), "600 copper at wage 10 is exactly 60 days - middle class.");
 
-            sim.Settings.Set(WealthModule.LaborerWagePerDaySettingId, 20); // middle now needs 1200 shil
+            sim.Settings.Set(WealthModule.LaborerWagePerDaySettingId, 20); // middle now needs 1200 copper
             StepMonths(sim, 2); // two months below, to clear the drop grace period
-            Assert.AreEqual(SocialClass.Lower, wealth.GetClass(id), "The same 600 shil is only 30 days at wage 20 - no longer middle.");
+            Assert.AreEqual(SocialClass.Lower, wealth.GetClass(id), "The same 600 copper is only 30 days at wage 20 - no longer middle.");
         }
 
         [Test]
@@ -87,8 +87,8 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation sim, WealthModule wealth, PeopleModule people, InventoryModule inventory) = Build(core);
             EntityId id = SpawnWellFedPerson(people, inventory, 30, 30);
 
-            wealth.Grant(AccountId.Person(id), Money.FromShil(2000)); // well past the upper threshold (600 days * 20 = 12000... use middle instead)
-            wealth.Grant(AccountId.Person(id), Money.FromShil(800)); // total 2800, comfortably middle (60*20=1200) but short of upper (600*20=12000)
+            wealth.Grant(AccountId.Person(id), Money.FromCopper(2000)); // well past the upper threshold (600 days * 20 = 12000... use middle instead)
+            wealth.Grant(AccountId.Person(id), Money.FromCopper(800)); // total 2800, comfortably middle (60*20=1200) but short of upper (600*20=12000)
 
             StepMonths(sim, 1);
 
@@ -103,11 +103,11 @@ namespace TheEmptying.Tests.EditMode.Wealth
             EntityId a = SpawnWellFedPerson(people, inventory, 30, 30);
             EntityId sink = SpawnWellFedPerson(people, inventory, 30, 30);
 
-            wealth.Grant(AccountId.Person(a), Money.FromShil(1500)); // middle (needs 1200 at the default wage 20)
+            wealth.Grant(AccountId.Person(a), Money.FromCopper(1500)); // middle (needs 1200 at the default wage 20)
             StepMonths(sim, 1);
             Assert.AreEqual(SocialClass.Middle, wealth.GetClass(a));
 
-            wealth.TryTransfer(AccountId.Person(a), AccountId.Person(sink), Money.FromShil(1400), TransferReason.Purchase); // down to 100, well below middle
+            wealth.TryTransfer(AccountId.Person(a), AccountId.Person(sink), Money.FromCopper(1400), TransferReason.Purchase); // down to 100, well below middle
 
             StepMonths(sim, 1);
             Assert.AreEqual(SocialClass.Middle, wealth.GetClass(a), "One month below should not drop class yet.");
@@ -140,7 +140,7 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation sim, WealthModule wealth, PeopleModule people, InventoryModule inventory) = Build(core);
 
             EntityId parent = SpawnWellFedPerson(people, inventory, 30, 30);
-            wealth.Grant(AccountId.Person(parent), Money.FromShil(1500));
+            wealth.Grant(AccountId.Person(parent), Money.FromCopper(1500));
             StepMonths(sim, 1);
             Assert.AreEqual(SocialClass.Middle, wealth.GetClass(parent));
 
@@ -176,7 +176,7 @@ namespace TheEmptying.Tests.EditMode.Wealth
             StepMonths(sim, 2); // stays lower class the whole time - no change
             Assert.AreEqual(0, changedCount);
 
-            wealth.Grant(AccountId.Person(id), Money.FromShil(1500));
+            wealth.Grant(AccountId.Person(id), Money.FromCopper(1500));
             StepMonths(sim, 1); // rises to middle - one change
             sim.Step(); // class.changed queues for the tick after the month boundary that posted it
             Assert.AreEqual(1, changedCount);
@@ -196,7 +196,7 @@ namespace TheEmptying.Tests.EditMode.Wealth
             people.TryGetPerson(id, out PersonState before);
             Assert.IsFalse(before.Needs.ContainsKey("need.comfort"));
 
-            wealth.Grant(AccountId.Person(id), Money.FromShil(1500));
+            wealth.Grant(AccountId.Person(id), Money.FromCopper(1500));
             StepMonths(sim, 1);
             Assert.AreEqual(SocialClass.Middle, wealth.GetClass(id));
 

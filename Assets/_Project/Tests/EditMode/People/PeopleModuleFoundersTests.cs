@@ -62,8 +62,14 @@ namespace TheEmptying.Tests.EditMode.People
             Assert.AreNotEqual(people.MonarchId, people.AdvisorId);
         }
 
+        private static readonly Skill[] CoreTradeSkills = { Skill.Construction, Skill.Mining, Skill.Logging, Skill.Hauling, Skill.Farming };
+
+        /// <summary>
+        /// 3.9j (user decision): founders are good but not identical. Every core trade falls in
+        /// 14-18 except the founder's one specialty (19-20); everything else falls in 5-12.
+        /// </summary>
         [Test]
-        public void Founders_StartMaxedInLaborSkills_AndAverageElsewhere()
+        public void Founders_HaveVariedCoreTradeSkills_WithOneHigherSpecialty_AndLowerSkillsElsewhere()
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, PeopleModule people, _) = Build(core);
@@ -71,13 +77,42 @@ namespace TheEmptying.Tests.EditMode.People
             foreach (var row in people.People.Where(r => r.Value.IsFounder))
             {
                 PersonState founder = row.Value;
-                Assert.AreEqual(20, founder.Skills[(int)Skill.Construction]);
-                Assert.AreEqual(20, founder.Skills[(int)Skill.Mining]);
-                Assert.AreEqual(20, founder.Skills[(int)Skill.Logging]);
-                Assert.AreEqual(20, founder.Skills[(int)Skill.Hauling]);
-                Assert.AreEqual(20, founder.Skills[(int)Skill.Farming]);
-                Assert.AreEqual(10, founder.Skills[(int)Skill.Cooking], "Everything else should be the average level.");
+                Assert.IsTrue(founder.FounderSpecialty.HasValue, "Expected every founder to have a specialty.");
+                Skill specialty = founder.FounderSpecialty.Value;
+                Assert.Contains(specialty, CoreTradeSkills, "Expected the specialty to be one of the five core trades.");
+
+                foreach (Skill trade in CoreTradeSkills)
+                {
+                    int level = founder.Skills[(int)trade];
+                    if (trade == specialty)
+                    {
+                        Assert.IsTrue(level >= 19 && level <= 20, $"Expected the specialty ({trade}) to be 19-20, was {level}.");
+                    }
+                    else
+                    {
+                        Assert.IsTrue(level >= 14 && level <= 18, $"Expected a non-specialty core trade ({trade}) to be 14-18, was {level}.");
+                    }
+                }
+
+                int cooking = founder.Skills[(int)Skill.Cooking];
+                Assert.IsTrue(cooking >= 5 && cooking <= 12, $"Expected a non-core skill to be 5-12, was {cooking}.");
             }
+        }
+
+        /// <summary>Not every founder should roll the identical specialty or the identical numbers - otherwise this is just the old "all maxed" behavior with new labels.</summary>
+        [Test]
+        public void Founders_DifferInTheirSkillRolls_NotAllIdentical()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, PeopleModule people, _) = Build(core);
+
+            var founders = people.People.Where(r => r.Value.IsFounder).Select(r => r.Value).ToList();
+
+            bool anyDifferentSpecialty = founders.Any(f => f.FounderSpecialty != founders[0].FounderSpecialty);
+            bool anyDifferentConstructionLevel = founders.Any(f => f.Skills[(int)Skill.Construction] != founders[0].Skills[(int)Skill.Construction]);
+
+            Assert.IsTrue(anyDifferentSpecialty || anyDifferentConstructionLevel,
+                "Expected at least two founders to differ in specialty or in a core trade's rolled level.");
         }
 
         [Test]
@@ -114,7 +149,7 @@ namespace TheEmptying.Tests.EditMode.People
             // Free lodging: nobody should have paid any rent to get there.
             foreach (var row in people.People.Where(r => r.Value.IsFounder))
             {
-                Assert.AreEqual(0, wealth.GetBalance(AccountId.Person(row.Key)).HundredthsOfShil,
+                Assert.AreEqual(0, wealth.GetBalance(AccountId.Person(row.Key)).HundredthsOfCopper,
                     "A founder starts and stays with no money; housing must be free.");
             }
         }

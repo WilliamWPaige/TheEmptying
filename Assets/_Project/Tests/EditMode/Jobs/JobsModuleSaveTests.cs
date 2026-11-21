@@ -43,7 +43,7 @@ namespace TheEmptying.Tests.EditMode.Jobs
             EntityId owner = sim.Entities.Create(EntityKind.Person);
             land.RequestSetZone(new CellRect(50, 50, 6, 6), "zone.commercial");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(10000));
             land.TryBuyPlot(owner, "zone.commercial", new GridPoint(50, 50), out _, out _);
 
             EntityId bakeryId;

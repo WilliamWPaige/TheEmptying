@@ -248,7 +248,8 @@ namespace TheEmptying.Presentation.People
 
             if (person.IsFounder)
             {
-                return _people.IsAdvisor(id) ? "founder, advisor" : "founder";
+                string role = _people.IsAdvisor(id) ? "founder, advisor" : "founder";
+                return person.FounderSpecialty.HasValue ? $"{role}, specialty: {PeopleModule.DescribeSkill(person.FounderSpecialty.Value)}" : role;
             }
 
             return "citizen";

@@ -127,6 +127,28 @@ namespace TheEmptying.Modules.MapMovement
             return true;
         }
 
+        /// <summary>
+        /// 3.9j: instantly repositions an existing mover to a passable cell, with no path or
+        /// movement involved - for the rare administrative case where something else (a building
+        /// going up on top of where they already stood) needs to move them out from under it right
+        /// now, not queue a walk. A mover standing on a cell that becomes occupied can never
+        /// pathfind away from it (the pathfinder requires its own start cell to be passable), so
+        /// left alone they'd be stuck there forever. False if entity isn't a mover or toCell isn't passable.
+        /// </summary>
+        public bool TryRelocateMover(EntityId entity, GridPoint toCell)
+        {
+            if (!_movers.TryGet(entity, out MoverState state) || !_grid.IsPassable(toCell))
+            {
+                return false;
+            }
+
+            state.Path.Clear();
+            state.Destination = null;
+            state.HasPendingRequest = false;
+            (state.X, state.Y) = _grid.CellCenterWorldPosition(toCell);
+            return true;
+        }
+
         public bool IsMover(EntityId entity) => _movers.Has(entity);
 
         /// <summary>This mover's current destination cell, if it's walking anywhere right now.</summary>

@@ -43,7 +43,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             EntityId owner = sim.Entities.Create(EntityKind.Person);
             land.RequestSetZone(new CellRect(50, 50, 4, 4), "zone.residential_low");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
             land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(50, 50), out _, out _);
             inventory.Add(owner, "good.plank", 40);
             inventory.Add(owner, "good.stone", 10);
@@ -56,10 +56,10 @@ namespace TheEmptying.Tests.EditMode.Buildings
             Assert.IsTrue(buildingsModule.TryDeliverGoods(cottageId, "good.stone", 10, out string stoneError), stoneError);
             Assert.IsTrue(buildingsModule.TryAddLaborHours(cottageId, 50, out string laborError), laborError);
 
-            // Cottage: 40 plank (2 shil each) + 10 stone (2.5 shil each) = 80 + 25 = 105 shil.
+            // Cottage: 40 plank (2 copper each) + 10 stone (2.5 copper each) = 80 + 25 = 105 copper.
             // Delivering the goods removed them from the owner's inventory but that inventory has no wealth
             // value of its own here, so the only change to total wealth is the construction value appearing.
-            Assert.AreEqual(wealthBeforeBuilding + Money.FromShil(105), wealth.GetWealth(owner));
+            Assert.AreEqual(wealthBeforeBuilding + Money.FromCopper(105), wealth.GetWealth(owner));
         }
 
         [Test]
@@ -71,7 +71,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             EntityId owner = sim.Entities.Create(EntityKind.Person);
             land.RequestSetZone(new CellRect(50, 50, 4, 4), "zone.residential_low");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
             land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(50, 50), out _, out _);
             inventory.Add(owner, "good.plank", 20);
 
@@ -80,8 +80,8 @@ namespace TheEmptying.Tests.EditMode.Buildings
             buildingsModule.TryRequestPrivateBuilding(owner, "building.cottage", out EntityId cottageId, out _);
             Assert.IsTrue(buildingsModule.TryDeliverGoods(cottageId, "good.plank", 20, out string plankError), plankError); // half the planks, no stone, no labor yet
 
-            // 20 plank at 2 shil each = 40 shil of value delivered so far; the undelivered stone counts for nothing.
-            Assert.AreEqual(wealthBeforeBuilding + Money.FromShil(40), wealth.GetWealth(owner));
+            // 20 plank at 2 copper each = 40 copper of value delivered so far; the undelivered stone counts for nothing.
+            Assert.AreEqual(wealthBeforeBuilding + Money.FromCopper(40), wealth.GetWealth(owner));
         }
     }
 }

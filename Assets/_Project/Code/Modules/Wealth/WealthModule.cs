@@ -24,13 +24,13 @@ namespace TheEmptying.Modules.Wealth
     {
         public const string ModuleId = "module.wealth";
 
-        public const string CrownStartingShilSettingId = "setting.wealth.crown_starting_shil";
-        public const string ImmigrantStartingShilMinSettingId = "setting.wealth.immigrant_starting_shil_min";
-        public const string ImmigrantStartingShilMaxSettingId = "setting.wealth.immigrant_starting_shil_max";
-        public const string LaborerWagePerDaySettingId = "setting.wealth.laborer_wage_per_day_shil";
-        public const string SkilledWagePerDaySettingId = "setting.wealth.skilled_wage_per_day_shil";
-        public const string ExpertWagePerDaySettingId = "setting.wealth.expert_wage_per_day_shil";
-        public const string SoldierWagePerDaySettingId = "setting.wealth.soldier_wage_per_day_shil";
+        public const string CrownStartingCopperSettingId = "setting.wealth.crown_starting_copper";
+        public const string ImmigrantStartingCopperMinSettingId = "setting.wealth.immigrant_starting_copper_min";
+        public const string ImmigrantStartingCopperMaxSettingId = "setting.wealth.immigrant_starting_copper_max";
+        public const string LaborerWagePerDaySettingId = "setting.wealth.laborer_wage_per_day_copper";
+        public const string SkilledWagePerDaySettingId = "setting.wealth.skilled_wage_per_day_copper";
+        public const string ExpertWagePerDaySettingId = "setting.wealth.expert_wage_per_day_copper";
+        public const string SoldierWagePerDaySettingId = "setting.wealth.soldier_wage_per_day_copper";
         public const string MiddleClassWealthDaysSettingId = "setting.wealth.middle_class_wealth_days";
         public const string UpperClassWealthDaysSettingId = "setting.wealth.upper_class_wealth_days";
         public const string MonthsBelowBeforeDropSettingId = "setting.wealth.months_below_before_drop";
@@ -87,10 +87,10 @@ namespace TheEmptying.Modules.Wealth
 
             if (!context.IsLoading)
             {
-                _crownAccount.Balance = Money.FromShil(_settings.Get(CrownStartingShilSettingId));
+                _crownAccount.Balance = Money.FromCopper(_settings.Get(CrownStartingCopperSettingId));
 
-                int min = (int)_settings.Get(ImmigrantStartingShilMinSettingId);
-                int max = (int)_settings.Get(ImmigrantStartingShilMaxSettingId);
+                int min = (int)_settings.Get(ImmigrantStartingCopperMinSettingId);
+                int max = (int)_settings.Get(ImmigrantStartingCopperMaxSettingId);
                 foreach (KeyValuePair<EntityId, PersonState> row in _people.People)
                 {
                     EntityId id = row.Key;
@@ -103,7 +103,7 @@ namespace TheEmptying.Modules.Wealth
 
                     var state = new PersonWealthState
                     {
-                        Balance = isFounder ? Money.Zero : Money.FromShil(_random.NextInt(min, max + 1)),
+                        Balance = isFounder ? Money.Zero : Money.FromCopper(_random.NextInt(min, max + 1)),
                         Class = startingClass,
                         Ambition = RollAmbition()
                     };
@@ -184,7 +184,7 @@ namespace TheEmptying.Modules.Wealth
         /// <summary>Moves money from one account to another. False, with nothing changed, if the payer can't afford it.</summary>
         public bool TryTransfer(AccountId from, AccountId to, Money amount, TransferReason reason)
         {
-            if (amount.HundredthsOfShil <= 0)
+            if (amount.HundredthsOfCopper <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(amount), "Transfer amount must be positive.");
             }
@@ -204,7 +204,7 @@ namespace TheEmptying.Modules.Wealth
         /// <summary>Credits an account from nowhere (an arrival grant, or the "givemoney" test command). No payer, so it can't fail.</summary>
         public void Grant(AccountId to, Money amount, TransferReason reason = TransferReason.Grant)
         {
-            if (amount.HundredthsOfShil <= 0)
+            if (amount.HundredthsOfCopper <= 0)
             {
                 throw new ArgumentOutOfRangeException(nameof(amount), "Grant amount must be positive.");
             }
@@ -231,7 +231,7 @@ namespace TheEmptying.Modules.Wealth
         private void OnPersonDied(EntityId person)
         {
             Money balance = GetBalance(AccountId.Person(person));
-            if (balance.HundredthsOfShil > 0)
+            if (balance.HundredthsOfCopper > 0)
             {
                 TryTransfer(AccountId.Person(person), AccountId.Crown, balance, TransferReason.Other);
             }
@@ -250,7 +250,7 @@ namespace TheEmptying.Modules.Wealth
                 EnsureAccount(row.Key);
             }
 
-            Money laborerWage = Money.FromShil(_settings.Get(LaborerWagePerDaySettingId));
+            Money laborerWage = Money.FromCopper(_settings.Get(LaborerWagePerDaySettingId));
             double middleDays = _settings.Get(MiddleClassWealthDaysSettingId);
             double upperDays = _settings.Get(UpperClassWealthDaysSettingId);
             int monthsBeforeDrop = (int)_settings.Get(MonthsBelowBeforeDropSettingId);
@@ -330,12 +330,12 @@ namespace TheEmptying.Modules.Wealth
 
         private static SocialClass WealthTier(Money wealth, Money laborerWage, double middleDays, double upperDays)
         {
-            if (laborerWage.HundredthsOfShil <= 0)
+            if (laborerWage.HundredthsOfCopper <= 0)
             {
                 return SocialClass.Lower;
             }
 
-            double days = (double)wealth.HundredthsOfShil / laborerWage.HundredthsOfShil;
+            double days = (double)wealth.HundredthsOfCopper / laborerWage.HundredthsOfCopper;
             if (days >= upperDays)
             {
                 return SocialClass.Upper;
@@ -388,11 +388,11 @@ namespace TheEmptying.Modules.Wealth
                 return sb.ToString().TrimEnd();
             }));
 
-            context.RegisterCommand(new ConsoleCommand("givemoney", "givemoney <entityId|crown> <shil> - grants money, for testing.", args =>
+            context.RegisterCommand(new ConsoleCommand("givemoney", "givemoney <entityId|crown> <copper> - grants money, for testing.", args =>
             {
-                if (args.Length != 2 || !ConsoleArgs.TryParseDouble(args[1], out double shil) || shil <= 0)
+                if (args.Length != 2 || !ConsoleArgs.TryParseDouble(args[1], out double copper) || copper <= 0)
                 {
-                    return "Usage: givemoney <entityId|crown> <shil>";
+                    return "Usage: givemoney <entityId|crown> <copper>";
                 }
 
                 AccountId target;
@@ -406,11 +406,11 @@ namespace TheEmptying.Modules.Wealth
                 }
                 else
                 {
-                    return "Usage: givemoney <entityId|crown> <shil>";
+                    return "Usage: givemoney <entityId|crown> <copper>";
                 }
 
-                Grant(target, Money.FromShil(shil));
-                return $"Granted {Money.FromShil(shil)} to {(target.IsCrown ? "crown" : target.Entity.ToString())}.";
+                Grant(target, Money.FromCopper(copper));
+                return $"Granted {Money.FromCopper(copper)} to {(target.IsCrown ? "crown" : target.Entity.ToString())}.";
             }));
         }
 
@@ -433,7 +433,7 @@ namespace TheEmptying.Modules.Wealth
 
         public void Write(SaveWriter writer)
         {
-            writer.WriteLong(_crownAccount.Balance.HundredthsOfShil);
+            writer.WriteLong(_crownAccount.Balance.HundredthsOfCopper);
             WriteLedger(writer, _crownAccount.Current);
             WriteLedger(writer, _crownAccount.Previous);
 
@@ -443,7 +443,7 @@ namespace TheEmptying.Modules.Wealth
                 writer.WriteEntityId(row.Key);
                 PersonWealthState state = row.Value;
 
-                writer.WriteLong(state.Balance.HundredthsOfShil);
+                writer.WriteLong(state.Balance.HundredthsOfCopper);
                 WriteLedger(writer, state.Current);
                 WriteLedger(writer, state.Previous);
                 writer.WriteInt((int)state.Class);
@@ -459,7 +459,7 @@ namespace TheEmptying.Modules.Wealth
 
         public void Read(SaveReader reader, int savedVersion)
         {
-            _crownAccount.Balance = Money.FromHundredthsOfShil(reader.ReadLong());
+            _crownAccount.Balance = Money.FromHundredthsOfCopper(reader.ReadLong());
             _crownAccount.Current = ReadLedger(reader);
             _crownAccount.Previous = ReadLedger(reader);
 
@@ -469,7 +469,7 @@ namespace TheEmptying.Modules.Wealth
                 EntityId id = reader.ReadEntityId();
                 var state = new PersonWealthState
                 {
-                    Balance = Money.FromHundredthsOfShil(reader.ReadLong()),
+                    Balance = Money.FromHundredthsOfCopper(reader.ReadLong()),
                     Current = ReadLedger(reader),
                     Previous = ReadLedger(reader),
                     Class = (SocialClass)reader.ReadInt(),
@@ -490,8 +490,8 @@ namespace TheEmptying.Modules.Wealth
         {
             foreach (TransferReason reason in AllReasons)
             {
-                writer.WriteLong(ledger.In.TryGetValue(reason, out Money i) ? i.HundredthsOfShil : 0);
-                writer.WriteLong(ledger.Out.TryGetValue(reason, out Money o) ? o.HundredthsOfShil : 0);
+                writer.WriteLong(ledger.In.TryGetValue(reason, out Money i) ? i.HundredthsOfCopper : 0);
+                writer.WriteLong(ledger.Out.TryGetValue(reason, out Money o) ? o.HundredthsOfCopper : 0);
             }
         }
 
@@ -504,12 +504,12 @@ namespace TheEmptying.Modules.Wealth
                 long outHundredths = reader.ReadLong();
                 if (inHundredths != 0)
                 {
-                    ledger.In[reason] = Money.FromHundredthsOfShil(inHundredths);
+                    ledger.In[reason] = Money.FromHundredthsOfCopper(inHundredths);
                 }
 
                 if (outHundredths != 0)
                 {
-                    ledger.Out[reason] = Money.FromHundredthsOfShil(outHundredths);
+                    ledger.Out[reason] = Money.FromHundredthsOfCopper(outHundredths);
                 }
             }
 

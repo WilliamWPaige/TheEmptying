@@ -60,8 +60,13 @@ namespace TheEmptying.Tests.EditMode.Market
 
             // SpawnPerson's arguments are an age range, not a position - it lands on a random passable
             // cell - so the two sellers are placed relative to wherever the person actually spawned.
-            EntityId person = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(person), Money.FromShil(1000));
+            // Below the adult age on purpose: an adult, jobless person here would get swept into a
+            // hand-gathering task the moment FinishMarket's storehouse goes up (any jobless adult is
+            // eligible), physically relocating them before the day is out and making "near"/"far"
+            // meaningless by the time the purchase happens. A child has no such task to be swept into,
+            // and hunger/shopping aren't gated by age, so it isolates exactly the behavior under test.
+            EntityId person = people.SpawnPerson(10, 10);
+            wealth.Grant(AccountId.Person(person), Money.FromCopper(1000));
             inventory.TryRemove(person, "good.loaf", inventory.GetCount(person, "good.loaf")); // start with none, below the 2-day target
 
             GridPoint personCell = mapMovement.GetCell(person);
@@ -100,7 +105,7 @@ namespace TheEmptying.Tests.EditMode.Market
             inventory.Add(shop, "good.loaf", 10000);
 
             EntityId person = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(person), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(person), Money.FromCopper(1000));
             inventory.Add(person, "good.loaf", 10000); // food isn't the thing under test
             wealth.SetJobTierProvider(entity => entity == person ? SocialClass.Middle : SocialClass.Lower);
 
@@ -125,7 +130,7 @@ namespace TheEmptying.Tests.EditMode.Market
             inventory.Add(shop, "good.loaf", 10000);
 
             EntityId person = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(person), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(person), Money.FromCopper(1000));
             inventory.Add(person, "good.loaf", 10000);
 
             StepDays(sim, 3);

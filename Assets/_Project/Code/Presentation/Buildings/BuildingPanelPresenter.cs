@@ -276,7 +276,7 @@ namespace TheEmptying.Presentation.Buildings
 
         private void AddEditControls(VisualElement box, EntityId buildingId, JobSlotType type, JobSlotGroup group)
         {
-            var payField = new IntegerField { label = "Pay/day (shil)", value = (int)(group.PayPerDay.HundredthsOfShil / 100) };
+            var payField = new IntegerField { label = "Pay/day (copper)", value = (int)(group.PayPerDay.HundredthsOfCopper / 100) };
             payField.AddToClassList("building-panel-edit-row");
             box.Add(payField);
 
@@ -309,7 +309,7 @@ namespace TheEmptying.Presentation.Buildings
                 _jobs.TrySetGovernmentSlotConfig(
                     buildingId,
                     type,
-                    Core.Economy.Money.FromShil(payField.value),
+                    Core.Economy.Money.FromCopper(payField.value),
                     (JobCoverage)coverageField.value,
                     minOnDutyField.value,
                     minSkillField.value,

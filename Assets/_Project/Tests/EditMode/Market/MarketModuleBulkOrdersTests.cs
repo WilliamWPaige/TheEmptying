@@ -95,7 +95,7 @@ namespace TheEmptying.Tests.EditMode.Market
             EntityId seller = PlaceStockedSeller(buildings, inventory, new GridPoint(20, 20), 1000, 1000);
 
             EntityId owner = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
             land.RequestSetZone(new CellRect(40, 40, 4, 4), "zone.residential_low");
             sim.Step();
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(40, 40), out _, out string buyError), buyError);
@@ -134,7 +134,7 @@ namespace TheEmptying.Tests.EditMode.Market
             EntityId seller = PlaceStockedSeller(buildings, inventory, new GridPoint(20, 20), 1000, 1000);
             inventory.Add(storehouseId, "good.plank", 10); // only enough for a sixth of the lodging's plank need
             inventory.Add(storehouseId, "good.stone", 20); // enough for all of its stone need
-            wealth.Grant(AccountId.Crown, Money.FromShil(5000));
+            wealth.Grant(AccountId.Crown, Money.FromCopper(5000));
 
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(150, 150), out EntityId lodgingId, out string placeError), placeError);
 
@@ -215,7 +215,7 @@ namespace TheEmptying.Tests.EditMode.Market
             PlaceStockedSeller(buildings, inventory, new GridPoint(20, 20), 1000, 1000);
 
             EntityId owner = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
             land.RequestSetZone(new CellRect(40, 40, 4, 4), "zone.residential_low");
             sim.Step();
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(40, 40), out _, out string buyError), buyError);

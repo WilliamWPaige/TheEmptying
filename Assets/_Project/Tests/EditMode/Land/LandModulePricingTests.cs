@@ -40,7 +40,7 @@ namespace TheEmptying.Tests.EditMode.Land
             (Simulation sim, LandModule land) = Build(core);
 
             var farRect = new CellRect(2, 2, 4, 4);
-            Assert.AreEqual(Money.FromShil(3000), land.GetCurrentPrice("zone.residential_low", farRect));
+            Assert.AreEqual(Money.FromCopper(3000), land.GetCurrentPrice("zone.residential_low", farRect));
         }
 
         [Test]
@@ -56,9 +56,9 @@ namespace TheEmptying.Tests.EditMode.Land
             Money adjacentPrice = land.GetCurrentPrice("zone.residential_low", adjacentRect);
             Money farPrice = land.GetCurrentPrice("zone.residential_low", farRect);
 
-            Assert.Greater(adjacentPrice.HundredthsOfShil, farPrice.HundredthsOfShil, "A plot right next to the crown grounds should cost more than one far away.");
-            Assert.AreEqual(Money.FromShil(3000), farPrice);
-            Assert.LessOrEqual(adjacentPrice.HundredthsOfShil, Money.FromShil(3000).ApplyPercent(50.0).HundredthsOfShil, "The modifier should never exceed the configured maximum.");
+            Assert.Greater(adjacentPrice.HundredthsOfCopper, farPrice.HundredthsOfCopper, "A plot right next to the crown grounds should cost more than one far away.");
+            Assert.AreEqual(Money.FromCopper(3000), farPrice);
+            Assert.LessOrEqual(adjacentPrice.HundredthsOfCopper, Money.FromCopper(3000).ApplyPercent(50.0).HundredthsOfCopper, "The modifier should never exceed the configured maximum.");
         }
 
         [Test]
@@ -70,7 +70,7 @@ namespace TheEmptying.Tests.EditMode.Land
             sim.Settings.Set("setting.land.plot_price.residential_low", 5000);
 
             var farRect = new CellRect(2, 2, 4, 4);
-            Assert.AreEqual(Money.FromShil(5000), land.GetCurrentPrice("zone.residential_low", farRect));
+            Assert.AreEqual(Money.FromCopper(5000), land.GetCurrentPrice("zone.residential_low", farRect));
         }
     }
 }

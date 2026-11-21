@@ -48,7 +48,7 @@ namespace TheEmptying.Tests.EditMode.Startup
             (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             EntityId owner = simulation.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(2_000_000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(2_000_000));
 
             bool discovered = false;
             for (int i = 0; i < BuildingCount; i++)

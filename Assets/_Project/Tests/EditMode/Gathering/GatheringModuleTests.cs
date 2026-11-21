@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
+using TheEmptying.Core.Console;
 using TheEmptying.Core.Economy;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
@@ -43,31 +44,108 @@ namespace TheEmptying.Tests.EditMode.Gathering
         }
 
         /// <summary>
-        /// 3.9i: a hand test found founders doing about an hour of work, then idle, then wandering,
-        /// then work again - caused by OnMoverArrived unconditionally stamping Idle on arrival at
-        /// work (instead of promoting straight to Working), leaving a transient Idle window that
-        /// idle milling could grab and wander away with. Traces every founder's activity, tick by
-        /// tick, through a full subsequent workday (after letting the first day settle the initial
-        /// task assignment and commute) and logs it hour by hour.
+        /// 3.9i/3.9j: a hand test on 3.9i found founders doing about an hour of work, then idle, then
+        /// wandering, then work again - fixed in 3.9i for the OnMoverArrived/idle-milling cause, but
+        /// that fix's own test seeded 10,000 loaves, masking a second, independent cause a 3.9j hand
+        /// test on a REAL new game (504 starting loaves, counted food-short almost immediately) then
+        /// found: a founder who becomes ineligible for a hand-gathering task outside of AssignTasks'
+        /// own trigger events (a real job firing them mid-day, rather than at the next day boundary)
+        /// keeps GatherTaskKind.None - and nothing ever looks at them again - until the next trigger,
+        /// which can be most of a day away. Traces every founder, tick by tick, through two full
+        /// days from a true default start (no seeded stock at all), treating "no task at all while
+        /// eligible and on shift" as a gap in its own right, not just "doing the wrong activity".
         /// </summary>
         [Test]
-        public void Founders_WorkSteadilyThroughTheWholeShift_NoIdleOrWanderingGaps()
+        public void Founders_WorkSteadilyThroughTheWholeShift_TrueDefaultStart_NoBuildingPlaced()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, _, _, _, PeopleModule people, JobsModule jobs) = Build(core);
 
-            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
-            inventory.Add(storehouseId, "good.loaf", 10000); // food isn't short: every founder gathers material, none farm
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out _, out string error), error);
 
+            AssertNoIdleOrUntaskedGapsOverTwoDays(sim, gathering, people, jobs);
+        }
+
+        /// <summary>
+        /// 3.9j: a gather/build spot, once picked, is never revisited unless the task's kind changes -
+        /// a chosen cell that's passable but unreachable (a disconnected patch, say) traps a founder
+        /// idle forever once their commute fails. Forces exactly that by walling off a founder's
+        /// already-assigned spot on all eight sides (passable itself, but now cut off), then confirms
+        /// a failed commute re-picks the spot instead of leaving them stuck on the same dead end.
+        /// </summary>
+        [Test]
+        public void GatherSpot_UnreachableByPath_IsRepickedAfterTheFailedCommute_NotStuckForever()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out _, out string error), error);
+
+            EntityId someFounder = people.People.First(row => people.IsFounder(row.Key)).Key;
+            sim.Step(); // let the initial task assignment happen
+
+            GridPoint spot = gathering.GetLocation(someFounder).Value;
+            for (int dx = -1; dx <= 1; dx++)
+            {
+                for (int dy = -1; dy <= 1; dy++)
+                {
+                    if (dx != 0 || dy != 0)
+                    {
+                        mapMovement.Grid.SetWalkable(new GridPoint(spot.X + dx, spot.Y + dy), false);
+                    }
+                }
+            }
+
+            mapMovement.TryMoveTo(someFounder, spot);
+
+            for (long i = 0; i < 5 && gathering.GetLocation(someFounder) == spot; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.AreNotEqual(spot, gathering.GetLocation(someFounder), "Expected a fresh spot to be picked after the commute to the walled-off one failed.");
+        }
+
+        /// <summary>The user's actual case: the stockpile plus one building placed, from a true default start.</summary>
+        [Test]
+        public void Founders_WorkSteadilyThroughTheWholeShift_TrueDefaultStart_OneBuildingPlaced()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, _, _, _, PeopleModule people, JobsModule jobs) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out _, out string error), error);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out _, out string placeError), placeError);
+
+            AssertNoIdleOrUntaskedGapsOverTwoDays(sim, gathering, people, jobs);
+        }
+
+        /// <summary>
+        /// Traces every founder hour by hour over two full days and fails on any hour, during that
+        /// founder's work shift, where they are both non-employed and either (a) have no
+        /// hand-gathering task at all, or (b) have one but aren't actually acting on it.
+        /// </summary>
+        private static void AssertNoIdleOrUntaskedGapsOverTwoDays(Simulation sim, GatheringModule gathering, PeopleModule people, JobsModule jobs)
+        {
             int dayStart = (int)sim.Settings.Get(JobsModule.DayShiftStartHourSettingId);
             int dayEnd = (int)sim.Settings.Get(JobsModule.DayShiftEndHourSettingId);
 
             EntityId[] founderIds = people.People.Where(row => people.IsFounder(row.Key)).Select(row => row.Key).ToArray();
 
-            // Let the first day settle (initial task assignment, the first commute to a gather spot)
-            // before tracing a clean, already-established workday - this test is about steadiness
-            // during an ongoing shift, not the one-time startup lag before the first hourly
-            // ChooseActivity call ever runs.
+            // Let the first (shorter, noon-start) day settle - the very first task assignment lands
+            // mid-tick, one calendar hour before ChooseActivity's first-ever call starts the commute -
+            // before tracing two full, already-established workdays. That one-hour startup lag is an
+            // accepted artifact of the hourly ChooseActivity cadence, not the gap this test is after.
             for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
             {
                 sim.Step();
@@ -76,7 +154,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
             var gaps = new List<string>();
             int lastLoggedHour = -1;
 
-            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 2; i++)
             {
                 sim.Step();
                 GameDate date = GameDate.FromTick(sim.Clock.CurrentTick);
@@ -90,7 +168,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
                     foreach (EntityId id in founderIds)
                     {
                         people.TryGetPerson(id, out PersonState person);
-                        TestContext.WriteLine($"hour {date.Hour:D2}: {id} activity={person.Activity}, task={gathering.GetTaskKind(id)}");
+                        TestContext.WriteLine($"day {date.DayOfMonth} hour {date.Hour:D2}: {id} activity={person.Activity}, task={gathering.GetTaskKind(id)}, employed={jobs.IsEmployed(id)}");
                     }
                 }
 
@@ -101,8 +179,15 @@ namespace TheEmptying.Tests.EditMode.Gathering
 
                 foreach (EntityId id in founderIds)
                 {
-                    if (gathering.GetTaskKind(id) == GatherTaskKind.None)
+                    if (jobs.IsEmployed(id))
                     {
+                        continue; // a real job's own shift governs them instead - not this check's concern
+                    }
+
+                    GatherTaskKind task = gathering.GetTaskKind(id);
+                    if (task == GatherTaskKind.None)
+                    {
+                        gaps.Add($"tick {sim.Clock.CurrentTick} (day {date.DayOfMonth} hour {date.Hour}): {id} has no gathering task at all while on shift (idle reason: \"{gathering.DescribeIdleReason(id)}\").");
                         continue;
                     }
 
@@ -115,12 +200,62 @@ namespace TheEmptying.Tests.EditMode.Gathering
 
                     if (!okay)
                     {
-                        gaps.Add($"tick {sim.Clock.CurrentTick} (hour {date.Hour}): {id} was {person.Activity} while on shift with a {gathering.GetTaskKind(id)} task.");
+                        gaps.Add($"tick {sim.Clock.CurrentTick} (day {date.DayOfMonth} hour {date.Hour}): {id} was {person.Activity} while on shift with a {task} task.");
                     }
                 }
             }
 
-            Assert.IsEmpty(gaps, $"Expected no idle/wandering gaps during work hours:\n{string.Join("\n", gaps)}");
+            Assert.IsEmpty(gaps, $"Expected no idle/untasked gaps during work hours:\n{string.Join("\n", gaps)}");
+        }
+
+        /// <summary>
+        /// 3.9j: the real cause the hand test's panel showed ("task: none", nothing farming or
+        /// waiting for a harvest) - a founder fired from a real job outside of AssignTasks' own
+        /// trigger events (here, the player's "fire" console command, mid-shift) used to keep
+        /// GatherTaskKind.None for the rest of the day, since nothing re-ran AssignTasks until the
+        /// next morning. Fixed by having GatheringModule's own hourly system notice and self-heal
+        /// within the hour.
+        /// </summary>
+        [Test]
+        public void FounderFiredFromARealJob_MidDay_GetsAHandGatheringTaskWithinTheHour_NotNextMorning()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, JobsModule jobs) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            inventory.Add(storehouseId, "good.plank", 1000);
+            inventory.Add(storehouseId, "good.stone", 1000);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(50, 50), out _, out string placeError), placeError);
+
+            EntityId? firedFounder = null;
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 5 && firedFounder == null; i++)
+            {
+                sim.Step();
+                foreach (KeyValuePair<EntityId, PersonState> row in people.People)
+                {
+                    if (people.IsFounder(row.Key) && jobs.IsEmployed(row.Key))
+                    {
+                        firedFounder = row.Key;
+                        break;
+                    }
+                }
+            }
+
+            Assert.IsNotNull(firedFounder, "Setup: expected at least one founder to have taken a real job within 5 days.");
+
+            ConsoleCommand fireCommand = sim.Commands.All.First(c => c.Name == "fire");
+            string result = fireCommand.Handler(new[] { firedFounder.Value.ToString() });
+            Assert.IsFalse(result.Contains("doesn't hold a job"), $"Setup: expected the fire command to succeed: {result}");
+            Assert.IsFalse(jobs.IsEmployed(firedFounder.Value), "Setup: expected the founder to no longer be employed right after firing.");
+
+            // Well under a day - the hourly self-heal, not the next morning's NewDayEvent.
+            for (long i = 0; i < CalendarConstants.TicksPerHour * 2; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.AreNotEqual(GatherTaskKind.None, gathering.GetTaskKind(firedFounder.Value),
+                "Expected the just-fired founder to already have a hand-gathering task again, not stay at None until the next morning.");
         }
 
         [Test]
@@ -462,7 +597,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
 
             Assert.Greater(inventory.GetCount(storehouseId, "good.log"), 0,
                 "The crown should have bought at least one log from the jobless gatherer, landing it in the storehouse.");
-            Assert.Greater(wealth.GetBalance(AccountId.Person(gatherer)).HundredthsOfShil, 0,
+            Assert.Greater(wealth.GetBalance(AccountId.Person(gatherer)).HundredthsOfCopper, 0,
                 "The gatherer should have been paid at the market price for what the crown bought.");
         }
 

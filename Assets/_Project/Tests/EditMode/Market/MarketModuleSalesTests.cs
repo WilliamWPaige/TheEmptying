@@ -74,7 +74,7 @@ namespace TheEmptying.Tests.EditMode.Market
             inventory.Add(shop, "good.loaf", 10);
 
             EntityId buyer = people.SpawnPerson(10, 10); // starts with some automatic food provisions
-            wealth.Grant(AccountId.Person(buyer), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(buyer), Money.FromCopper(1000));
             int buyerLoavesBefore = inventory.GetCount(buyer, "good.loaf");
 
             Money crownBefore = wealth.GetBalance(AccountId.Crown);
@@ -86,7 +86,7 @@ namespace TheEmptying.Tests.EditMode.Market
 
             // The market/crown building has no owner, so the crown is both seller and tax collector here -
             // use a privately-owned shop below to see the tax actually leave the seller.
-            Assert.Greater(wealth.GetBalance(AccountId.Crown).HundredthsOfShil, crownBefore.HundredthsOfShil);
+            Assert.Greater(wealth.GetBalance(AccountId.Crown).HundredthsOfCopper, crownBefore.HundredthsOfCopper);
         }
 
         [Test]
@@ -98,7 +98,7 @@ namespace TheEmptying.Tests.EditMode.Market
             // Market treats any complete building's own inventory as a shop - no separate
             // registration - so a plain private cottage stands in for a business here.
             EntityId owner = people.SpawnPerson(10, 10);
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
             inventory.Add(owner, "good.loaf", 10000);
             inventory.Add(owner, "good.plank", 40);
             inventory.Add(owner, "good.stone", 10);
@@ -114,7 +114,7 @@ namespace TheEmptying.Tests.EditMode.Market
             inventory.Add(cottageId, "good.furniture", 5);
 
             EntityId buyer = people.SpawnPerson(10, 10);
-            wealth.Grant(AccountId.Person(buyer), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(buyer), Money.FromCopper(1000));
 
             Money ownerBefore = wealth.GetBalance(AccountId.Person(owner));
             Money crownBefore = wealth.GetBalance(AccountId.Crown);
@@ -127,9 +127,9 @@ namespace TheEmptying.Tests.EditMode.Market
             Money crownGain = wealth.GetBalance(AccountId.Crown) - crownBefore;
             Money totalCost = price * 2;
 
-            Assert.Greater(ownerGain.HundredthsOfShil, 0, "The owner should be paid.");
-            Assert.Greater(crownGain.HundredthsOfShil, 0, "Sales tax should reach the crown.");
-            Assert.AreEqual(totalCost.HundredthsOfShil, ownerGain.HundredthsOfShil + crownGain.HundredthsOfShil, "The full price should split between the owner and the crown's tax.");
+            Assert.Greater(ownerGain.HundredthsOfCopper, 0, "The owner should be paid.");
+            Assert.Greater(crownGain.HundredthsOfCopper, 0, "Sales tax should reach the crown.");
+            Assert.AreEqual(totalCost.HundredthsOfCopper, ownerGain.HundredthsOfCopper + crownGain.HundredthsOfCopper, "The full price should split between the owner and the crown's tax.");
         }
 
         [Test]
@@ -141,7 +141,7 @@ namespace TheEmptying.Tests.EditMode.Market
             EntityId marketBuildingId = PlaceCompleteMarket(buildings, inventory, new GridPoint(10, 10));
 
             EntityId renter = people.SpawnPerson(10, 10);
-            wealth.Grant(AccountId.Person(renter), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(renter), Money.FromCopper(5000));
             inventory.Add(renter, "good.furniture", 10);
 
             Assert.IsTrue(market.TryRentStall(marketBuildingId, 0, renter, out string rentError), rentError);
@@ -149,7 +149,7 @@ namespace TheEmptying.Tests.EditMode.Market
             Assert.AreEqual(5, inventory.GetCount(renter, "good.furniture"));
 
             EntityId buyer = people.SpawnPerson(10, 10);
-            wealth.Grant(AccountId.Person(buyer), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(buyer), Money.FromCopper(1000));
 
             Money renterBalanceBefore = wealth.GetBalance(AccountId.Person(renter));
             Money crownBefore = wealth.GetBalance(AccountId.Crown);
@@ -158,8 +158,8 @@ namespace TheEmptying.Tests.EditMode.Market
             Assert.AreEqual(2, bought);
             Assert.AreEqual(2, inventory.GetCount(buyer, "good.furniture"));
 
-            Assert.Greater(wealth.GetBalance(AccountId.Person(renter)).HundredthsOfShil, renterBalanceBefore.HundredthsOfShil, "The stall's renter should be paid.");
-            Assert.Greater(wealth.GetBalance(AccountId.Crown).HundredthsOfShil, crownBefore.HundredthsOfShil, "Sales tax should reach the crown.");
+            Assert.Greater(wealth.GetBalance(AccountId.Person(renter)).HundredthsOfCopper, renterBalanceBefore.HundredthsOfCopper, "The stall's renter should be paid.");
+            Assert.Greater(wealth.GetBalance(AccountId.Crown).HundredthsOfCopper, crownBefore.HundredthsOfCopper, "Sales tax should reach the crown.");
         }
 
         [Test]
@@ -171,13 +171,13 @@ namespace TheEmptying.Tests.EditMode.Market
             EntityId marketBuildingId = PlaceCompleteMarket(buildings, inventory, new GridPoint(10, 10));
 
             EntityId renter = people.SpawnPerson(10, 10);
-            wealth.Grant(AccountId.Person(renter), Money.FromShil(100));
+            wealth.Grant(AccountId.Person(renter), Money.FromCopper(100));
             Assert.IsTrue(market.TryRentStall(marketBuildingId, 0, renter, out string rentError), rentError);
 
             Money crownBefore = wealth.GetBalance(AccountId.Crown);
             StepDays(sim, 31);
 
-            Assert.Greater(wealth.GetBalance(AccountId.Crown).HundredthsOfShil, crownBefore.HundredthsOfShil, "A month's rent should reach the crown.");
+            Assert.Greater(wealth.GetBalance(AccountId.Crown).HundredthsOfCopper, crownBefore.HundredthsOfCopper, "A month's rent should reach the crown.");
         }
 
         [Test]
@@ -197,7 +197,7 @@ namespace TheEmptying.Tests.EditMode.Market
             Assert.IsTrue(market.TryStockStall(marketBuildingId, 0, storehouseId, "good.loaf", 20, out string stockError), stockError);
 
             EntityId buyer = people.SpawnPerson(10, 10);
-            wealth.Grant(AccountId.Person(buyer), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(buyer), Money.FromCopper(1000));
 
             Assert.IsTrue(market.TryBuy(buyer, AccountId.Person(buyer), "good.loaf", 5, out int bought, out string error), error);
             Assert.AreEqual(5, bought);
@@ -211,7 +211,7 @@ namespace TheEmptying.Tests.EditMode.Market
 
             Money basePrice = market.GetPrice("good.furniture");
             EntityId buyer = people.SpawnPerson(10, 10);
-            wealth.Grant(AccountId.Person(buyer), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(buyer), Money.FromCopper(1000));
 
             // No seller exists at all, so every attempt turns the buyer away for lack of stock.
             Assert.IsFalse(market.TryBuy(buyer, AccountId.Person(buyer), "good.furniture", 1, out _, out _));
@@ -219,9 +219,9 @@ namespace TheEmptying.Tests.EditMode.Market
             StepDays(sim, 1);
 
             Money afterOneDay = market.GetPrice("good.furniture");
-            Assert.Greater(afterOneDay.HundredthsOfShil, basePrice.HundredthsOfShil);
+            Assert.Greater(afterOneDay.HundredthsOfCopper, basePrice.HundredthsOfCopper);
 
-            double percentChange = (afterOneDay.HundredthsOfShil - basePrice.HundredthsOfShil) * 100.0 / basePrice.HundredthsOfShil;
+            double percentChange = (afterOneDay.HundredthsOfCopper - basePrice.HundredthsOfCopper) * 100.0 / basePrice.HundredthsOfCopper;
             Assert.LessOrEqual(percentChange, 5.0001);
 
             for (int i = 0; i < 60; i++)
@@ -230,7 +230,7 @@ namespace TheEmptying.Tests.EditMode.Market
                 StepDays(sim, 1);
             }
 
-            Assert.LessOrEqual(market.GetPrice("good.furniture").HundredthsOfShil, basePrice.HundredthsOfShil * 3);
+            Assert.LessOrEqual(market.GetPrice("good.furniture").HundredthsOfCopper, basePrice.HundredthsOfCopper * 3);
         }
 
         [Test]
@@ -249,7 +249,7 @@ namespace TheEmptying.Tests.EditMode.Market
 
             StepDays(sim, 1);
 
-            Assert.Less(market.GetPrice("good.furniture").HundredthsOfShil, basePrice.HundredthsOfShil);
+            Assert.Less(market.GetPrice("good.furniture").HundredthsOfCopper, basePrice.HundredthsOfCopper);
 
             for (int i = 0; i < 60; i++)
             {
@@ -257,7 +257,7 @@ namespace TheEmptying.Tests.EditMode.Market
                 StepDays(sim, 1);
             }
 
-            Assert.GreaterOrEqual(market.GetPrice("good.furniture").HundredthsOfShil, (long)(basePrice.HundredthsOfShil * 0.5));
+            Assert.GreaterOrEqual(market.GetPrice("good.furniture").HundredthsOfCopper, (long)(basePrice.HundredthsOfCopper * 0.5));
         }
 
         [Test]

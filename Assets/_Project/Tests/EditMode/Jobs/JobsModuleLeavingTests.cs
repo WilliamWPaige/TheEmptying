@@ -54,7 +54,7 @@ namespace TheEmptying.Tests.EditMode.Jobs
         {
             land.RequestSetZone(new CellRect(plotAt.X, plotAt.Y, 6, 6), "zone.commercial");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(10000));
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.commercial", plotAt, out _, out string buyError), buyError);
 
             EntityId bakeryId;

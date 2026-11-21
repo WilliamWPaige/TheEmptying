@@ -21,7 +21,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
     /// <summary>3.9i: the keep is pre-built, complete, from the first tick - never placeable, free, housing founders and the monarch immediately.</summary>
     public class KeepTests
     {
-        private static (Simulation Simulation, BuildingsModule Buildings, PeopleModule People, InventoryModule Inventory) Build(TempCoreContentCopy core)
+        private static (Simulation Simulation, BuildingsModule Buildings, PeopleModule People, InventoryModule Inventory, MapMovementModule MapMovement) Build(TempCoreContentCopy core)
         {
             var mapMovement = new MapMovementModule();
             var inventory = new InventoryModule();
@@ -33,14 +33,14 @@ namespace TheEmptying.Tests.EditMode.Buildings
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
             var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
             (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
-            return (simulation, buildings, people, inventory);
+            return (simulation, buildings, people, inventory, mapMovement);
         }
 
         [Test]
         public void NewGame_HasACompleteKeep_InTheCrownGrounds_HousingFoundersAndMonarchFromTickOne()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, BuildingsModule buildings, PeopleModule people, _) = Build(core);
+            (Simulation sim, BuildingsModule buildings, PeopleModule people, _, _) = Build(core);
 
             EntityId keepId = EntityId.None;
             BuildingState keepBuilding = null;
@@ -73,7 +73,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
         public void NewGame_StockpileStartingStock_IsUntouchedByTheKeep()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, BuildingsModule buildings, PeopleModule people, InventoryModule inventory) = Build(core);
+            (Simulation sim, BuildingsModule buildings, PeopleModule people, InventoryModule inventory, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
 
@@ -84,11 +84,39 @@ namespace TheEmptying.Tests.EditMode.Buildings
             Assert.AreEqual(expectedStone, inventory.GetCount(storehouseId, "good.stone"), "The keep should have drawn no stone from the stockpile.");
         }
 
+        /// <summary>
+        /// 3.9j: a hand test found a founder permanently stuck idle - they'd spawned (before the
+        /// keep existed) on a cell the keep's footprint then claimed, and a mover standing on an
+        /// occupied cell can never pathfind away from it (the pathfinder requires its own start cell
+        /// to be passable). Since founders spawn before the keep is placed, in a fresh game this
+        /// isn't hypothetical - it happens to whichever founder's spawn cell falls inside the keep's
+        /// rect. Every founder (and the monarch) should be free to move from tick one regardless.
+        /// </summary>
+        [Test]
+        public void NewGame_NoFounderOrMonarch_IsTrappedInsideTheKeepsFootprint()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, BuildingsModule buildings, PeopleModule people, _, MapMovementModule mapMovement) = Build(core);
+
+            EntityId keepId = buildings.Buildings.First(row => row.Value.BuildingTypeId == BuildingsModule.KeepTypeId).Key;
+            buildings.TryGetBuilding(keepId, out BuildingState keep);
+
+            foreach (KeyValuePair<EntityId, PersonState> row in people.People)
+            {
+                if (!people.IsFounder(row.Key) && !people.IsMonarch(row.Key))
+                {
+                    continue;
+                }
+
+                Assert.IsFalse(keep.Rect.Contains(mapMovement.GetCell(row.Key)), $"{row.Key} should not be standing inside the keep's own footprint.");
+            }
+        }
+
         [Test]
         public void TheKeep_CanNeverBePlaced_ThroughTheGeneralGovernmentBuildingPath()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, BuildingsModule buildings, PeopleModule people, InventoryModule inventory) = Build(core);
+            (Simulation sim, BuildingsModule buildings, PeopleModule people, _, _) = Build(core);
 
             bool placed = buildings.TryPlaceGovernmentBuilding(BuildingsModule.KeepTypeId, new GridPoint(50, 50), out _, out string error);
 

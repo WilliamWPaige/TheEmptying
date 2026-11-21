@@ -36,7 +36,7 @@ namespace TheEmptying.Modules.Market
         public const string PriceFloorPercentOfBaseSettingId = "setting.market.price_floor_percent_of_base";
         public const string PriceCeilingPercentOfBaseSettingId = "setting.market.price_ceiling_percent_of_base";
         public const string StallCountPerMarketSettingId = "setting.market.stall_count_per_market";
-        public const string StallRentShilPerMonthSettingId = "setting.market.stall_rent_shil_per_month";
+        public const string StallRentCopperPerMonthSettingId = "setting.market.stall_rent_copper_per_month";
         public const string LoavesWantedPerDaySettingId = "setting.market.loaves_wanted_per_day";
         public const string DeliveryHoursPer20CellsSettingId = "setting.market.delivery_hours_per_20_cells";
 
@@ -186,8 +186,8 @@ namespace TheEmptying.Modules.Market
                 }
 
                 Money basePrice = goodRow.Value.BasePrice;
-                Money floor = Money.FromHundredthsOfShil((long)Math.Round(basePrice.HundredthsOfShil * floorPercent / 100.0));
-                Money ceiling = Money.FromHundredthsOfShil((long)Math.Round(basePrice.HundredthsOfShil * ceilingPercent / 100.0));
+                Money floor = Money.FromHundredthsOfCopper((long)Math.Round(basePrice.HundredthsOfCopper * floorPercent / 100.0));
+                Money ceiling = Money.FromHundredthsOfCopper((long)Math.Round(basePrice.HundredthsOfCopper * ceilingPercent / 100.0));
                 if (price < floor)
                 {
                     price = floor;
@@ -441,7 +441,7 @@ namespace TheEmptying.Modules.Market
             }
 
             Money price = priceState.CurrentPrice;
-            int affordableCount = price.HundredthsOfShil > 0 ? (int)(_wealth.GetBalance(buyerAccount).HundredthsOfShil / price.HundredthsOfShil) : count;
+            int affordableCount = price.HundredthsOfCopper > 0 ? (int)(_wealth.GetBalance(buyerAccount).HundredthsOfCopper / price.HundredthsOfCopper) : count;
             int toBuy = Math.Min(count, Math.Min(seller.Stock, affordableCount));
 
             if (toBuy <= 0)
@@ -460,8 +460,8 @@ namespace TheEmptying.Modules.Market
             }
 
             double taxPercent = _settings.Get(SalesTaxPercentSettingId);
-            Money tax = Money.FromHundredthsOfShil((long)Math.Round(totalCost.HundredthsOfShil * taxPercent / 100.0));
-            if (!seller.PayTo.IsCrown && tax.HundredthsOfShil > 0)
+            Money tax = Money.FromHundredthsOfCopper((long)Math.Round(totalCost.HundredthsOfCopper * taxPercent / 100.0));
+            if (!seller.PayTo.IsCrown && tax.HundredthsOfCopper > 0)
             {
                 _wealth.TryTransfer(seller.PayTo, AccountId.Crown, tax, TransferReason.Tax);
             }
@@ -527,8 +527,8 @@ namespace TheEmptying.Modules.Market
             }
 
             double taxPercent = _settings.Get(SalesTaxPercentSettingId);
-            Money tax = Money.FromHundredthsOfShil((long)Math.Round(totalCost.HundredthsOfShil * taxPercent / 100.0));
-            if (tax.HundredthsOfShil > 0)
+            Money tax = Money.FromHundredthsOfCopper((long)Math.Round(totalCost.HundredthsOfCopper * taxPercent / 100.0));
+            if (tax.HundredthsOfCopper > 0)
             {
                 _wealth.TryTransfer(AccountId.Person(seller), AccountId.Crown, tax, TransferReason.Tax);
             }
@@ -627,7 +627,7 @@ namespace TheEmptying.Modules.Market
                     }
 
                     Money price = _prices[goodId].CurrentPrice;
-                    int affordableCount = price.HundredthsOfShil > 0 ? (int)(_wealth.GetBalance(buyerAccount).HundredthsOfShil / price.HundredthsOfShil) : stillNeeded;
+                    int affordableCount = price.HundredthsOfCopper > 0 ? (int)(_wealth.GetBalance(buyerAccount).HundredthsOfCopper / price.HundredthsOfCopper) : stillNeeded;
                     int toOrder = Math.Min(stillNeeded, Math.Min(seller.Stock, affordableCount));
                     if (toOrder <= 0)
                     {
@@ -641,8 +641,8 @@ namespace TheEmptying.Modules.Market
                     }
 
                     double taxPercent = _settings.Get(SalesTaxPercentSettingId);
-                    Money tax = Money.FromHundredthsOfShil((long)Math.Round(totalCost.HundredthsOfShil * taxPercent / 100.0));
-                    if (!seller.PayTo.IsCrown && tax.HundredthsOfShil > 0)
+                    Money tax = Money.FromHundredthsOfCopper((long)Math.Round(totalCost.HundredthsOfCopper * taxPercent / 100.0));
+                    if (!seller.PayTo.IsCrown && tax.HundredthsOfCopper > 0)
                     {
                         _wealth.TryTransfer(seller.PayTo, AccountId.Crown, tax, TransferReason.Tax);
                     }
@@ -737,7 +737,7 @@ namespace TheEmptying.Modules.Market
 
         private void OnNewMonth(NewMonthEvent evt)
         {
-            Money rent = Money.FromShil((long)_settings.Get(StallRentShilPerMonthSettingId));
+            Money rent = Money.FromCopper((long)_settings.Get(StallRentCopperPerMonthSettingId));
 
             foreach (MarketBuildingState market in _marketBuildings.Values)
             {
@@ -781,7 +781,7 @@ namespace TheEmptying.Modules.Market
                 {
                     Money change = row.Value.CurrentPrice - row.Value.PriceYesterday;
                     int stock = TotalStockOf(row.Key);
-                    lines.Add($"{row.Key}: {row.Value.CurrentPrice} ({(change.HundredthsOfShil >= 0 ? "+" : "")}{change} since yesterday), stock {stock}, sold {row.Value.UnitsSoldToday}, turned away {row.Value.BuyersTurnedAwayToday}" + (row.Value.InShortage ? " [SHORTAGE]" : ""));
+                    lines.Add($"{row.Key}: {row.Value.CurrentPrice} ({(change.HundredthsOfCopper >= 0 ? "+" : "")}{change} since yesterday), stock {stock}, sold {row.Value.UnitsSoldToday}, turned away {row.Value.BuyersTurnedAwayToday}" + (row.Value.InShortage ? " [SHORTAGE]" : ""));
                 }
 
                 return lines.Count == 0 ? "No goods." : string.Join("\n", lines);
@@ -841,9 +841,9 @@ namespace TheEmptying.Modules.Market
             foreach (string goodId in goodIds)
             {
                 MarketPriceState state = _prices[goodId];
-                writer.WriteLong(state.CurrentPrice.HundredthsOfShil);
-                writer.WriteLong(state.PriceYesterday.HundredthsOfShil);
-                writer.WriteLongList(state.PriceHistory.Select(p => p.HundredthsOfShil).ToList());
+                writer.WriteLong(state.CurrentPrice.HundredthsOfCopper);
+                writer.WriteLong(state.PriceYesterday.HundredthsOfCopper);
+                writer.WriteLongList(state.PriceHistory.Select(p => p.HundredthsOfCopper).ToList());
                 writer.WriteInt(state.TotalStockAtLastCheck);
                 writer.WriteInt(state.BuyersTurnedAwayToday);
                 writer.WriteInt(state.UnitsSoldToday);
@@ -905,9 +905,9 @@ namespace TheEmptying.Modules.Market
                     _prices[goodId] = state;
                 }
 
-                state.CurrentPrice = Money.FromHundredthsOfShil(reader.ReadLong());
-                state.PriceYesterday = Money.FromHundredthsOfShil(reader.ReadLong());
-                state.PriceHistory = reader.ReadLongList().Select(Money.FromHundredthsOfShil).ToList();
+                state.CurrentPrice = Money.FromHundredthsOfCopper(reader.ReadLong());
+                state.PriceYesterday = Money.FromHundredthsOfCopper(reader.ReadLong());
+                state.PriceHistory = reader.ReadLongList().Select(Money.FromHundredthsOfCopper).ToList();
                 state.TotalStockAtLastCheck = reader.ReadInt();
                 state.BuyersTurnedAwayToday = reader.ReadInt();
                 state.UnitsSoldToday = reader.ReadInt();

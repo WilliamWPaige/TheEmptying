@@ -242,7 +242,7 @@ namespace TheEmptying.Modules.Land
 
         public Money GetCurrentPrice(string zoneId, CellRect rect)
         {
-            Money basePrice = Money.FromShil(_settings.Get(PlotPriceSettingId(zoneId)));
+            Money basePrice = Money.FromCopper(_settings.Get(PlotPriceSettingId(zoneId)));
             double modifierPercent = CrownProximityModifierPercent(rect) + _waterModifierProvider(rect) * 100.0 + _roadModifierProvider(rect) * 100.0;
             return basePrice.ApplyPercent(modifierPercent);
         }
@@ -272,7 +272,7 @@ namespace TheEmptying.Modules.Land
             return Math.Max(0.0, centerDistance - groundsHalfSize - rectHalfSize);
         }
 
-        private Money GetTaxPerMonth(string zoneId) => Money.FromShil(_settings.Get(TaxPerMonthSettingId(zoneId)));
+        private Money GetTaxPerMonth(string zoneId) => Money.FromCopper(_settings.Get(TaxPerMonthSettingId(zoneId)));
 
         private static string StripZonePrefix(string zoneId) => zoneId != null && zoneId.StartsWith("zone.") ? zoneId.Substring("zone.".Length) : zoneId;
         private static string PlotSizeSettingId(string zoneId) => $"setting.land.plot_size.{StripZonePrefix(zoneId)}";
@@ -324,7 +324,7 @@ namespace TheEmptying.Modules.Land
             _plots.TryGet(plotId, out PlotState plot);
             plot.Owner = buyer;
 
-            _events.Post(PlotBoughtEventId, _currentTick(), new EventData().SetEntity("plot", plotId).SetEntity("buyer", buyer).SetLong("price", price.HundredthsOfShil));
+            _events.Post(PlotBoughtEventId, _currentTick(), new EventData().SetEntity("plot", plotId).SetEntity("buyer", buyer).SetLong("price", price.HundredthsOfCopper));
             error = null;
             return true;
         }
@@ -429,7 +429,7 @@ namespace TheEmptying.Modules.Land
         {
             double ratePercent = _settings.Get(LeaseRatePercentOfPriceSettingId);
             Money price = GetCurrentPrice(plot.ZoneId, plot.Rect);
-            Money leaseAmount = new Money((long)Math.Round(price.HundredthsOfShil * ratePercent / 100.0, MidpointRounding.AwayFromZero));
+            Money leaseAmount = new Money((long)Math.Round(price.HundredthsOfCopper * ratePercent / 100.0, MidpointRounding.AwayFromZero));
 
             EntityId leaseholder = plot.Leaseholder.Value;
             if (!_wealth.TryTransfer(AccountId.Person(leaseholder), AccountId.Crown, leaseAmount, TransferReason.Rent))
@@ -459,7 +459,7 @@ namespace TheEmptying.Modules.Land
         private void ChargeTax(long tick, EntityId plotId, PlotState plot)
         {
             Money tax = GetTaxPerMonth(plot.ZoneId);
-            bool hadDebtBefore = plot.TaxDebt.HundredthsOfShil > 0;
+            bool hadDebtBefore = plot.TaxDebt.HundredthsOfCopper > 0;
 
             if (!_wealth.TryTransfer(AccountId.Person(plot.Owner.Value), AccountId.Crown, tax, TransferReason.Tax))
             {
@@ -603,7 +603,7 @@ namespace TheEmptying.Modules.Land
                     writer.WriteEntityId(plot.Leaseholder.Value);
                 }
 
-                writer.WriteLong(plot.TaxDebt.HundredthsOfShil);
+                writer.WriteLong(plot.TaxDebt.HundredthsOfCopper);
             }
         }
 
@@ -631,7 +631,7 @@ namespace TheEmptying.Modules.Land
                     plot.Leaseholder = reader.ReadEntityId();
                 }
 
-                plot.TaxDebt = Money.FromHundredthsOfShil(reader.ReadLong());
+                plot.TaxDebt = Money.FromHundredthsOfCopper(reader.ReadLong());
 
                 _plots.Add(id, plot);
                 foreach (GridPoint cell in plot.Rect.Cells())

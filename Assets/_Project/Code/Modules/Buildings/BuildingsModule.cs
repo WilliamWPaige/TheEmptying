@@ -488,6 +488,8 @@ namespace TheEmptying.Modules.Buildings
                 _grid.SetOccupied(cell, true);
             }
 
+            RelocateMoversTrappedBy(rect, id);
+
             if (startsComplete)
             {
                 MarkBuildingComplete(id, building, type, _currentTick());
@@ -502,6 +504,32 @@ namespace TheEmptying.Modules.Buildings
             }
 
             return id;
+        }
+
+        /// <summary>
+        /// 3.9j: a hand test found a founder permanently stuck idle - their gather spot kept getting
+        /// repicked but never reached, because their own current cell was occupied (by the keep,
+        /// freshly placed right where they'd already spawned) and the pathfinder refuses to start a
+        /// path from an occupied cell. Left alone, a mover caught like this can never move again, by
+        /// any means, for the rest of the game. Moves anyone standing in a just-placed footprint to
+        /// its doorstep instead, the same cell "going home" to this building would send them to.
+        /// </summary>
+        private void RelocateMoversTrappedBy(CellRect rect, EntityId buildingId)
+        {
+            GridPoint? doorstep = null;
+            foreach (KeyValuePair<EntityId, MoverState> row in _mapMovement.Movers.ToList())
+            {
+                if (!rect.Contains(_mapMovement.GetCell(row.Key)))
+                {
+                    continue;
+                }
+
+                doorstep ??= GetDoorstep(buildingId);
+                if (doorstep.HasValue)
+                {
+                    _mapMovement.TryRelocateMover(row.Key, doorstep.Value);
+                }
+            }
         }
 
         #endregion
@@ -739,7 +767,7 @@ namespace TheEmptying.Modules.Buildings
                 _ => RentPerMonthLowerSettingId
             };
 
-            return Money.FromShil(_settings.Get(settingId));
+            return Money.FromCopper(_settings.Get(settingId));
         }
 
         private void OnNewDay(NewDayEvent evt)
@@ -788,7 +816,7 @@ namespace TheEmptying.Modules.Buildings
                 }
 
                 Money rent = IsFreeLodging(building.BuildingTypeId) ? Money.Zero : RentForClass(type.HomeClass.Value);
-                if (rent.HundredthsOfShil > balance.HundredthsOfShil)
+                if (rent.HundredthsOfCopper > balance.HundredthsOfCopper)
                 {
                     continue;
                 }
@@ -800,7 +828,7 @@ namespace TheEmptying.Modules.Buildings
                         continue;
                     }
 
-                    if (!found || rent.HundredthsOfShil < bestRent.HundredthsOfShil)
+                    if (!found || rent.HundredthsOfCopper < bestRent.HundredthsOfCopper)
                     {
                         found = true;
                         bestBuilding = row.Key;
@@ -982,7 +1010,7 @@ namespace TheEmptying.Modules.Buildings
                 _ => 0.0
             };
 
-            return Money.FromShil(perUnit * amount);
+            return Money.FromCopper(perUnit * amount);
         }
 
         #endregion

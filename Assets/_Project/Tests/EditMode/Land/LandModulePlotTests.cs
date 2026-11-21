@@ -48,12 +48,12 @@ namespace TheEmptying.Tests.EditMode.Land
             PaintAndApply(sim, land, new CellRect(50, 50, 4, 4), "zone.residential_low");
 
             EntityId buyer = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(buyer), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(buyer), Money.FromCopper(10000));
 
             Assert.IsTrue(land.TryBuyPlot(buyer, "zone.residential_low", new GridPoint(50, 50), out _, out string error), error);
 
             EntityId buyer2 = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(buyer2), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(buyer2), Money.FromCopper(10000));
 
             Assert.IsFalse(land.TryBuyPlot(buyer2, "zone.residential_low", new GridPoint(100, 100), out _, out string unzonedError), "An unzoned spot must be refused.");
             Assert.IsNotNull(unzonedError);
@@ -67,11 +67,11 @@ namespace TheEmptying.Tests.EditMode.Land
             PaintAndApply(sim, land, new CellRect(50, 50, 8, 8), "zone.residential_low");
 
             EntityId a = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(a), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(a), Money.FromCopper(10000));
             Assert.IsTrue(land.TryBuyPlot(a, "zone.residential_low", new GridPoint(50, 50), out _, out string firstError), firstError);
 
             EntityId b = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(b), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(b), Money.FromCopper(10000));
             Assert.IsFalse(land.TryBuyPlot(b, "zone.residential_low", new GridPoint(52, 52), out _, out string error), "A plot overlapping an existing one must be refused.");
             Assert.IsNotNull(error);
         }
@@ -84,12 +84,12 @@ namespace TheEmptying.Tests.EditMode.Land
             PaintAndApply(sim, land, new CellRect(50, 50, 4, 4), "zone.residential_low");
 
             EntityId buyer = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(buyer), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(buyer), Money.FromCopper(10000));
 
             Assert.IsTrue(land.TryBuyPlot(buyer, "zone.residential_low", new GridPoint(50, 50), out EntityId plotId, out string error), error);
 
-            Assert.AreEqual(Money.FromShil(10000) - Money.FromShil(3000), wealth.GetBalance(AccountId.Person(buyer)));
-            Assert.AreEqual(Money.FromShil(5000) + Money.FromShil(3000), wealth.GetBalance(AccountId.Crown));
+            Assert.AreEqual(Money.FromCopper(10000) - Money.FromCopper(3000), wealth.GetBalance(AccountId.Person(buyer)));
+            Assert.AreEqual(Money.FromCopper(5000) + Money.FromCopper(3000), wealth.GetBalance(AccountId.Crown));
             Assert.IsTrue(land.TryGetPlot(plotId, out PlotState plot));
             Assert.AreEqual(buyer, plot.Owner);
         }
@@ -120,7 +120,7 @@ namespace TheEmptying.Tests.EditMode.Land
             PaintAndApply(sim, land, new CellRect(50, 50, 4, 4), "zone.residential_low");
 
             EntityId buyer = sim.Entities.Create(EntityKind.Person);
-            Money startingCash = Money.FromShil(3000);
+            Money startingCash = Money.FromCopper(3000);
             wealth.Grant(AccountId.Person(buyer), startingCash);
 
             Money wealthBeforeBuying = wealth.GetWealth(buyer);

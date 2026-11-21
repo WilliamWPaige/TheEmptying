@@ -46,7 +46,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
         {
             land.RequestSetZone(new CellRect(plotAt.X, plotAt.Y, 4, 4), "zone.residential_low");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", plotAt, out _, out string buyError), buyError);
             Assert.IsTrue(buildings.TryRequestPrivateBuilding(owner, "building.cottage", out EntityId cottageId, out string requestError), requestError);
             inventory.Add(owner, "good.plank", 40);
@@ -70,7 +70,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
 
             EntityId tenant = people.SpawnPerson(30, 30);
             inventory.Add(tenant, "good.loaf", 10000);
-            wealth.Grant(AccountId.Person(tenant), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(tenant), Money.FromCopper(1000));
 
             for (long i = 0; i < TheEmptying.Core.Timekeeping.CalendarConstants.TicksPerDay; i++)
             {
@@ -105,7 +105,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
 
             EntityId tenant = people.SpawnPerson(30, 30);
             inventory.Add(tenant, "good.loaf", 10000);
-            wealth.Grant(AccountId.Person(tenant), Money.FromShil(2000));
+            wealth.Grant(AccountId.Person(tenant), Money.FromCopper(2000));
 
             for (long i = 0; i < TheEmptying.Core.Timekeeping.CalendarConstants.TicksPerDay; i++)
             {
@@ -122,8 +122,8 @@ namespace TheEmptying.Tests.EditMode.Buildings
                 sim.Step();
             }
 
-            Assert.Greater(wealth.GetBalance(AccountId.Crown).HundredthsOfShil, crownBefore.HundredthsOfShil, "The crown should have collected the rent the dead owner used to receive.");
-            Assert.Less(wealth.GetBalance(AccountId.Person(tenant)).HundredthsOfShil, tenantBefore.HundredthsOfShil);
+            Assert.Greater(wealth.GetBalance(AccountId.Crown).HundredthsOfCopper, crownBefore.HundredthsOfCopper, "The crown should have collected the rent the dead owner used to receive.");
+            Assert.Less(wealth.GetBalance(AccountId.Person(tenant)).HundredthsOfCopper, tenantBefore.HundredthsOfCopper);
             Assert.IsTrue(buildings.TryGetBuilding(rental, out BuildingState rentalAfter));
             Assert.AreEqual(tenant, rentalAfter.Households[0].Occupant, "Paying the rent should keep the tenant housed.");
         }
@@ -137,7 +137,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string placeError), placeError);
 
             EntityId person = people.SpawnPerson(30, 30); // starts with some automatic food provisions
-            wealth.Grant(AccountId.Person(person), Money.FromShil(500));
+            wealth.Grant(AccountId.Person(person), Money.FromCopper(500));
             inventory.Add(person, "good.loaf", 42);
 
             Money crownBefore = wealth.GetBalance(AccountId.Crown);
@@ -147,7 +147,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             sim.Commands.Execute($"kill {person}");
             sim.Step();
 
-            Assert.AreEqual(crownBefore + Money.FromShil(500), wealth.GetBalance(AccountId.Crown));
+            Assert.AreEqual(crownBefore + Money.FromCopper(500), wealth.GetBalance(AccountId.Crown));
             Assert.AreEqual(storehouseLoavesBefore + personLoavesBeforeDeath, inventory.GetCount(storehouseId, "good.loaf"));
             Assert.AreEqual(0, inventory.GetCount(person, "good.loaf"));
         }
@@ -162,11 +162,11 @@ namespace TheEmptying.Tests.EditMode.Buildings
             land.RequestSetZone(new CellRect(40, 40, 4, 4), "zone.residential_low");
             land.RequestSetZone(new CellRect(80, 80, 4, 4), "zone.residential_low");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(10000));
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(40, 40), out EntityId ownedPlotId, out string buyError), buyError);
 
             EntityId leaseholder = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(leaseholder), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(leaseholder), Money.FromCopper(10000));
             Assert.IsTrue(land.TryLeasePlot(leaseholder, "zone.residential_low", new GridPoint(80, 80), out EntityId leasedPlotId, out string leaseError), leaseError);
 
             sim.Commands.Execute($"kill {owner}");

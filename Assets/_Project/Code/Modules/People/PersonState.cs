@@ -26,6 +26,9 @@ namespace TheEmptying.Modules.People
         /// <summary>Set for founders: never quits, never refuses an order, always passes a willpower check. Needs still drop and neglect can still kill them.</summary>
         public bool NeverRefusesOrFails;
 
+        /// <summary>3.9j: the one core trade skill this founder was rolled extra-high in (19-20, instead of the usual 14-18); null for anyone who isn't a founder.</summary>
+        public Skill? FounderSpecialty;
+
         /// <summary>Overrides which class's needs apply, independent of social class - the advisor is upper class in name but keeps lower-class needs. Null (the default) means "use the real social class".</summary>
         public SocialClass? NeedsClassOverride;
 

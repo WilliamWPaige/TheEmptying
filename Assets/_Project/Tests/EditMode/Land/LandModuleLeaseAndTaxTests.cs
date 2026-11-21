@@ -62,7 +62,7 @@ namespace TheEmptying.Tests.EditMode.Land
             sim.Step();
 
             EntityId leaseholder = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(leaseholder), Money.FromShil(1000));
+            wealth.Grant(AccountId.Person(leaseholder), Money.FromCopper(1000));
 
             Assert.IsTrue(land.TryLeasePlot(leaseholder, "zone.residential_low", new GridPoint(50, 50), out _, out string error), error);
 
@@ -71,7 +71,7 @@ namespace TheEmptying.Tests.EditMode.Land
 
             StepMonths(sim, 1);
 
-            Money expectedLease = Money.FromShil(3000 * 0.02); // 2% of the base 3,000 shil price
+            Money expectedLease = Money.FromCopper(3000 * 0.02); // 2% of the base 3,000 copper price
             Assert.AreEqual(balanceBefore - expectedLease, wealth.GetBalance(AccountId.Person(leaseholder)));
             Assert.AreEqual(crownBefore + expectedLease, wealth.GetBalance(AccountId.Crown));
         }
@@ -108,18 +108,18 @@ namespace TheEmptying.Tests.EditMode.Land
             sim.Step();
 
             EntityId owner = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(10000));
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(50, 50), out _, out string buyError), buyError);
 
             EntityId leaseholder = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(leaseholder), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(leaseholder), Money.FromCopper(10000));
             Assert.IsTrue(land.TryLeasePlot(leaseholder, "zone.residential_low", new GridPoint(60, 60), out _, out string leaseError), leaseError);
 
             Money ownerBalanceBefore = wealth.GetBalance(AccountId.Person(owner));
 
             StepMonths(sim, 1);
 
-            Assert.AreEqual(ownerBalanceBefore - Money.FromShil(20), wealth.GetBalance(AccountId.Person(owner)), "Owner should be charged exactly the residential-low land tax.");
+            Assert.AreEqual(ownerBalanceBefore - Money.FromCopper(20), wealth.GetBalance(AccountId.Person(owner)), "Owner should be charged exactly the residential-low land tax.");
         }
 
         [Test]
@@ -131,7 +131,7 @@ namespace TheEmptying.Tests.EditMode.Land
             sim.Step();
 
             EntityId owner = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(3000)); // exactly enough to buy, nothing left for tax
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(3000)); // exactly enough to buy, nothing left for tax
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(50, 50), out EntityId plotId, out string error), error);
 
             int unpaidCount = 0;
@@ -139,12 +139,12 @@ namespace TheEmptying.Tests.EditMode.Land
 
             StepMonths(sim, 1);
             land.TryGetPlot(plotId, out PlotState plotAfterMonth1);
-            Assert.AreEqual(Money.FromShil(20), plotAfterMonth1.TaxDebt);
+            Assert.AreEqual(Money.FromCopper(20), plotAfterMonth1.TaxDebt);
             Assert.AreEqual(1, unpaidCount);
 
             StepMonths(sim, 1);
             land.TryGetPlot(plotId, out PlotState plotAfterMonth2);
-            Assert.AreEqual(Money.FromShil(40), plotAfterMonth2.TaxDebt, "Debt should keep accumulating.");
+            Assert.AreEqual(Money.FromCopper(40), plotAfterMonth2.TaxDebt, "Debt should keep accumulating.");
             Assert.AreEqual(1, unpaidCount, "The unpaid event should only fire the first time debt starts.");
         }
     }

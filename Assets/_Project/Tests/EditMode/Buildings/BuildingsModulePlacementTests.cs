@@ -43,7 +43,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             EntityId owner = sim.Entities.Create(EntityKind.Person);
             land.RequestSetZone(new CellRect(50, 50, 4, 4), "zone.residential_low");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(50, 50), out _, out string buyError), buyError);
 
             Assert.IsTrue(buildingsModule.TryRequestPrivateBuilding(owner, "building.cottage", out EntityId buildingId, out string error), error);

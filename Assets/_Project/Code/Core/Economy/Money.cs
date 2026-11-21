@@ -7,87 +7,87 @@ namespace TheEmptying.Core.Economy
 {
     /// <summary>
     /// An amount of money, stored as a 64-bit whole number of hundredths of a
-    /// shil so every amount - prices, accounts, wages, taxes - stays exact,
-    /// even after a 5% market swing on a 2-shil loaf. 100 hundredths make a
-    /// shil, 10 shil make a gild, 10 gild make a jemm.
+    /// copper so every amount - prices, accounts, wages, taxes - stays exact,
+    /// even after a 5% market swing on a 2-copper loaf. 100 hundredths make a
+    /// copper, 10 copper make a silver, 10 silver make a gold.
     /// </summary>
     public readonly struct Money : IEquatable<Money>, IComparable<Money>
     {
-        private const long HundredthsPerShil = 100;
-        private const long ShilPerGild = 10;
-        private const long GildPerJemm = 10;
-        private const long HundredthsPerGild = HundredthsPerShil * ShilPerGild;
-        private const long HundredthsPerJemm = HundredthsPerGild * GildPerJemm;
+        private const long HundredthsPerCopper = 100;
+        private const long CopperPerSilver = 10;
+        private const long SilverPerGold = 10;
+        private const long HundredthsPerSilver = HundredthsPerCopper * CopperPerSilver;
+        private const long HundredthsPerGold = HundredthsPerSilver * SilverPerGold;
 
-        [JsonProperty("hundredthsOfShil")]
-        public long HundredthsOfShil { get; }
+        [JsonProperty("hundredthsOfCopper")]
+        public long HundredthsOfCopper { get; }
 
         [JsonConstructor]
-        public Money(long hundredthsOfShil)
+        public Money(long hundredthsOfCopper)
         {
-            HundredthsOfShil = hundredthsOfShil;
+            HundredthsOfCopper = hundredthsOfCopper;
         }
 
         public static Money Zero => new Money(0);
-        public static Money FromShil(long shil) => new Money(shil * HundredthsPerShil);
-        public static Money FromHundredthsOfShil(long hundredthsOfShil) => new Money(hundredthsOfShil);
+        public static Money FromCopper(long copper) => new Money(copper * HundredthsPerCopper);
+        public static Money FromHundredthsOfCopper(long hundredthsOfCopper) => new Money(hundredthsOfCopper);
 
-        /// <summary>Rounds a fractional shil amount (for example 2.5) to the nearest hundredth.</summary>
-        public static Money FromShil(double shil) => new Money((long)Math.Round(shil * HundredthsPerShil, MidpointRounding.AwayFromZero));
+        /// <summary>Rounds a fractional copper amount (for example 2.5) to the nearest hundredth.</summary>
+        public static Money FromCopper(double copper) => new Money((long)Math.Round(copper * HundredthsPerCopper, MidpointRounding.AwayFromZero));
 
-        public long Jemm => HundredthsOfShil / HundredthsPerJemm;
-        public long Gild => (HundredthsOfShil % HundredthsPerJemm) / HundredthsPerGild;
-        public long WholeShil => (HundredthsOfShil % HundredthsPerGild) / HundredthsPerShil;
-        public long RemainderHundredths => HundredthsOfShil % HundredthsPerShil;
+        public long Gold => HundredthsOfCopper / HundredthsPerGold;
+        public long Silver => (HundredthsOfCopper % HundredthsPerGold) / HundredthsPerSilver;
+        public long WholeCopper => (HundredthsOfCopper % HundredthsPerSilver) / HundredthsPerCopper;
+        public long RemainderHundredths => HundredthsOfCopper % HundredthsPerCopper;
 
-        /// <summary>Applies a percentage change (5.0 means +5%), rounded to the nearest hundredth of a shil.</summary>
+        /// <summary>Applies a percentage change (5.0 means +5%), rounded to the nearest hundredth of a copper.</summary>
         public Money ApplyPercent(double percent)
         {
-            double scaled = HundredthsOfShil * (1.0 + percent / 100.0);
+            double scaled = HundredthsOfCopper * (1.0 + percent / 100.0);
             return new Money((long)Math.Round(scaled, MidpointRounding.AwayFromZero));
         }
 
-        public static Money operator +(Money a, Money b) => new Money(a.HundredthsOfShil + b.HundredthsOfShil);
-        public static Money operator -(Money a, Money b) => new Money(a.HundredthsOfShil - b.HundredthsOfShil);
-        public static Money operator *(Money a, long factor) => new Money(a.HundredthsOfShil * factor);
-        public static Money operator *(long factor, Money a) => new Money(a.HundredthsOfShil * factor);
+        public static Money operator +(Money a, Money b) => new Money(a.HundredthsOfCopper + b.HundredthsOfCopper);
+        public static Money operator -(Money a, Money b) => new Money(a.HundredthsOfCopper - b.HundredthsOfCopper);
+        public static Money operator *(Money a, long factor) => new Money(a.HundredthsOfCopper * factor);
+        public static Money operator *(long factor, Money a) => new Money(a.HundredthsOfCopper * factor);
 
-        public static bool operator ==(Money a, Money b) => a.HundredthsOfShil == b.HundredthsOfShil;
-        public static bool operator !=(Money a, Money b) => a.HundredthsOfShil != b.HundredthsOfShil;
-        public static bool operator <(Money a, Money b) => a.HundredthsOfShil < b.HundredthsOfShil;
-        public static bool operator >(Money a, Money b) => a.HundredthsOfShil > b.HundredthsOfShil;
-        public static bool operator <=(Money a, Money b) => a.HundredthsOfShil <= b.HundredthsOfShil;
-        public static bool operator >=(Money a, Money b) => a.HundredthsOfShil >= b.HundredthsOfShil;
+        public static bool operator ==(Money a, Money b) => a.HundredthsOfCopper == b.HundredthsOfCopper;
+        public static bool operator !=(Money a, Money b) => a.HundredthsOfCopper != b.HundredthsOfCopper;
+        public static bool operator <(Money a, Money b) => a.HundredthsOfCopper < b.HundredthsOfCopper;
+        public static bool operator >(Money a, Money b) => a.HundredthsOfCopper > b.HundredthsOfCopper;
+        public static bool operator <=(Money a, Money b) => a.HundredthsOfCopper <= b.HundredthsOfCopper;
+        public static bool operator >=(Money a, Money b) => a.HundredthsOfCopper >= b.HundredthsOfCopper;
 
-        public bool Equals(Money other) => HundredthsOfShil == other.HundredthsOfShil;
+        public bool Equals(Money other) => HundredthsOfCopper == other.HundredthsOfCopper;
         public override bool Equals(object obj) => obj is Money other && Equals(other);
-        public override int GetHashCode() => HundredthsOfShil.GetHashCode();
-        public int CompareTo(Money other) => HundredthsOfShil.CompareTo(other.HundredthsOfShil);
+        public override int GetHashCode() => HundredthsOfCopper.GetHashCode();
+        public int CompareTo(Money other) => HundredthsOfCopper.CompareTo(other.HundredthsOfCopper);
 
-        /// <summary>For example "2 gild 3 shil", or "3.50 shil" when there's a sub-shil remainder. "0 shil" for zero.</summary>
+        /// <summary>For example "2 silver 3 copper", or "3.50 copper" when there's a sub-copper remainder. "0 copper" for zero.</summary>
         public override string ToString()
         {
             var parts = new List<string>();
-            long jemm = Jemm;
-            long gild = Gild;
-            long shil = WholeShil;
+            long gold = Gold;
+            long silver = Silver;
+            long copper = WholeCopper;
             long remainder = RemainderHundredths;
 
-            if (jemm != 0)
+            if (gold != 0)
             {
-                parts.Add($"{jemm} jemm");
+                parts.Add($"{gold} gold");
             }
 
-            if (gild != 0)
+            if (silver != 0)
             {
-                parts.Add($"{gild} gild");
+                parts.Add($"{silver} silver");
             }
 
-            if (shil != 0 || remainder != 0 || parts.Count == 0)
+            if (copper != 0 || remainder != 0 || parts.Count == 0)
             {
                 parts.Add(remainder == 0
-                    ? $"{shil} shil"
-                    : $"{shil}.{remainder.ToString("D2", CultureInfo.InvariantCulture)} shil");
+                    ? $"{copper} copper"
+                    : $"{copper}.{remainder.ToString("D2", CultureInfo.InvariantCulture)} copper");
             }
 
             return string.Join(" ", parts);

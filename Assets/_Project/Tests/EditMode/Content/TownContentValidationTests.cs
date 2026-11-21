@@ -35,7 +35,7 @@ namespace TheEmptying.Tests.EditMode.Content
         [Test]
         public void Good_WithWrongIdPrefix_IsReported()
         {
-            var good = new Good("resource.log", "Log", GoodCategory.Raw, Money.FromShil(5));
+            var good = new Good("resource.log", "Log", GoodCategory.Raw, Money.FromCopper(5));
             ContentLoadReport report = LoadAssets(new[] { Asset(BuiltInContentTypes.GoodTypeName, good, "Log") });
 
             Assert.IsTrue(report.Problems.Any(p => p.ItemId == "resource.log" && p.Field == "id"));
@@ -44,7 +44,7 @@ namespace TheEmptying.Tests.EditMode.Content
         [Test]
         public void Good_WithNegativePrice_IsReported()
         {
-            var good = new Good("good.log", "Log", GoodCategory.Raw, Money.FromHundredthsOfShil(-1));
+            var good = new Good("good.log", "Log", GoodCategory.Raw, Money.FromHundredthsOfCopper(-1));
             ContentLoadReport report = LoadAssets(new[] { Asset(BuiltInContentTypes.GoodTypeName, good, "Log") });
 
             Assert.IsTrue(report.Problems.Any(p => p.ItemId == "good.log" && p.Field == "basePrice"));
@@ -80,7 +80,7 @@ namespace TheEmptying.Tests.EditMode.Content
         [Test]
         public void BuildingType_WithNegativeConstructionCost_IsReported()
         {
-            var good = new Good("good.plank", "Plank", GoodCategory.Processed, Money.FromShil(4));
+            var good = new Good("good.plank", "Plank", GoodCategory.Processed, Money.FromCopper(4));
             var buildingType = new BuildingType(
                 "building.cottage", "Cottage", 2, 2,
                 new List<GoodAmount> { new GoodAmount(new ContentRef<Good>("good.plank"), -5) },
@@ -158,7 +158,7 @@ namespace TheEmptying.Tests.EditMode.Content
         [Test]
         public void Recipe_WithNegativeInputAmount_IsReported()
         {
-            var good = new Good("good.wheat", "Wheat", GoodCategory.Raw, Money.FromShil(1));
+            var good = new Good("good.wheat", "Wheat", GoodCategory.Raw, Money.FromCopper(1));
             var recipe = new Recipe(
                 "recipe.milling_flour", new ContentRef<BuildingType>("building.mill"),
                 new List<GoodAmount> { new GoodAmount(new ContentRef<Good>("good.wheat"), -4) },
@@ -176,7 +176,7 @@ namespace TheEmptying.Tests.EditMode.Content
         [Test]
         public void ValidTownContent_LoadsWithNoProblems()
         {
-            var plank = new Good("good.plank", "Plank", GoodCategory.Processed, Money.FromShil(4));
+            var plank = new Good("good.plank", "Plank", GoodCategory.Processed, Money.FromCopper(4));
             var residentialLow = new Zone("zone.residential_low", "Residential Low", SocialClass.Lower);
             var woodcuttersCamp = new BuildingType(
                 "building.woodcutters_camp", "Woodcutter's Camp", 3, 3, new List<GoodAmount>(),

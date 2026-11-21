@@ -40,7 +40,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             EntityId owner = sim.Entities.Create(EntityKind.Person);
             land.RequestSetZone(new CellRect(at.X, at.Y, 6, 6), zoneId);
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(10000));
             Assert.IsTrue(land.TryBuyPlot(owner, zoneId, at, out _, out string error), error);
             return owner;
         }

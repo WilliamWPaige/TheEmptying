@@ -42,13 +42,13 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation sim, WealthModule wealth, PeopleModule people) = Build(core);
             EntityId a = people.SpawnPerson(30, 30);
             EntityId b = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(a), Money.FromShil(100));
+            wealth.Grant(AccountId.Person(a), Money.FromCopper(100));
 
-            bool result = wealth.TryTransfer(AccountId.Person(a), AccountId.Person(b), Money.FromShil(40), TransferReason.Wage);
+            bool result = wealth.TryTransfer(AccountId.Person(a), AccountId.Person(b), Money.FromCopper(40), TransferReason.Wage);
 
             Assert.IsTrue(result);
-            Assert.AreEqual(Money.FromShil(60), wealth.GetBalance(AccountId.Person(a)));
-            Assert.AreEqual(Money.FromShil(40), wealth.GetBalance(AccountId.Person(b)));
+            Assert.AreEqual(Money.FromCopper(60), wealth.GetBalance(AccountId.Person(a)));
+            Assert.AreEqual(Money.FromCopper(40), wealth.GetBalance(AccountId.Person(b)));
         }
 
         [Test]
@@ -58,12 +58,12 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation sim, WealthModule wealth, PeopleModule people) = Build(core);
             EntityId a = people.SpawnPerson(30, 30);
             EntityId b = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(a), Money.FromShil(10));
+            wealth.Grant(AccountId.Person(a), Money.FromCopper(10));
 
-            bool result = wealth.TryTransfer(AccountId.Person(a), AccountId.Person(b), Money.FromShil(40), TransferReason.Wage);
+            bool result = wealth.TryTransfer(AccountId.Person(a), AccountId.Person(b), Money.FromCopper(40), TransferReason.Wage);
 
             Assert.IsFalse(result);
-            Assert.AreEqual(Money.FromShil(10), wealth.GetBalance(AccountId.Person(a)));
+            Assert.AreEqual(Money.FromCopper(10), wealth.GetBalance(AccountId.Person(a)));
             Assert.AreEqual(Money.Zero, wealth.GetBalance(AccountId.Person(b)));
         }
 
@@ -75,7 +75,7 @@ namespace TheEmptying.Tests.EditMode.Wealth
             EntityId a = people.SpawnPerson(30, 30);
             Money crownStart = wealth.GetBalance(AccountId.Crown);
 
-            bool result = wealth.TryTransfer(AccountId.Crown, AccountId.Person(a), crownStart + Money.FromShil(1), TransferReason.Grant);
+            bool result = wealth.TryTransfer(AccountId.Crown, AccountId.Person(a), crownStart + Money.FromCopper(1), TransferReason.Grant);
 
             Assert.IsFalse(result);
             Assert.AreEqual(crownStart, wealth.GetBalance(AccountId.Crown));
@@ -88,11 +88,11 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation sim, WealthModule wealth, PeopleModule people) = Build(core);
             EntityId a = people.SpawnPerson(30, 30);
             EntityId b = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(a), Money.FromShil(5));
+            wealth.Grant(AccountId.Person(a), Money.FromCopper(5));
 
-            wealth.TryTransfer(AccountId.Person(a), AccountId.Person(b), Money.FromShil(100), TransferReason.Purchase);
+            wealth.TryTransfer(AccountId.Person(a), AccountId.Person(b), Money.FromCopper(100), TransferReason.Purchase);
 
-            Assert.GreaterOrEqual(wealth.GetBalance(AccountId.Person(a)).HundredthsOfShil, 0);
+            Assert.GreaterOrEqual(wealth.GetBalance(AccountId.Person(a)).HundredthsOfCopper, 0);
         }
 
         [Test]
@@ -102,12 +102,12 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation sim, WealthModule wealth, PeopleModule people) = Build(core);
             EntityId a = people.SpawnPerson(30, 30);
             EntityId b = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(a), Money.FromShil(100));
+            wealth.Grant(AccountId.Person(a), Money.FromCopper(100));
 
-            wealth.TryTransfer(AccountId.Person(a), AccountId.Person(b), Money.FromShil(25), TransferReason.Rent);
+            wealth.TryTransfer(AccountId.Person(a), AccountId.Person(b), Money.FromCopper(25), TransferReason.Rent);
 
-            Assert.AreEqual(Money.FromShil(25), wealth.GetLedgerOut(AccountId.Person(a))[TransferReason.Rent]);
-            Assert.AreEqual(Money.FromShil(25), wealth.GetLedgerIn(AccountId.Person(b))[TransferReason.Rent]);
+            Assert.AreEqual(Money.FromCopper(25), wealth.GetLedgerOut(AccountId.Person(a))[TransferReason.Rent]);
+            Assert.AreEqual(Money.FromCopper(25), wealth.GetLedgerIn(AccountId.Person(b))[TransferReason.Rent]);
         }
 
         [Test]
@@ -116,9 +116,9 @@ namespace TheEmptying.Tests.EditMode.Wealth
             using var core = new TempCoreContentCopy();
             (Simulation sim, WealthModule wealth, PeopleModule people) = Build(core);
             EntityId a = people.SpawnPerson(30, 30);
-            wealth.Grant(AccountId.Person(a), Money.FromShil(50), TransferReason.Grant);
+            wealth.Grant(AccountId.Person(a), Money.FromCopper(50), TransferReason.Grant);
 
-            Assert.AreEqual(Money.FromShil(50), wealth.GetLedgerIn(AccountId.Person(a))[TransferReason.Grant]);
+            Assert.AreEqual(Money.FromCopper(50), wealth.GetLedgerIn(AccountId.Person(a))[TransferReason.Grant]);
 
             for (long i = 0; i < CalendarConstants.TicksPerMonth; i++)
             {
@@ -126,7 +126,7 @@ namespace TheEmptying.Tests.EditMode.Wealth
             }
 
             Assert.IsFalse(wealth.GetLedgerIn(AccountId.Person(a)).ContainsKey(TransferReason.Grant), "This month's ledger should have started fresh.");
-            Assert.AreEqual(Money.FromShil(50), wealth.GetLedgerIn(AccountId.Person(a), currentMonth: false)[TransferReason.Grant], "Last month's totals should have moved to Previous.");
+            Assert.AreEqual(Money.FromCopper(50), wealth.GetLedgerIn(AccountId.Person(a), currentMonth: false)[TransferReason.Grant], "Last month's totals should have moved to Previous.");
         }
 
         [Test]
@@ -135,9 +135,9 @@ namespace TheEmptying.Tests.EditMode.Wealth
             using var core = new TempCoreContentCopy();
             (Simulation sim, WealthModule wealth, _) = Build(core);
 
-            wealth.Grant(AccountId.Crown, Money.FromShil(1000));
+            wealth.Grant(AccountId.Crown, Money.FromCopper(1000));
 
-            Assert.AreEqual(wealth.GetBalance(AccountId.Crown), Money.FromShil(5000) + Money.FromShil(1000));
+            Assert.AreEqual(wealth.GetBalance(AccountId.Crown), Money.FromCopper(5000) + Money.FromCopper(1000));
         }
     }
 }

@@ -94,7 +94,7 @@ namespace TheEmptying.Tests.EditMode.Land
             sim.Step();
 
             EntityId buyer = sim.Entities.Create(EntityKind.Person);
-            wealth.Grant(AccountId.Person(buyer), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(buyer), Money.FromCopper(10000));
 
             Assert.IsTrue(land.TryBuyPlot(buyer, "zone.residential_low", new GridPoint(10, 10), out _, out string error), error);
 

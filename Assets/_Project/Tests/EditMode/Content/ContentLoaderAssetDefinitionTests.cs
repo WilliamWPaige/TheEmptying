@@ -20,9 +20,9 @@ namespace TheEmptying.Tests.EditMode.Content
             return registry;
         }
 
-        private static ContentAssetDefinition GoodAssetDefinition(string id, long hundredthsOfShil = 500)
+        private static ContentAssetDefinition GoodAssetDefinition(string id, long hundredthsOfCopper = 500)
         {
-            var good = new Good(id, "Test Good", GoodCategory.Raw, Money.FromHundredthsOfShil(hundredthsOfShil));
+            var good = new Good(id, "Test Good", GoodCategory.Raw, Money.FromHundredthsOfCopper(hundredthsOfCopper));
             return new ContentAssetDefinition(BuiltInContentTypes.GoodTypeName, good, "content-assets", id);
         }
 
@@ -65,11 +65,11 @@ namespace TheEmptying.Tests.EditMode.Content
             using var source = new TempContentSource("core");
             source.WriteDataFile("goods.json", @"{
                 ""type"": ""good"",
-                ""items"": [ { ""id"": ""good.log"", ""name"": ""Log"", ""category"": ""Raw"", ""basePrice"": { ""hundredthsOfShil"": 500 } } ]
+                ""items"": [ { ""id"": ""good.log"", ""name"": ""Log"", ""category"": ""Raw"", ""basePrice"": { ""hundredthsOfCopper"": 500 } } ]
             }");
 
             var loader = new ContentLoader(CreateBuiltInTypes(), ErrorMode.Release);
-            var assets = new[] { GoodAssetDefinition("good.log", hundredthsOfShil: 99900) };
+            var assets = new[] { GoodAssetDefinition("good.log", hundredthsOfCopper: 99900) };
 
             (ContentDatabase database, ContentLoadReport report) = loader.Load(new[] { source.FolderPath }, assetDefinitions: assets);
 
@@ -78,7 +78,7 @@ namespace TheEmptying.Tests.EditMode.Content
 
             // Release mode keeps the first-loaded copy (the JSON one) rather than the duplicate.
             ContentEntry entry = database.Get(BuiltInContentTypes.GoodTypeName, "good.log");
-            Assert.AreEqual(500, ((Good)entry.Definition).BasePrice.HundredthsOfShil);
+            Assert.AreEqual(500, ((Good)entry.Definition).BasePrice.HundredthsOfCopper);
         }
 
         [Test]

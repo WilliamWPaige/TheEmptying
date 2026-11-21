@@ -43,13 +43,13 @@ namespace TheEmptying.Tests.EditMode.Wealth
             using var core = new TempCoreContentCopy();
             (Simulation sim, WealthModule wealth, PeopleModule people) = Build(core, 1);
 
-            Assert.AreEqual(Money.FromShil(5000), wealth.GetBalance(AccountId.Crown));
+            Assert.AreEqual(Money.FromCopper(5000), wealth.GetBalance(AccountId.Crown));
 
             foreach (KeyValuePair<EntityId, PersonState> row in people.People)
             {
                 Money balance = wealth.GetBalance(AccountId.Person(row.Key));
-                Assert.GreaterOrEqual(balance.HundredthsOfShil, 0);
-                Assert.LessOrEqual(balance.HundredthsOfShil, Money.FromShil(300).HundredthsOfShil);
+                Assert.GreaterOrEqual(balance.HundredthsOfCopper, 0);
+                Assert.LessOrEqual(balance.HundredthsOfCopper, Money.FromCopper(300).HundredthsOfCopper);
 
                 // 3.9b: the advisor and the monarch are upper class (power/no job respectively); every
                 // other founder, like a plain immigrant, is lower.
@@ -66,8 +66,8 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation simA, WealthModule wealthA, PeopleModule peopleA) = Build(coreA, 777);
             (Simulation simB, WealthModule wealthB, PeopleModule peopleB) = Build(coreB, 777);
 
-            List<long> balancesA = peopleA.People.Select(r => wealthA.GetBalance(AccountId.Person(r.Key)).HundredthsOfShil).OrderBy(b => b).ToList();
-            List<long> balancesB = peopleB.People.Select(r => wealthB.GetBalance(AccountId.Person(r.Key)).HundredthsOfShil).OrderBy(b => b).ToList();
+            List<long> balancesA = peopleA.People.Select(r => wealthA.GetBalance(AccountId.Person(r.Key)).HundredthsOfCopper).OrderBy(b => b).ToList();
+            List<long> balancesB = peopleB.People.Select(r => wealthB.GetBalance(AccountId.Person(r.Key)).HundredthsOfCopper).OrderBy(b => b).ToList();
 
             Assert.AreEqual(wealthA.GetBalance(AccountId.Crown), wealthB.GetBalance(AccountId.Crown));
             CollectionAssert.AreEqual(balancesA, balancesB);

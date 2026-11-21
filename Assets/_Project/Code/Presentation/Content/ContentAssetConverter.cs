@@ -47,7 +47,7 @@ namespace TheEmptying.Presentation.Content
         }
 
         public static Good ToRecord(GoodAsset asset) =>
-            new Good(asset.Id, asset.DisplayName, asset.Category, Money.FromShil((double)asset.BasePriceShil));
+            new Good(asset.Id, asset.DisplayName, asset.Category, Money.FromCopper((double)asset.BasePriceCopper));
 
         public static Need ToRecord(NeedAsset asset) =>
             new Need(asset.Id, asset.DisplayName, asset.Kind, asset.HoursToEmpty, asset.MinimumClass, asset.BelieversOnly);

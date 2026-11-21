@@ -56,7 +56,7 @@ namespace TheEmptying.Tests.EditMode.Jobs
         {
             land.RequestSetZone(new CellRect(plotAt.X, plotAt.Y, 6, 6), "zone.commercial");
             sim.Step();
-            wealth.Grant(AccountId.Person(owner), Money.FromShil(10000));
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(10000));
             Assert.IsTrue(land.TryBuyPlot(owner, "zone.commercial", plotAt, out _, out string buyError), buyError);
 
             EntityId bakeryId;
@@ -152,13 +152,13 @@ namespace TheEmptying.Tests.EditMode.Jobs
             Assert.IsTrue(jobs.TryGetJobs(bakeryB, out JobsState stateB));
 
             // Just under the 20% bar: should not switch.
-            stateB.Worker.PayPerDay = Money.FromHundredthsOfShil((long)(payA.HundredthsOfShil * 1.19));
+            stateB.Worker.PayPerDay = Money.FromHundredthsOfCopper((long)(payA.HundredthsOfCopper * 1.19));
             StepDays(sim, 1);
             Assert.AreEqual(worker, stateA.Worker.Occupants[0], "A raise under 20% should not be enough to switch.");
             Assert.IsFalse(stateB.Worker.Occupants[0].HasValue);
 
             // At least 20% more: should switch.
-            stateB.Worker.PayPerDay = Money.FromHundredthsOfShil((long)(payA.HundredthsOfShil * 1.21));
+            stateB.Worker.PayPerDay = Money.FromHundredthsOfCopper((long)(payA.HundredthsOfCopper * 1.21));
             StepDays(sim, 1);
             Assert.IsFalse(stateA.Worker.Occupants[0].HasValue, "The worker should have left bakery A for the better-paying opening.");
             Assert.AreEqual(worker, stateB.Worker.Occupants[0]);

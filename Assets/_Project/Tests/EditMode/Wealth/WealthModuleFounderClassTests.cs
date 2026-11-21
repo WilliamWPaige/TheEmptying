@@ -108,7 +108,7 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation sim, PeopleModule people, WealthModule wealth, LandModule land, _, _) = Build(core);
 
             EntityId founder = people.People.First(r => r.Value.IsFounder).Key;
-            wealth.Grant(AccountId.Person(founder), Money.FromShil(5000)); // even with money granted for the test
+            wealth.Grant(AccountId.Person(founder), Money.FromCopper(5000)); // even with money granted for the test
 
             land.RequestSetZone(new CellRect(50, 50, 4, 4), "zone.residential_low");
             sim.Step();
@@ -125,7 +125,7 @@ namespace TheEmptying.Tests.EditMode.Wealth
             (Simulation sim, PeopleModule people, WealthModule wealth, LandModule land, BuildingsModule buildings, InventoryModule inventory) = Build(core);
 
             EntityId founder = people.People.First(r => r.Value.IsFounder).Key;
-            wealth.Grant(AccountId.Person(founder), Money.FromShil(5000));
+            wealth.Grant(AccountId.Person(founder), Money.FromCopper(5000));
 
             Assert.IsFalse(buildings.TryRequestPrivateBuilding(founder, "building.cottage", out _, out string error),
                 "A founder owns nothing and should never be able to request a private building.");
