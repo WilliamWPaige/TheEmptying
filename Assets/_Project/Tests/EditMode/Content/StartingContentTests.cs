@@ -22,7 +22,7 @@ namespace TheEmptying.Tests.EditMode.Content
         {
             var catalog = Resources.Load<ContentCatalog>("ContentCatalog");
             Assert.IsNotNull(catalog, "Expected Assets/_Project/Data/Resources/ContentCatalog.asset.");
-            Assert.AreEqual(8, catalog.Goods.Count);
+            Assert.AreEqual(9, catalog.Goods.Count);
             Assert.AreEqual(12, catalog.Needs.Count);
             Assert.AreEqual(6, catalog.Zones.Count);
             Assert.AreEqual(15, catalog.BuildingTypes.Count);

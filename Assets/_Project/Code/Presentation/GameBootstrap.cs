@@ -201,11 +201,17 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: the build menu's own toggle button screen position (see BuildingsPresenter.BuildMenuToggleButtonPositionForTesting).</summary>
         public Vector2? BuildMenuToggleButtonPositionForTesting => _buildingsPresenter?.BuildMenuToggleButtonPositionForTesting;
 
+        /// <summary>For tests: a building type's button inside the (opened) build menu, by panel position (see BuildingsPresenter.MenuTypeButtonPositionForTesting).</summary>
+        public Vector2? MenuTypeButtonPositionForTesting(string typeId) => _buildingsPresenter?.MenuTypeButtonPositionForTesting(typeId);
+
         /// <summary>For tests: runs the exact guarded placement decision a real left-click at screenPosition would. Returns the placed building's id, if any.</summary>
         public EntityId? SimulatePlacementClickForTesting(string typeId, GridPoint cell, Vector2 screenPosition) => _buildingsPresenter?.SimulatePlacementClickForTesting(typeId, cell, screenPosition);
 
         /// <summary>For tests: runs the exact guarded click-to-inspect decision a real left-click at screenPosition would.</summary>
         public void ClickAtForTesting(Vector2 screenPosition) => _buildingsPresenter?.ClickAtForTesting(screenPosition);
+
+        /// <summary>For tests: opens the tool with a type already selected, without simulating the clicks that would normally get there (see BuildingsPresenter.OpenBuildMenuWithTypeSelectedForTesting).</summary>
+        public void OpenBuildMenuWithTypeSelectedForTesting(string typeId) => _buildingsPresenter?.OpenBuildMenuWithTypeSelectedForTesting(typeId);
 
         /// <summary>For tests: closes the build menu/tool, exactly as clicking its toggle button a second time would.</summary>
         public void CloseBuildMenuForTesting() => _buildingsPresenter?.CloseBuildMenuForTesting();

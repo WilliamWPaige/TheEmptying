@@ -40,6 +40,9 @@ namespace TheEmptying.Modules.People
         /// <summary>Consecutive hours with hunger at zero; resets the moment hunger rises above zero. Drives starvation death.</summary>
         public double HoursHungerEmpty;
 
+        /// <summary>Hours left of the mood penalty from eating a ground grub (people prefer bread); 0 means no penalty is active.</summary>
+        public int GrubMoodPenaltyHoursRemaining;
+
         // Monthly lifestyle-shift accumulators, reset after each shift is applied.
         public int HoursTrackedThisMonth;
         public int HoursHungerCriticalThisMonth;

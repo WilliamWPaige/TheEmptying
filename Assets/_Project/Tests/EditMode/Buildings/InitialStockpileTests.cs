@@ -58,13 +58,14 @@ namespace TheEmptying.Tests.EditMode.Buildings
             Assert.IsNull(building.Construction, "The stockpile should be complete the instant it's placed.");
 
             int founderCount = (int)sim.Settings.Get(PeopleModule.FounderCountSettingId);
-            int loavesPerFounder = (int)sim.Settings.Get(PeopleModule.StartingProvisionsLoavesSettingId);
+            int loavesPerPerson = (int)sim.Settings.Get(PeopleModule.StartingProvisionsLoavesSettingId);
             int planks = (int)sim.Settings.Get(BuildingsModule.InitialStockpilePlanksSettingId);
             int stone = (int)sim.Settings.Get(BuildingsModule.InitialStockpileStoneSettingId);
 
             Assert.AreEqual(planks, inventory.GetCount(id, "good.plank"));
             Assert.AreEqual(stone, inventory.GetCount(id, "good.stone"));
-            Assert.AreEqual(loavesPerFounder * founderCount, inventory.GetCount(id, "good.loaf"));
+            Assert.AreEqual(loavesPerPerson * (founderCount + 1), inventory.GetCount(id, "good.loaf"),
+                "Starting bread is counted per person, including the monarch (the +1).");
         }
 
         [Test]

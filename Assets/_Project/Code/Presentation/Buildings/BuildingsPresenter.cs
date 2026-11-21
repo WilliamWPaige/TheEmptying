@@ -34,6 +34,7 @@ namespace TheEmptying.Presentation.Buildings
 
         private VisualElement _menuPanel;
         private Button _buildMenuToggleButton;
+        private readonly Dictionary<string, Button> _menuTypeButtons = new Dictionary<string, Button>();
         private string _selectedTypeId;
         private bool _toolActive;
         private bool _placingInitialStockpile;
@@ -153,6 +154,7 @@ namespace TheEmptying.Presentation.Buildings
                 string typeId = type.Id;
                 button.clicked += () => _selectedTypeId = typeId;
                 _menuPanel.Add(button);
+                _menuTypeButtons[typeId] = button;
             }
 
             root.Add(_menuPanel);
@@ -399,7 +401,7 @@ namespace TheEmptying.Presentation.Buildings
 
                 if (isSite && _camera != null)
                 {
-                    BillboardUtility.FaceCameraUpright(label.transform, _camera);
+                    BillboardUtility.FaceCameraFlat(label.transform, _camera);
                 }
             }
         }
@@ -482,6 +484,10 @@ namespace TheEmptying.Presentation.Buildings
         /// <summary>For tests: the build menu's own toggle button, as a stand-in for a real UI screen position (this project's PanelSettings use a 1:1 pixel scale, so panel space and screen space coincide).</summary>
         public Vector2 BuildMenuToggleButtonPositionForTesting => _buildMenuToggleButton.worldBound.center;
 
+        /// <summary>For tests: a building type's button inside the (opened) build menu, by panel position - null if that type has no button (menu closed, or not a government type).</summary>
+        public Vector2? MenuTypeButtonPositionForTesting(string typeId) =>
+            _menuTypeButtons.TryGetValue(typeId, out Button button) ? button.worldBound.center : (Vector2?)null;
+
         /// <summary>For tests: whether a click at this screen position would currently be swallowed by UI instead of reaching the 3D world.</summary>
         public bool IsPointerOverUiForTesting(Vector2 screenPosition) => UiInputUtility.IsPointerOverUi(_uiRoot, screenPosition);
 
@@ -527,6 +533,14 @@ namespace TheEmptying.Presentation.Buildings
             _toolActive = true;
             _selectedTypeId = typeId;
             return ProcessGovernmentPlacementClick(cell, screenPosition, leftClicked: true, rightClicked: false);
+        }
+
+        /// <summary>For tests: opens the tool with a type already selected and the menu showing, without simulating the clicks that would normally get there - so a test about one specific real click doesn't also depend on another UI element's layout timing.</summary>
+        public void OpenBuildMenuWithTypeSelectedForTesting(string typeId)
+        {
+            _toolActive = true;
+            _selectedTypeId = typeId;
+            _menuPanel.style.display = DisplayStyle.Flex;
         }
 
         /// <summary>For tests: closes the build menu/tool, exactly as clicking its toggle button a second time would.</summary>

@@ -43,6 +43,9 @@ namespace TheEmptying.Modules.People
         public const string NightEndHourSettingId = "setting.people.night_end_hour";
         public const string EatAtHungerPercentSettingId = "setting.people.eat_at_hunger_percent";
         public const string HungerRestoredPerLoafSettingId = "setting.people.hunger_restored_per_loaf";
+        public const string HungerRestoredPerGrubSettingId = "setting.people.hunger_restored_per_grub";
+        public const string GrubMoodPenaltyAmountSettingId = "setting.people.grub_mood_penalty_amount";
+        public const string GrubMoodPenaltyHoursSettingId = "setting.people.grub_mood_penalty_hours";
         public const string SleepRestRestorePerHourSettingId = "setting.people.sleep_rest_restore_per_hour";
         public const string WanderRadiusCellsSettingId = "setting.people.wander_radius_cells";
         public const string WanderChancePerHourSettingId = "setting.people.wander_chance_per_hour";
@@ -72,6 +75,7 @@ namespace TheEmptying.Modules.People
         private const string ClassChangedEventId = "event.wealth.class_changed";
 
         private const string FoodGoodId = "good.loaf";
+        private const string GrubGoodId = "good.ground_grub";
 
         private sealed class HourlySystem : ISimSystem
         {
@@ -450,6 +454,9 @@ namespace TheEmptying.Modules.People
             float homelessPenalty = (float)_settings.Get(HomelessMoodPenaltySettingId);
             float eatAtPercent = (float)_settings.Get(EatAtHungerPercentSettingId);
             float hungerRestorePerLoaf = (float)_settings.Get(HungerRestoredPerLoafSettingId);
+            float hungerRestorePerGrub = (float)_settings.Get(HungerRestoredPerGrubSettingId);
+            float grubMoodPenalty = (float)_settings.Get(GrubMoodPenaltyAmountSettingId);
+            int grubMoodPenaltyHours = (int)_settings.Get(GrubMoodPenaltyHoursSettingId);
             float sleepRestorePerHour = (float)_settings.Get(SleepRestRestorePerHourSettingId);
             double starvationHoursBeforeDeath = _settings.Get(StarvationHoursBeforeDeathSettingId);
             double homelessHealthDamage = _settings.Get(HomelessHealthDamagePerNightSettingId);
@@ -493,9 +500,14 @@ namespace TheEmptying.Modules.People
                     ? person.HoursHungerEmpty + 1
                     : 0;
 
-                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, sleepRestorePerHour, wanderChance, wanderRadius);
+                if (person.GrubMoodPenaltyHoursRemaining > 0)
+                {
+                    person.GrubMoodPenaltyHoursRemaining--;
+                }
 
-                person.Mood = ComputeMood(person, homeless, homelessPenalty);
+                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, hungerRestorePerGrub, grubMoodPenaltyHours, sleepRestorePerHour, wanderChance, wanderRadius);
+
+                person.Mood = ComputeMood(person, homeless, homelessPenalty, grubMoodPenalty);
 
                 person.HoursTrackedThisMonth++;
                 if (person.Mood < badMoodThreshold)
@@ -554,7 +566,7 @@ namespace TheEmptying.Modules.People
             needState.Threshold = newState;
         }
 
-        private static double ComputeMood(PersonState person, bool homeless, float homelessPenalty)
+        private static double ComputeMood(PersonState person, bool homeless, float homelessPenalty, float grubMoodPenalty)
         {
             if (person.Needs.Count == 0)
             {
@@ -573,16 +585,30 @@ namespace TheEmptying.Modules.People
                 average -= homelessPenalty;
             }
 
+            if (person.GrubMoodPenaltyHoursRemaining > 0)
+            {
+                average -= grubMoodPenalty;
+            }
+
             return Math.Clamp(average, 0.0, 100.0);
         }
 
-        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float sleepRestorePerHour, float wanderChance, int wanderRadius)
+        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float hungerRestorePerGrub, int grubMoodPenaltyHours, float sleepRestorePerHour, float wanderChance, int wanderRadius)
         {
             bool isHungry = person.Needs.TryGetValue("need.hunger", out PersonNeedState hunger) && hunger.Meter <= eatAtPercent;
             EntityId foodSource = _foodSourceProvider(id) ?? id;
             if (isHungry && _inventory.TryRemove(foodSource, FoodGoodId, 1))
             {
                 hunger.Meter = Math.Min(100f, hunger.Meter + hungerRestorePerLoaf);
+                person.Activity = PersonActivity.Eating;
+                return;
+            }
+
+            // People prefer bread; a ground grub is the fallback once there's no bread left.
+            if (isHungry && _inventory.TryRemove(foodSource, GrubGoodId, 1))
+            {
+                hunger.Meter = Math.Min(100f, hunger.Meter + hungerRestorePerGrub);
+                person.GrubMoodPenaltyHoursRemaining = grubMoodPenaltyHours;
                 person.Activity = PersonActivity.Eating;
                 return;
             }
@@ -807,6 +833,7 @@ namespace TheEmptying.Modules.People
                 writer.WriteDouble(person.Mood);
                 writer.WriteInt((int)person.Activity);
                 writer.WriteDouble(person.HoursHungerEmpty);
+                writer.WriteInt(person.GrubMoodPenaltyHoursRemaining);
 
                 writer.WriteBool(person.IsFounder);
                 writer.WriteBool(person.IsMonarch);
@@ -870,7 +897,8 @@ namespace TheEmptying.Modules.People
                     IsBeliever = reader.ReadBool(),
                     Mood = reader.ReadDouble(),
                     Activity = (PersonActivity)reader.ReadInt(),
-                    HoursHungerEmpty = reader.ReadDouble()
+                    HoursHungerEmpty = reader.ReadDouble(),
+                    GrubMoodPenaltyHoursRemaining = reader.ReadInt()
                 };
 
                 person.IsFounder = reader.ReadBool();

@@ -41,6 +41,7 @@ namespace TheEmptying.Modules.Buildings
         private const string LoafGoodId = "good.loaf";
 
         public const string BuildingCompletedEventId = "event.buildings.building_completed";
+        public const string ConstructionSiteStartedEventId = "event.buildings.construction_site_started";
 
         public const string KeepTypeId = "building.keep";
         public const string CrownLodgingTypeId = "building.crown_lodging";
@@ -223,11 +224,11 @@ namespace TheEmptying.Modules.Buildings
                 _inventory.Add(id, StoneGoodId, initialStone);
             }
 
-            int loavesPerFounder = (int)_settings.Get(PeopleModule.StartingProvisionsLoavesSettingId);
-            int founderCount = (int)_settings.Get(PeopleModule.FounderCountSettingId);
-            if (loavesPerFounder > 0 && founderCount > 0)
+            int loavesPerPerson = (int)_settings.Get(PeopleModule.StartingProvisionsLoavesSettingId);
+            int startingPeopleCount = _people.People.Count(row => _people.IsFounder(row.Key) || _people.IsMonarch(row.Key));
+            if (loavesPerPerson > 0 && startingPeopleCount > 0)
             {
-                _inventory.Add(id, LoafGoodId, loavesPerFounder * founderCount);
+                _inventory.Add(id, LoafGoodId, loavesPerPerson * startingPeopleCount);
             }
 
             _initialStockpilePlaced = true;
@@ -417,6 +418,11 @@ namespace TheEmptying.Modules.Buildings
             }
 
             CheckCompletion(id, building, type, _currentTick());
+            if (building.Construction != null)
+            {
+                _events.Post(ConstructionSiteStartedEventId, _currentTick(), new EventData().SetEntity("building", id));
+            }
+
             return id;
         }
 

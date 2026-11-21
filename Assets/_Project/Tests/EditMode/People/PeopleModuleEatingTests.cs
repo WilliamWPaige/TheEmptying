@@ -78,6 +78,46 @@ namespace TheEmptying.Tests.EditMode.People
         }
 
         [Test]
+        public void PrefersBread_OverGrubs_WhenBothAreAvailable()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, PeopleModule people, InventoryModule inventory) = Build(core);
+
+            EntityId id = people.SpawnPerson(30, 30);
+            inventory.Add(id, "good.ground_grub", 5);
+            int loavesBefore = inventory.GetCount(id, "good.loaf");
+            GetPerson(people, id).Needs["need.hunger"].Meter = 40f; // at/below the eat-at-50% threshold
+
+            StepHours(sim, 1);
+
+            Assert.AreEqual(loavesBefore - 1, inventory.GetCount(id, "good.loaf"), "Bread should be eaten before any grub, while both are available.");
+            Assert.AreEqual(5, inventory.GetCount(id, "good.ground_grub"));
+            Assert.AreEqual(0, GetPerson(people, id).GrubMoodPenaltyHoursRemaining, "Eating bread should not trigger the grub mood penalty.");
+        }
+
+        [Test]
+        public void EatingAGrub_OnlyWithNoBreadLeft_RestoresHungerWithAMoodPenalty()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, PeopleModule people, InventoryModule inventory) = Build(core);
+
+            EntityId id = people.SpawnPerson(30, 30);
+            while (inventory.TryRemove(id, "good.loaf", 1))
+            {
+            }
+
+            inventory.Add(id, "good.ground_grub", 3);
+            GetPerson(people, id).Needs["need.hunger"].Meter = 40f; // at/below the eat-at-50% threshold
+
+            StepHours(sim, 1);
+
+            Assert.AreEqual(2, inventory.GetCount(id, "good.ground_grub"), "With no bread left, hunger should be satisfied by a grub instead.");
+            Assert.Greater(GetPerson(people, id).Needs["need.hunger"].Meter, 40f, "Eating a grub should restore hunger.");
+            Assert.AreEqual(PersonActivity.Eating, GetPerson(people, id).Activity);
+            Assert.Greater(GetPerson(people, id).GrubMoodPenaltyHoursRemaining, 0, "Eating a grub should start its temporary mood penalty.");
+        }
+
+        [Test]
         public void StartingProvisions_LastAboutAMonthForOnePerson()
         {
             using var core = new TempCoreContentCopy();

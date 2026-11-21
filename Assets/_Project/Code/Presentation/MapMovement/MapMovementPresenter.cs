@@ -169,7 +169,7 @@ namespace TheEmptying.Presentation.MapMovement
 
             if (closeEnoughToRead)
             {
-                BillboardUtility.FaceCameraUpright(label.transform, _camera);
+                BillboardUtility.FaceCameraFlat(label.transform, _camera);
             }
         }
 

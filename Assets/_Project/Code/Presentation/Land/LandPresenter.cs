@@ -176,9 +176,15 @@ namespace TheEmptying.Presentation.Land
                 _dragStart = cell;
             }
 
-            if (_dragging && Mouse.current.leftButton.wasReleasedThisFrame && TryPickCell(out GridPoint end))
+            if (_dragging && Mouse.current.leftButton.wasReleasedThisFrame)
             {
                 _dragging = false;
+
+                if (UiInputUtility.IsPointerOverUi(_uiRoot, Mouse.current.position.ReadValue()) || !TryPickCell(out GridPoint end))
+                {
+                    return; // released over UI (or off the map) - the drag started validly, but don't paint with a UI-covered endpoint
+                }
+
                 CellRect rect = RectBetween(_dragStart, end);
 
                 if (_selectedZoneId == null)
