@@ -130,6 +130,9 @@ namespace TheEmptying.Modules.MapMovement
 
         public bool IsMover(EntityId entity) => _movers.Has(entity);
 
+        /// <summary>This mover's current destination cell, if it's walking anywhere right now.</summary>
+        public GridPoint? GetDestination(EntityId entity) => _movers.TryGet(entity, out MoverState state) ? state.Destination : null;
+
         /// <summary>The mover's current cell. Throws if entity isn't a mover.</summary>
         public GridPoint GetCell(EntityId entity)
         {

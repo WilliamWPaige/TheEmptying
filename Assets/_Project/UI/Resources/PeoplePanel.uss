@@ -1,0 +1,69 @@
+.people-panel-root {
+    position: absolute;
+    top: 48px;
+    left: 8px;
+    width: 420px;
+    max-height: 80%;
+    background-color: rgb(20, 20, 24);
+    border-radius: 6px;
+    padding: 10px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.2);
+}
+
+.people-panel-header {
+    flex-direction: row;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 6px;
+}
+
+.people-panel-title {
+    color: rgb(255, 255, 255);
+    font-size: 15px;
+    -unity-font-style: bold;
+    flex-grow: 1;
+}
+
+.people-panel-close {
+    width: 22px;
+    height: 22px;
+}
+
+.people-panel-rows {
+    flex-grow: 1;
+}
+
+.people-panel-row {
+    background-color: rgba(255, 255, 255, 0.05);
+    border-radius: 4px;
+    padding: 6px;
+    margin-bottom: 4px;
+}
+
+.people-panel-row:hover {
+    background-color: rgba(255, 255, 255, 0.1);
+}
+
+.people-panel-row-selected {
+    background-color: rgba(120, 170, 255, 0.18);
+    border-width: 1px;
+    border-color: rgba(120, 170, 255, 0.6);
+}
+
+.people-panel-row-summary {
+    color: rgb(230, 230, 230);
+    font-size: 12px;
+    -unity-font-style: bold;
+}
+
+.people-panel-row-detail {
+    color: rgb(190, 190, 190);
+    font-size: 11px;
+}
+
+.people-panel-row-idle-reason {
+    color: rgb(230, 190, 90);
+    font-size: 11px;
+    -unity-font-style: italic;
+}

@@ -12,6 +12,7 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -22,6 +23,7 @@ using TheEmptying.Presentation.Buildings;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.Land;
 using TheEmptying.Presentation.MapMovement;
+using TheEmptying.Presentation.People;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
@@ -56,6 +58,16 @@ namespace TheEmptying.Presentation
         private double _accumulatedRealSeconds;
         private SimSpeed _speed = SimSpeed.Normal;
         private bool _paused;
+
+        /// <summary>
+        /// For tests only: multiplies the real time fed into the tick accumulator, so a long
+        /// real-time PlayMode test can cover the same in-game days in far less wall-clock time while
+        /// still playing the real Game scene at a real game speed. 1 (no change) outside tests. The
+        /// presenter's own smoothing reads real elapsed time independently (Time.unscaledTime), so it
+        /// adapts its catch-up speed to however much ground a batch of ticks actually covered -
+        /// nothing else needs to know about this multiplier.
+        /// </summary>
+        private double _testTimeMultiplier = 1.0;
 
         private InputActionAsset _actions;
 
@@ -106,10 +118,13 @@ namespace TheEmptying.Presentation
         private BuildingsModule _buildingsModule;
         private JobsModule _jobsModule;
         private MarketModule _marketModule;
+        private GatheringModule _gatheringModule;
         private MapMovementPresenter _mapPresenter;
         private LandPresenter _landPresenter;
         private BuildingsPresenter _buildingsPresenter;
         private BuildingPanelPresenter _buildingPanelPresenter;
+        private PeoplePanelPresenter _peoplePanelPresenter;
+        private StrategyCameraController _cameraController;
 
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
@@ -247,6 +262,18 @@ namespace TheEmptying.Presentation
         public bool IsBuildingPanelOpenForTesting => _buildingPanelPresenter?.IsShowingForTesting ?? false;
         public EntityId BuildingPanelShownIdForTesting => _buildingPanelPresenter?.ShownBuildingIdForTesting ?? EntityId.None;
 
+        /// <summary>For tests: whether the people panel is currently shown, and how many rows it lists.</summary>
+        public bool IsPeoplePanelOpenForTesting => _peoplePanelPresenter?.IsShowingForTesting ?? false;
+        public int PeoplePanelRowCountForTesting => _peoplePanelPresenter?.RowCountForTesting ?? 0;
+        public EntityId? PeoplePanelSelectedPersonIdForTesting => _peoplePanelPresenter?.SelectedPersonIdForTesting;
+        public bool IsPeoplePanelSelectionLineVisibleForTesting => _peoplePanelPresenter?.IsSelectionLineVisibleForTesting ?? false;
+
+        /// <summary>For tests: opens the people panel (see PeoplePanelPresenter.Show).</summary>
+        public void ShowPeoplePanelForTesting() => _peoplePanelPresenter?.Show();
+
+        /// <summary>For tests: runs the exact row-click decision a real click on this person's row would (see PeoplePanelPresenter.SelectPersonForTesting).</summary>
+        public void SelectPersonInPeoplePanelForTesting(EntityId id) => _peoplePanelPresenter?.SelectPersonForTesting(id);
+
         /// <summary>For tests: the main camera presenting the world, for projecting a known world position to a screen position.</summary>
         public Camera CameraForTesting => Camera.main;
 
@@ -262,6 +289,15 @@ namespace TheEmptying.Presentation
 
         /// <summary>For tests: a construction site's overall progress percent (see BuildingsModule.GetConstructionProgressPercent).</summary>
         public double ConstructionProgressPercentForTesting(EntityId siteId) => _buildingsModule?.GetConstructionProgressPercent(siteId) ?? 100.0;
+
+        /// <summary>For tests: a person's current hand-gathering task (see GatheringModule.GetTaskKind). None if they have no active task.</summary>
+        public GatherTaskKind GatheringTaskKindForTesting(EntityId personId) => _gatheringModule?.GetTaskKind(personId) ?? GatherTaskKind.None;
+
+        /// <summary>For tests: whether this person holds a real job (see JobsModule.IsEmployed) - a founder hired into a new building's job slot correctly has no gathering task, not an idle one.</summary>
+        public bool IsEmployedForTesting(EntityId personId) => _jobsModule?.IsEmployed(personId) ?? false;
+
+        /// <summary>For tests: whether this person is a founder (see PeopleModule.IsFounder) - "people" lists everyone, including the monarch, who never has a gathering task.</summary>
+        public bool IsFounderForTesting(EntityId personId) => _peopleModule?.IsFounder(personId) ?? false;
 
         /// <summary>For tests: the simulation's current state hash.</summary>
         public ulong StateHashForTesting => _simulation.ComputeStateHash();
@@ -311,6 +347,7 @@ namespace TheEmptying.Presentation
             BuildMapMovementPresentation();
             BuildLandPresentation();
             BuildBuildingsPresentation();
+            BuildPeoplePresentation();
 
             Application.logMessageReceived += OnUnityLogMessage;
             AppendLog($"Startup report:\n{report}");
@@ -325,7 +362,7 @@ namespace TheEmptying.Presentation
                 return;
             }
 
-            _accumulatedRealSeconds += Time.unscaledDeltaTime;
+            _accumulatedRealSeconds += Time.unscaledDeltaTime * _testTimeMultiplier;
             double ticksPerRealSecond = TickRateCalculator.TicksPerRealSecond(RealSecondsPerDay, _speed);
             int ticksToRun = TickRateCalculator.TicksToRun(_accumulatedRealSeconds, ticksPerRealSecond, MaxTicksPerFrame, out double leftover);
             _accumulatedRealSeconds = leftover;
@@ -394,12 +431,45 @@ namespace TheEmptying.Presentation
             return sources;
         }
 
-        /// <summary>3.9e: setting.debug.log_world_clicks defaults off (even in a loaded save, since settings round-trip with the save), but the Editor always forces it on so a hand test can watch the log without remembering to flip it.</summary>
+        /// <summary>3.9f: behind setting.debug.log_task_changes, logs every hand-gathering task change - who, old task, new task, why.</summary>
+        public const string TaskChangeLogSettingId = "setting.debug.log_task_changes";
+
+        /// <summary>
+        /// 3.9e/3.9f: these debug settings default off (even in a loaded save, since settings
+        /// round-trip with the save), but the interactive Editor always forces them on so a hand
+        /// test can watch the logs without remembering to flip them. Application.isBatchMode is
+        /// also true for batch-mode test runs (EditMode and PlayMode), which must NOT get this
+        /// forced on - a long real-time PlayMode test driving many founders generates a large
+        /// volume of these logs every tick otherwise, which grows Unity's own log/console buffers
+        /// and was a real contributor to batch-mode test runs being killed for low memory.
+        /// </summary>
         private void ForceDebugLoggingDefaultInEditor()
         {
 #if UNITY_EDITOR
-            _simulation.Settings.Set(WorldClickDebugLogger.EnabledSettingId, 1);
+            if (!Application.isBatchMode)
+            {
+                _simulation.Settings.Set(WorldClickDebugLogger.EnabledSettingId, 1);
+                _simulation.Settings.Set(TaskChangeLogSettingId, 1);
+            }
 #endif
+        }
+
+        /// <summary>3.9f: logs every hand-gathering task change behind setting.debug.log_task_changes - re-subscribed whenever the simulation (and its EventBus) is rebuilt, by a new game or a load.</summary>
+        private void SubscribeDebugEventLogging()
+        {
+            _simulation.Events.Subscribe(GatheringModule.TaskChangedEventId, e =>
+            {
+                if (_simulation.Settings.Get(TaskChangeLogSettingId) == 0)
+                {
+                    return;
+                }
+
+                EntityId person = e.Data.GetEntity("person");
+                string oldTask = e.Data.GetString("oldTask");
+                string newTask = e.Data.GetString("newTask");
+                string reason = e.Data.GetString("reason");
+                Debug.Log($"[TaskChange] {person}: {oldTask} -> {newTask} ({reason})");
+            });
         }
 
         private StartupReport BuildSimulation()
@@ -414,10 +484,12 @@ namespace TheEmptying.Presentation
             _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
             _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
             _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
+            _gatheringModule = modules.OfType<GatheringModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
             ForceDebugLoggingDefaultInEditor();
+            SubscribeDebugEventLogging();
 
             BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
 
@@ -442,15 +514,15 @@ namespace TheEmptying.Presentation
             Camera camera = Camera.main;
             if (camera != null)
             {
-                var cameraController = camera.gameObject.AddComponent<StrategyCameraController>();
-                cameraController.Initialize(gameplayMap, _simulation.Settings);
+                _cameraController = camera.gameObject.AddComponent<StrategyCameraController>();
+                _cameraController.Initialize(gameplayMap, _simulation.Settings);
 
                 MapGrid grid = _mapMovementModule.Grid;
                 var mapCenter = new Vector3(
                     (float)(grid.Width * grid.CellSizeMeters) * 0.5f,
                     0f,
                     (float)(grid.Depth * grid.CellSizeMeters) * 0.5f);
-                cameraController.PlaceAbove(mapCenter, 80f);
+                _cameraController.PlaceAbove(mapCenter, 80f);
             }
 
             var presenterObject = new GameObject("MapMovementPresenter");
@@ -458,6 +530,7 @@ namespace TheEmptying.Presentation
             _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
             _mapPresenter.SetPeopleModule(_peopleModule);
             _mapPresenter.SetWealthModule(_wealthModule);
+            _mapPresenter.SetGatheringModule(_gatheringModule);
         }
 
         private void BuildLandPresentation()
@@ -494,6 +567,18 @@ namespace TheEmptying.Presentation
             {
                 SetPaused(true);
             }
+        }
+
+        private void BuildPeoplePresentation()
+        {
+            if (_peopleModule == null)
+            {
+                return;
+            }
+
+            var panelObject = new GameObject("PeoplePanelPresenter");
+            _peoplePanelPresenter = panelObject.AddComponent<PeoplePanelPresenter>();
+            _peoplePanelPresenter.Initialize(_peopleModule, _gatheringModule, _jobsModule, _buildingsModule, _mapMovementModule, _cameraController, _uiDocument.rootVisualElement);
         }
 
         /// <summary>The player just placed the starting stockpile: nothing else to gate on, so resume play automatically.</summary>
@@ -1066,6 +1151,12 @@ namespace TheEmptying.Presentation
             RefreshHud();
         }
 
+        /// <summary>For tests: fast-forwards the tick accumulator so a long real-time test covers the same in-game time in far less wall-clock time (see _testTimeMultiplier). 1 means no change.</summary>
+        public void SetTestTimeMultiplierForTesting(double multiplier)
+        {
+            _testTimeMultiplier = multiplier;
+        }
+
         public string Save(string name)
         {
             try
@@ -1113,19 +1204,23 @@ namespace TheEmptying.Presentation
                 _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
                 _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
                 _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
+                _gatheringModule = modules.OfType<GatheringModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
 
                 _simulation = loaded;
                 ForceDebugLoggingDefaultInEditor();
+                SubscribeDebugEventLogging();
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _mapPresenter?.Rebind(_mapMovementModule);
                 _mapPresenter?.SetPeopleModule(_peopleModule);
                 _mapPresenter?.SetWealthModule(_wealthModule);
+                _mapPresenter?.SetGatheringModule(_gatheringModule);
                 _landPresenter?.Rebind(_landModule, _mapMovementModule.Grid);
                 _buildingsPresenter?.Rebind(_buildingsModule, _mapMovementModule.Grid);
                 _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule, _marketModule);
+                _peoplePanelPresenter?.Rebind(_peopleModule, _gatheringModule, _jobsModule, _buildingsModule, _mapMovementModule);
 
                 if (_buildingsModule != null && _buildingsModule.NeedsInitialStockpilePlacement)
                 {

@@ -24,7 +24,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
     /// <summary>3.9b: hand gathering - founders build crown sites and gather by hand, anyone jobless may gather and sell to the crown.</summary>
     public class GatheringModuleTests
     {
-        private static (Simulation Simulation, GatheringModule Gathering, BuildingsModule Buildings, InventoryModule Inventory, WealthModule Wealth, MarketModule Market, PeopleModule People) Build(TempCoreContentCopy core)
+        private static (Simulation Simulation, GatheringModule Gathering, BuildingsModule Buildings, InventoryModule Inventory, WealthModule Wealth, MarketModule Market, PeopleModule People, JobsModule Jobs) Build(TempCoreContentCopy core)
         {
             var mapMovement = new MapMovementModule();
             var inventory = new InventoryModule();
@@ -38,14 +38,14 @@ namespace TheEmptying.Tests.EditMode.Gathering
             (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
                 new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering },
                 contentAssets: TempCoreContentCopy.LoadRealContentAssets());
-            return (simulation, gathering, buildings, inventory, wealth, market, people);
+            return (simulation, gathering, buildings, inventory, wealth, market, people, jobs);
         }
 
         [Test]
         public void Founders_GatherWood_IntoTheStockpile_WithNoOrdersOrHelp()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _) = Build(core);
+            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
 
@@ -67,7 +67,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
         public void Founders_GatherMaterial_WhenFoodIsShortButOutOfSeason()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _) = Build(core);
+            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
 
@@ -107,7 +107,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
         public void Founders_FarmWheat_IntoTheStockpile_WhenFoodIsShortAndInSeason()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _) = Build(core);
+            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
 
@@ -141,7 +141,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
         public void Founders_FinishAWaitingCrownSite_WithUnpaidOrHiredLabor_WithinAReasonableTime()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _) = Build(core);
+            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
             inventory.Add(storehouseId, "good.plank", 1000);
@@ -162,7 +162,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
         public void WithASiteWaiting_AndFoodShortInSeason_UpToTwoFoundersFarm_AndTheRestBuild()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people) = Build(core);
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
             inventory.Add(storehouseId, "good.plank", 1000);
@@ -188,7 +188,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
         public void WithASiteWaiting_AndFoodNotShort_AllFoundersBuild()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people) = Build(core);
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
             inventory.Add(storehouseId, "good.plank", 1000);
@@ -209,7 +209,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
         public void PlacingABuilding_SwitchesFoundersToBuilding_TheSameDay()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people) = Build(core);
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
             inventory.Add(storehouseId, "good.plank", 1000);
@@ -234,11 +234,59 @@ namespace TheEmptying.Tests.EditMode.Gathering
             Assert.Greater(buildingFounders, 0, "At least one founder should already be building the new site within the same day it was placed.");
         }
 
+        /// <summary>
+        /// 3.9f: a hand test found founders stopped doing anything once a building finished. The
+        /// cause was GatheringModule never reassigning tasks when a site completes - ProcessBuild
+        /// clears a finished builder's task to None, but nothing re-ran AssignTasks until the next
+        /// morning's NewDayEvent. Fixed by subscribing to BuildingCompletedEventId too.
+        /// </summary>
+        [Test]
+        public void FinishingASite_ReassignsBuildersImmediately_NotJustNextMorning()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, JobsModule jobs) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            inventory.Add(storehouseId, "good.plank", 1000);
+            inventory.Add(storehouseId, "good.stone", 1000);
+
+            // The cheapest government building, so every founder building it finishes well within a
+            // single day's shift and there's plenty of real/simulated time left before the next
+            // morning to prove the reassignment didn't wait for it.
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+
+            bool completed = false;
+            for (long i = 0; i < CalendarConstants.TicksPerDay && !completed; i++)
+            {
+                sim.Step();
+
+                if (buildings.TryGetBuilding(siteId, out BuildingState site) && site.Construction == null)
+                {
+                    completed = true;
+                }
+            }
+
+            Assert.IsTrue(completed, "Expected the storehouse to finish within a single day.");
+
+            // A handful of ticks, not a whole day: the BuildingCompletedEventId subscription should
+            // re-run AssignTasks within the same tick the completion is noticed.
+            for (long i = 0; i < 10; i++)
+            {
+                sim.Step();
+            }
+
+            // A founder hired into the storehouse's own new job slot is correctly untasked here (they
+            // have a real job instead - see GatheringModule.DescribeIdleReason), not idle.
+            int idleFounders = people.People.Count(row =>
+                people.IsFounder(row.Key) && !jobs.IsEmployed(row.Key) && gathering.GetTaskKind(row.Key) == GatherTaskKind.None);
+            Assert.AreEqual(0, idleFounders, "Expected every founder with no real job to already have a new task (farming or gathering material) right after the site finished, not stay idle until the next morning.");
+        }
+
         [Test]
         public void NewGame_SurvivesThreeMonthsWithNoConsoleHelp_NobodyStarves_AndAPlacedBuildingCompletes()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people) = Build(core);
+            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
 
             int startingPopulation = people.People.Count();
             Assert.AreEqual(9, startingPopulation, "8 founders plus the monarch.");
@@ -263,11 +311,32 @@ namespace TheEmptying.Tests.EditMode.Gathering
             Assert.AreEqual(0, inventory.GetCount(storehouseId, "good.ground_grub"), "Grubs are self-foraged, never stockpiled.");
         }
 
+        /// <summary>3.9f: the People panel shows a plain reason whenever someone has no task - DescribeIdleReason must give one for everyone truly idle, and "" for anyone who actually has a task.</summary>
+        [Test]
+        public void DescribeIdleReason_GivesAReasonForTheMonarch_AndNothingForATaskedFounder()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            inventory.Add(storehouseId, "good.loaf", 10000);
+
+            sim.Step();
+
+            Assert.IsTrue(people.MonarchId.HasValue, "Setup: expected a monarch.");
+            string monarchReason = gathering.DescribeIdleReason(people.MonarchId.Value);
+            Assert.IsNotEmpty(monarchReason, "Expected a plain reason for the monarch, who never has a gathering task.");
+
+            EntityId someFounder = people.People.First(row => people.IsFounder(row.Key)).Key;
+            Assert.AreNotEqual(GatherTaskKind.None, gathering.GetTaskKind(someFounder), "Setup: expected this founder to already have a task.");
+            Assert.AreEqual("", gathering.DescribeIdleReason(someFounder), "Expected no idle reason for a founder who already has a task.");
+        }
+
         [Test]
         public void JoblessNonFounder_SellsGatheredGoods_ToTheCrownAtMarketPrice()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, WealthModule wealth, MarketModule market, PeopleModule people) = Build(core);
+            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, WealthModule wealth, MarketModule market, PeopleModule people, _) = Build(core);
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
 

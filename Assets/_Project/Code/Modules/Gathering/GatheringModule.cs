@@ -42,6 +42,9 @@ namespace TheEmptying.Modules.Gathering
     {
         public const string ModuleId = "module.gathering";
 
+        /// <summary>Posted whenever a person's hand-gathering task actually changes kind - behind setting.debug.log_task_changes, GameBootstrap logs these.</summary>
+        public const string TaskChangedEventId = "event.gathering.task_changed";
+
         public const string HandLogHoursPerUnitSettingId = "setting.gathering.hand_log_hours_per_unit";
         public const string HandStoneHoursPerUnitSettingId = "setting.gathering.hand_stone_hours_per_unit";
         public const string HandWheatPerHarvestSettingId = "setting.gathering.hand_wheat_per_harvest";
@@ -72,6 +75,7 @@ namespace TheEmptying.Modules.Gathering
         private SettingsRegistry _settings;
         private SimRandom _random;
         private Func<long> _currentTick;
+        private EventBus _events;
 
         private EntityTable<GatherTaskState> _tasks;
         private Recipe _farmRecipe;
@@ -99,6 +103,7 @@ namespace TheEmptying.Modules.Gathering
             _settings = context.Settings;
             _random = context.Random;
             _currentTick = () => context.CurrentTick;
+            _events = context.Events;
             _tasks = new EntityTable<GatherTaskState>(context.Entities);
 
             LoadFarmRecipe(context.Content);
@@ -113,6 +118,10 @@ namespace TheEmptying.Modules.Gathering
             // So founders start their very first task the moment the stockpile goes up, not whenever
             // the first natural day boundary happens to fall.
             context.Subscribe(BuildingsModule.InitialStockpilePlacedEventId, _ => AssignTasks());
+            // 3.9f: so founders reassign to material gathering (or farming) the instant a site they
+            // were building finishes, instead of sitting idle (ProcessBuild clears their task to None
+            // the moment it notices the site is done) until the next morning's NewDayEvent.
+            context.Subscribe(BuildingsModule.BuildingCompletedEventId, _ => AssignTasks());
             context.RegisterSystem(new HourlySystem(this), CalendarConstants.TicksPerHour, 0, 0);
 
             RegisterCommands(context);
@@ -172,7 +181,7 @@ namespace TheEmptying.Modules.Gathering
                 bool eligible = person.AgeLifeYears >= adultAge && !_people.IsMonarch(personId) && !_jobs.IsEmployed(personId);
                 if (!eligible)
                 {
-                    ClearTask(personId);
+                    ClearTask(personId, "no longer eligible (too young, monarch, or has a real job)");
                     continue;
                 }
 
@@ -194,37 +203,44 @@ namespace TheEmptying.Modules.Gathering
                 {
                     if (isFarmer)
                     {
-                        SetTask(task, GatherTaskKind.Farm, anchor, radius, null);
+                        SetTask(personId, task, GatherTaskKind.Farm, anchor, radius, null, "a crown site is waiting, but the wheat cap still has room and food isn't covered yet");
                     }
                     else if (TryFindCrownSiteNeedingLabor(personId, out EntityId siteId))
                     {
-                        SetTask(task, GatherTaskKind.Build, anchor, radius, siteId);
+                        SetTask(personId, task, GatherTaskKind.Build, anchor, radius, siteId, "a crown site is waiting for builders");
                     }
                     else
                     {
                         // Shouldn't happen (a site exists somewhere, by anySiteWaiting) but fall back safely.
-                        SetTask(task, PickScarcerMaterial(), anchor, radius, null);
+                        SetTask(personId, task, PickScarcerMaterial(), anchor, radius, null, "a crown site is waiting, but none was reachable right now");
                     }
 
                     continue;
                 }
 
-                SetTask(task, isFarmer ? GatherTaskKind.Farm : PickScarcerMaterial(), anchor, radius, null);
+                SetTask(personId, task, isFarmer ? GatherTaskKind.Farm : PickScarcerMaterial(), anchor, radius, null,
+                    isFarmer ? "nothing to build and the wheat cap still has room" : "nothing to build; gathering whichever raw material is scarcer");
             }
         }
 
-        private void ClearTask(EntityId personId)
+        private void ClearTask(EntityId personId, string reason)
         {
             if (_tasks.TryGet(personId, out GatherTaskState task))
             {
+                PostTaskChanged(personId, task.Kind, GatherTaskKind.None, reason);
                 task.Kind = GatherTaskKind.None;
                 task.TargetSite = null;
             }
         }
 
-        private void SetTask(GatherTaskState task, GatherTaskKind newKind, GridPoint anchor, int radius, EntityId? targetSite)
+        private void SetTask(EntityId personId, GatherTaskState task, GatherTaskKind newKind, GridPoint anchor, int radius, EntityId? targetSite, string reason)
         {
             bool kindChanged = task.Kind != newKind;
+            if (kindChanged)
+            {
+                PostTaskChanged(personId, task.Kind, newKind, reason);
+            }
+
             task.Kind = newKind;
             task.TargetSite = targetSite;
 
@@ -242,6 +258,16 @@ namespace TheEmptying.Modules.Gathering
             task.WorkHoursAccumulated = 0;
             task.Planted = false;
             task.Spot = FindGatherSpot(anchor, radius) ?? anchor;
+        }
+
+        /// <summary>Posts TaskChangedEventId so the presentation layer can log it behind setting.debug.log_task_changes - see GameBootstrap.</summary>
+        private void PostTaskChanged(EntityId personId, GatherTaskKind oldKind, GatherTaskKind newKind, string reason)
+        {
+            _events.Post(TaskChangedEventId, _currentTick(), new EventData()
+                .SetEntity("person", personId)
+                .SetString("oldTask", oldKind.ToString())
+                .SetString("newTask", newKind.ToString())
+                .SetString("reason", reason));
         }
 
         /// <summary>The nearest crown (unowned) construction site, if any - founders only ever build for the crown, never a private owner's site.</summary>
@@ -362,9 +388,62 @@ namespace TheEmptying.Modules.Gathering
         /// <summary>What a person's hand-gathering task is doing right now; None if they have no active task.</summary>
         public GatherTaskKind GetTaskKind(EntityId personId) => _tasks.TryGet(personId, out GatherTaskState task) ? task.Kind : GatherTaskKind.None;
 
+        /// <summary>A plain, player-facing label for a task kind (e.g. for a person's world label or the People panel) - shared so both stay in sync.</summary>
+        public static string DescribeTaskKind(GatherTaskKind kind) =>
+            kind switch
+            {
+                GatherTaskKind.None => "none",
+                GatherTaskKind.Build => "Building",
+                GatherTaskKind.Farm => "Farming",
+                GatherTaskKind.Woodcut => "Woodcutting",
+                GatherTaskKind.Quarry => "Quarrying",
+                _ => kind.ToString()
+            };
+
+        /// <summary>
+        /// A short, plain-English reason this person currently has no gathering task - for the People
+        /// panel, so nobody is ever idle during work hours with no stated reason. Only meaningful when
+        /// GetTaskKind(personId) == None; returns "" otherwise.
+        /// </summary>
+        public string DescribeIdleReason(EntityId personId)
+        {
+            if (GetTaskKind(personId) != GatherTaskKind.None)
+            {
+                return "";
+            }
+
+            if (_jobs.IsEmployed(personId))
+            {
+                return "Has a real job instead.";
+            }
+
+            if (_people.IsMonarch(personId))
+            {
+                return "Monarch: no work expected.";
+            }
+
+            if (!_people.TryGetPerson(personId, out PersonState person))
+            {
+                return "Unknown person.";
+            }
+
+            int adultAge = (int)_settings.Get(PeopleModule.AdultAgeYearsSettingId);
+            if (person.AgeLifeYears < adultAge)
+            {
+                return "Too young to work.";
+            }
+
+            // Eligible but still untasked: AssignTasks always gives an eligible adult something
+            // (build, farm, or gather material) the moment it runs, so this means it simply hasn't
+            // run yet since they became eligible - the next NewDayEvent, or an immediate reassignment
+            // trigger (a site started, finished, or the stockpile was just placed), will cover them.
+            return "No task yet: waiting for the next reassignment.";
+        }
+
         #region Workplace provider (layered underneath Jobs)
 
-        private GridPoint? GetLocation(EntityId personId)
+        /// <summary>This person's current gathering task location (build site doorstep, or their gather/farm spot); null if they have no active task.</summary>
+        public GridPoint? GetLocation(EntityId personId)
         {
             if (!_tasks.TryGet(personId, out GatherTaskState task) || task.Kind == GatherTaskKind.None)
             {
@@ -444,7 +523,10 @@ namespace TheEmptying.Modules.Gathering
         {
             if (!task.TargetSite.HasValue || !_buildings.TryGetBuilding(task.TargetSite.Value, out BuildingState site) || site.Construction == null)
             {
-                task.Kind = GatherTaskKind.None; // finished or gone since this morning; tomorrow's AssignTasks picks something new
+                // The BuildingCompletedEventId subscription (see Initialize) re-runs AssignTasks the
+                // instant this happens, so this builder picks a new task immediately, not next morning.
+                PostTaskChanged(personId, task.Kind, GatherTaskKind.None, "the site finished or no longer exists");
+                task.Kind = GatherTaskKind.None;
                 return;
             }
 

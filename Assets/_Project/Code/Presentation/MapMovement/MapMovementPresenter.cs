@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
@@ -30,6 +31,7 @@ namespace TheEmptying.Presentation.MapMovement
         private MapMovementModule _module;
         private PeopleModule _peopleModule;
         private WealthModule _wealthModule;
+        private GatheringModule _gatheringModule;
         private Camera _camera;
         private InputAction _selectAction;
         private Action<EntityId> _onCapsuleSelected;
@@ -82,6 +84,12 @@ namespace TheEmptying.Presentation.MapMovement
         public void SetWealthModule(WealthModule wealthModule)
         {
             _wealthModule = wealthModule;
+        }
+
+        /// <summary>Optional: 3.9f, so a person's label can show what their "Working" activity actually is (e.g. "Woodcutting"), not just the generic activity. Call again after a load to keep this in sync.</summary>
+        public void SetGatheringModule(GatheringModule gatheringModule)
+        {
+            _gatheringModule = gatheringModule;
         }
 
         /// <summary>After a load swaps in a new Simulation (and a new module instance), drop every stale capsule and start tracking the new module's movers fresh.</summary>
@@ -202,7 +210,7 @@ namespace TheEmptying.Presentation.MapMovement
                 return;
             }
 
-            label.text = person.FullName + ClassMarker(id);
+            label.text = $"{person.FullName}{ClassMarker(id)}\n{DescribeActivity(id, person)}";
 
             // No distance gating, same as a building's construction-progress label - the old
             // threshold (40) was always smaller than the strategy camera's own height-plus-setback
@@ -214,6 +222,21 @@ namespace TheEmptying.Presentation.MapMovement
             {
                 BillboardUtility.FaceCameraFlat(label.transform, _camera);
             }
+        }
+
+        /// <summary>3.9f: "Working" alone doesn't say what at - when a gathering task explains it, show that instead (e.g. "Woodcutting"); otherwise fall back to the plain activity name.</summary>
+        private string DescribeActivity(EntityId id, PersonState person)
+        {
+            if (person.Activity == PersonActivity.Working && _gatheringModule != null)
+            {
+                GatherTaskKind kind = _gatheringModule.GetTaskKind(id);
+                if (kind != GatherTaskKind.None)
+                {
+                    return GatheringModule.DescribeTaskKind(kind);
+                }
+            }
+
+            return person.Activity.ToString();
         }
 
         /// <summary>A small marker appended to a person's name label: nothing for lower class, "+" for middle, "++" for upper.</summary>

@@ -10,6 +10,7 @@ The Emptying is a single-player sandbox colony sim in Unity. The player is a rel
 - Engine: Unity 6000.6.8f1, Universal Render Pipeline. Do not change the Unity version.
 - The design is LOCKED. Build what the docs say. If something in the docs is unclear, contradictory or seems wrong, stop and ask. Do not invent design.
 - The design locks in layers: each later layer (building management in full, settlements, military, religion, and so on) gets its own Phase 3 design and Phase 4 review before it is built. Only the milestone that's been locked (see the Phase 5 build plan) is built now; a system with no lock yet is not ready to build.
+- Before starting work, check `Docs/KnownIssues.md` for open bugs the user has deferred. If a prompt touches one, read its full entry (what's been tried, next step) before trying anything new.
 
 ## Design docs (source of truth)
 

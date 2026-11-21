@@ -9,6 +9,15 @@
             "maximum": 1,
             "category": "Debug",
             "description": "On every left mouse press and release, logs the screen position, whether the pointer-over-UI check caught it, which UI element (if any) was picked there, and what world action (if any) it triggered. Off by default; the Editor forces it on at startup (see GameBootstrap)."
+        },
+        {
+            "id": "setting.debug.log_task_changes",
+            "valueType": "Number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1,
+            "category": "Debug",
+            "description": "On every hand-gathering task change, logs who, their old task, their new task, and why. Off by default; the Editor forces it on at startup (see GameBootstrap)."
         }
     ]
 }

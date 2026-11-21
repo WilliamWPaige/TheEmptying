@@ -1,0 +1,12 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.gathering.task_changed",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "A person's hand-gathering task actually changed. Not player-facing - the presentation layer logs these behind setting.debug.log_task_changes."
+        }
+    ]
+}

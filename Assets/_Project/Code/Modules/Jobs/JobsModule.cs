@@ -286,6 +286,21 @@ namespace TheEmptying.Modules.Jobs
         public GridPoint? GetWorkplaceLocation(EntityId person) =>
             _employmentByPerson.TryGetValue(person, out (EntityId Building, JobSlotType Type) employment) ? _buildings.GetDoorstep(employment.Building) : null;
 
+        /// <summary>This person's job slot and workplace, if they hold one - for a plain "role/job" description (the People panel).</summary>
+        public bool TryGetEmployment(EntityId person, out EntityId building, out JobSlotType slotType)
+        {
+            if (_employmentByPerson.TryGetValue(person, out (EntityId Building, JobSlotType Type) employment))
+            {
+                building = employment.Building;
+                slotType = employment.Type;
+                return true;
+            }
+
+            building = EntityId.None;
+            slotType = default;
+            return false;
+        }
+
         /// <summary>False when the person holds no job - Gathering layers its own hand-gathering shift underneath this one.</summary>
         public bool IsOnShift(EntityId person, int hour)
         {

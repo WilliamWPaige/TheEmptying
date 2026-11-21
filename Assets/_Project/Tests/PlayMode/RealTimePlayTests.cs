@@ -1,6 +1,8 @@
 using System.Collections;
 using System.Collections.Generic;
 using NUnit.Framework;
+using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Presentation;
 using UnityEngine;
@@ -18,8 +20,11 @@ namespace TheEmptying.Tests.PlayMode
     /// </summary>
     public class RealTimePlayTests
     {
+        /// <summary>3.9f: fast-forwards the wait for in-game time to pass (see GameBootstrap.SetTestTimeMultiplierForTesting) - nobody is watching these run in real time, only the sampled state matters.</summary>
+        private const double TestFastForwardMultiplier = 10.0;
+
         [UnityTest]
-        [Timeout(300000)] // runs for ~200 real seconds at speed 3, well past the default 180000ms UnityTest timeout
+        [Timeout(300000)] // well past the default 180000ms UnityTest timeout, even with the fast-forward
         public IEnumerator FoundersMove_AndConstructionProgressRisesGradually_OverSeveralRealTimeDays()
         {
             yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
@@ -46,12 +51,13 @@ namespace TheEmptying.Tests.PlayMode
 
             bootstrap.SetSpeed(3);
             bootstrap.SetPaused(false);
+            bootstrap.SetTestTimeMultiplierForTesting(TestFastForwardMultiplier);
 
             var positions = new List<(double X, double Y)>();
             var progressSamples = new List<double>();
 
             const int sampleCount = 10;
-            const float secondsBetweenSamples = 20f; // ~2 in-game hours each, at speed 3
+            const float secondsBetweenSamples = 20f / (float)TestFastForwardMultiplier; // ~2 in-game hours each, at speed 3
 
             for (int i = 0; i < sampleCount; i++)
             {
@@ -81,6 +87,126 @@ namespace TheEmptying.Tests.PlayMode
             bool sawMidProgress = progressSamples.Exists(p => p > 5.0 && p < 95.0);
             Assert.IsTrue(sawMidProgress,
                 $"Expected construction progress to pass through a mid-range value, not jump straight from ~0% to 100%. Samples: [{string.Join(", ", progressSamples)}]");
+        }
+
+        /// <summary>
+        /// 3.9f, Part 3: a hand test found founders stopped doing anything once a building finished.
+        /// The cause was GatheringModule never reassigning tasks when a site completes (only at the
+        /// next morning's NewDayEvent), so everyone who was building sat idle (GatherTaskKind.None)
+        /// until the next in-game day. This drives a real game through an actual completion and a
+        /// full extra day, checking founders keep moving and stay tasked the whole time.
+        /// </summary>
+        [UnityTest]
+        [Timeout(600000)] // construction completion + a full extra in-game day, at speed 3
+        public IEnumerator FoundersReassign_AssoonAsConstructionCompletes_AndStayBusyThroughTheNextDay()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            Assert.IsTrue(bootstrap.PlaceInitialStockpileForTesting(new GridPoint(100, 100)), "Setup: placing the stockpile should succeed.");
+            yield return null;
+
+            // The smallest government building (20 planks + 10 stone, well covered by the initial
+            // stockpile's seed resources), so it finishes quickly with several founders building it.
+            EntityId? siteId = bootstrap.SimulatePlacementClickForTesting("building.crown_storehouse", new GridPoint(110, 110), new Vector2(Screen.width - 5f, 5f));
+            Assert.IsTrue(siteId.HasValue, "Setup: placing the crown storehouse site should succeed.");
+            bootstrap.CloseBuildMenuForTesting();
+            yield return null;
+
+            // "people" lists everyone, including the monarch, who never has a gathering task - only
+            // founders are relevant to this test.
+            string peopleList = bootstrap.RunConsoleCommandForTesting("people");
+            var founders = new List<EntityId>();
+            foreach (string line in peopleList.Split('\n'))
+            {
+                if (EntityId.TryParse(line.Split(':')[0].Trim(), out EntityId id) && bootstrap.IsFounderForTesting(id))
+                {
+                    founders.Add(id);
+                }
+            }
+            Assert.Greater(founders.Count, 0, $"Expected to parse at least one founder id from: {peopleList}");
+
+            bootstrap.SetSpeed(3);
+            bootstrap.SetPaused(false);
+            bootstrap.SetTestTimeMultiplierForTesting(TestFastForwardMultiplier);
+
+            double progress = 0.0;
+            float deadline = Time.realtimeSinceStartup + 240f / (float)TestFastForwardMultiplier;
+            while (progress < 100.0 && Time.realtimeSinceStartup < deadline)
+            {
+                yield return new WaitForSecondsRealtime(1f);
+                progress = bootstrap.ConstructionProgressPercentForTesting(siteId.Value);
+            }
+
+            Assert.AreEqual(100.0, progress, 0.01,
+                $"Expected the storehouse to finish construction within a reasonable time. tick={bootstrap.CurrentTick}, last progress={progress}");
+
+            long tickAtCompletion = bootstrap.CurrentTick;
+            long targetTick = tickAtCompletion + CalendarConstants.TicksPerDay;
+
+            // Founders mostly walk only in brief bursts (arriving at a task, going home at shift
+            // end) and sit still working the rest of the time - at the real walking speed (see
+            // MovementSmoothnessTests and this prompt's report), a single walk can finish in well
+            // under a second. A single before/after snapshot can land entirely within a stationary
+            // stretch and miss every walk, so sample every poll across the whole extra day instead
+            // of only at the end, and treat any position change between consecutive polls as a hit.
+            var lastPositions = new Dictionary<EntityId, (double X, double Y)>();
+            foreach (EntityId id in founders)
+            {
+                (double X, double Y)? startPos = bootstrap.MoverPositionForTesting(id);
+                if (startPos.HasValue)
+                {
+                    lastPositions[id] = startPos.Value;
+                }
+            }
+
+            bool anyMoved = false;
+            deadline = Time.realtimeSinceStartup + 300f / (float)TestFastForwardMultiplier;
+            while (bootstrap.CurrentTick < targetTick && Time.realtimeSinceStartup < deadline)
+            {
+                yield return new WaitForSecondsRealtime(1f);
+
+                foreach (EntityId id in founders)
+                {
+                    (double X, double Y)? pos = bootstrap.MoverPositionForTesting(id);
+                    if (!pos.HasValue)
+                    {
+                        continue;
+                    }
+
+                    if (lastPositions.TryGetValue(id, out (double X, double Y) last) && (pos.Value.X != last.X || pos.Value.Y != last.Y))
+                    {
+                        anyMoved = true;
+                    }
+
+                    lastPositions[id] = pos.Value;
+                }
+            }
+
+            Assert.GreaterOrEqual(bootstrap.CurrentTick, targetTick,
+                $"Expected a full extra in-game day to pass. tickAtCompletion={tickAtCompletion}, targetTick={targetTick}, currentTick={bootstrap.CurrentTick}");
+
+            Assert.IsTrue(anyMoved, "Expected at least one founder to change position at some point during the extra day.");
+
+            // tickAtCompletion necessarily falls during the day shift (labor is only applied then),
+            // and targetTick is exactly one day later at the same hour - so this is still shift time.
+            // A founder hired into the storehouse's own new job slot correctly has no gathering task
+            // (they have a real job instead - see GatheringModule.DescribeIdleReason), not an idle one.
+            foreach (EntityId id in founders)
+            {
+                if (bootstrap.IsEmployedForTesting(id))
+                {
+                    continue;
+                }
+
+                GatherTaskKind kind = bootstrap.GatheringTaskKindForTesting(id);
+                Assert.AreNotEqual(GatherTaskKind.None, kind,
+                    $"Expected founder {id} to have a gathering task during work hours, not sit idle (tick={bootstrap.CurrentTick}).");
+            }
         }
     }
 }
