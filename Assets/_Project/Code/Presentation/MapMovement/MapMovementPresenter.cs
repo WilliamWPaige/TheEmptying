@@ -236,7 +236,7 @@ namespace TheEmptying.Presentation.MapMovement
                 }
             }
 
-            return person.Activity.ToString();
+            return PeopleModule.DescribeActivity(person.Activity);
         }
 
         /// <summary>A small marker appended to a person's name label: nothing for lower class, "+" for middle, "++" for upper.</summary>
@@ -268,6 +268,10 @@ namespace TheEmptying.Presentation.MapMovement
                 case PersonActivity.Commuting: return new Color(0.85f, 0.85f, 0.2f);
                 case PersonActivity.Working: return new Color(0.75f, 0.35f, 0.15f);
                 case PersonActivity.ForagingFood: return new Color(0.55f, 0.4f, 0.2f);
+                case PersonActivity.Shopping: return new Color(0.6f, 0.45f, 0.8f);
+                case PersonActivity.Socializing: return new Color(0.85f, 0.35f, 0.75f);
+                case PersonActivity.Strolling: return new Color(0.35f, 0.75f, 0.75f);
+                case PersonActivity.RestingAtHome: return new Color(0.5f, 0.6f, 0.9f);
                 default: return new Color(0.7f, 0.7f, 0.7f);
             }
         }

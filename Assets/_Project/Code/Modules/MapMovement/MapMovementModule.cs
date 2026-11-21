@@ -9,7 +9,6 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Scheduling;
-using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.MapMovement.Pathfinding;
 
 namespace TheEmptying.Modules.MapMovement
@@ -26,7 +25,7 @@ namespace TheEmptying.Modules.MapMovement
         public const string MapWidthCellsSettingId = "setting.map_movement.map_width_cells";
         public const string MapDepthCellsSettingId = "setting.map_movement.map_depth_cells";
         public const string MaxPathSearchesPerTickSettingId = "setting.map_movement.max_path_searches_per_tick";
-        public const string WalkingSpeedKmhSettingId = "setting.map_movement.walking_speed_kmh";
+        public const string WalkingSpeedMetersPerTickSettingId = "setting.map_movement.walking_speed_meters_per_tick";
 
         public const string MoverArrivedEventId = "event.map_movement.mover_arrived";
         public const string MoverNoPathEventId = "event.map_movement.mover_no_path";
@@ -248,8 +247,7 @@ namespace TheEmptying.Modules.MapMovement
 
         private void AdvanceMovers(long tick)
         {
-            double speedKmh = _settings.Get(WalkingSpeedKmhSettingId);
-            double metersPerTick = speedKmh * 1000.0 / CalendarConstants.TicksPerHour;
+            double metersPerTick = _settings.Get(WalkingSpeedMetersPerTickSettingId);
 
             foreach (KeyValuePair<EntityId, MoverState> row in _movers.Rows())
             {

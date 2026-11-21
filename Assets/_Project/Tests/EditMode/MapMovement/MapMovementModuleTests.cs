@@ -4,6 +4,7 @@ using TheEmptying.Core;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
+using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
@@ -66,8 +67,8 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             using var core = new TempCoreContentCopy();
             (Simulation sim, MapMovementModule module) = Build(core);
 
-            // 1.8 km/h at the default 3-meter cell gives exactly 1 cell per tick.
-            sim.Settings.Set(MapMovementModule.WalkingSpeedKmhSettingId, 1.8);
+            // 3 meters per tick at the default 3-meter cell gives exactly 1 cell per tick.
+            sim.Settings.Set(MapMovementModule.WalkingSpeedMetersPerTickSettingId, 3.0);
 
             EntityId mover = module.SpawnMover();
             GridPoint start = CurrentCell(module, mover);
@@ -87,6 +88,37 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             sim.Step();
             Assert.AreEqual(1, arrivedCount);
             Assert.AreEqual(goal, CurrentCell(module, mover));
+        }
+
+        /// <summary>
+        /// 3.9g: the old walking speed (5 km/h, converted straight through sim ticks) worked out to
+        /// about 167 m per real second once the real-time tick rate was applied, which looked like
+        /// teleporting. The replacement setting is authored directly in meters per tick instead, so
+        /// this checks the shipped default still lands where the design doc says: about 3 cells (9 m)
+        /// per real second at 1x, and a cross-map walk (about 3 in-game hours) taking on the order of
+        /// 80-90 real seconds. GameBootstrap's real-time pacing (720 real seconds per in-game day at
+        /// 1x - 12 real minutes/day) is duplicated here as a plain number: this test checks the
+        /// content default against that documented assumption, not a reference to the presentation layer.
+        /// </summary>
+        [Test]
+        public void DefaultWalkingSpeed_MatchesTheDesignedRealTimePacing()
+        {
+            const double realSecondsPerDayAt1x = 720.0;
+
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, MapMovementModule module) = Build(core);
+
+            double metersPerTick = sim.Settings.Get(MapMovementModule.WalkingSpeedMetersPerTickSettingId);
+            double cellSizeMeters = sim.Settings.Get(MapMovementModule.CellSizeMetersSettingId);
+            double ticksPerRealSecondAt1x = CalendarConstants.TicksPerDay / realSecondsPerDayAt1x;
+
+            double cellsPerRealSecondAt1x = metersPerTick * ticksPerRealSecondAt1x / cellSizeMeters;
+            Assert.AreEqual(3.0, cellsPerRealSecondAt1x, 0.1, "Expected about 3 cells per real second at 1x.");
+
+            double crossMapTicks = CalendarConstants.TicksPerHour * 3; // the design doc's "about 3 in-game hours"
+            double crossMapRealSeconds = crossMapTicks / ticksPerRealSecondAt1x;
+            Assert.GreaterOrEqual(crossMapRealSeconds, 80.0);
+            Assert.LessOrEqual(crossMapRealSeconds, 90.0);
         }
 
         [Test]
@@ -171,7 +203,7 @@ namespace TheEmptying.Tests.EditMode.MapMovement
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, MapMovementModule module) = Build(core);
-            sim.Settings.Set(MapMovementModule.WalkingSpeedKmhSettingId, 1.8); // 1 cell per tick
+            sim.Settings.Set(MapMovementModule.WalkingSpeedMetersPerTickSettingId, 3.0); // 1 cell per tick
 
             EntityId mover = module.SpawnMover();
             GridPoint start = CurrentCell(module, mover);

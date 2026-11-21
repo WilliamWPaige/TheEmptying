@@ -103,6 +103,10 @@ namespace TheEmptying.Modules.Market
             context.Subscribe<NewMonthEvent>(OnNewMonth);
             context.RegisterSystem(new HourlySystem(this), CalendarConstants.TicksPerHour, 0, 0);
 
+            _people.SetShoppingProvider(
+                id => FindNearestSellerLocation(id, LoafGoodId),
+                id => TryBuy(id, AccountId.Person(id), LoafGoodId, 1, out _, out _));
+
             RegisterCommands(context);
         }
 
@@ -280,6 +284,13 @@ namespace TheEmptying.Modules.Market
             double dx = a.X - b.X;
             double dy = a.Y - b.Y;
             return Math.Sqrt(dx * dx + dy * dy);
+        }
+
+        /// <summary>Where a person should walk to buy a good right now - People's shopping-trip provider. Null if nobody's selling any.</summary>
+        public GridPoint? FindNearestSellerLocation(EntityId buyer, string goodId)
+        {
+            GridPoint from = _mapMovement.IsMover(buyer) ? _mapMovement.GetCell(buyer) : default;
+            return TryFindNearestSeller(goodId, from, out Seller seller) ? seller.Location : (GridPoint?)null;
         }
 
         private bool TryFindNearestSeller(string goodId, GridPoint from, out Seller nearest)

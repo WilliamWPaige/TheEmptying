@@ -38,13 +38,13 @@
             "description": "Placeholder. The most path searches run in a single tick, so results never depend on frame rate."
         },
         {
-            "id": "setting.map_movement.walking_speed_kmh",
+            "id": "setting.map_movement.walking_speed_meters_per_tick",
             "valueType": "Number",
-            "default": 5,
-            "minimum": 0.1,
-            "maximum": 1000,
+            "default": 0.45,
+            "minimum": 0.01,
+            "maximum": 50,
             "category": "Map",
-            "description": "Placeholder. How fast a mover walks, in kilometers per hour."
+            "description": "Placeholder. How far a mover walks per simulation tick, in meters. Set for visibility, RTS-unit style, rather than a literal real-world speed: at the default day length (12 real minutes per in-game day) and 1x game speed, this is about 3 cells (9 m) per real second, scaling with game speed (6 cells/s at 2x, 9 cells/s at 3x)."
         }
     ]
 }

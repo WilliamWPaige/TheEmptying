@@ -215,11 +215,11 @@ namespace TheEmptying.Presentation.People
             GridPoint? target = _mapMovement?.GetDestination(id) ?? _gathering?.GetLocation(id);
             string targetText = DescribeTargetAndDistance(id, target);
 
-            var summary = new Label($"{person.FullName} ({role}) - {person.Activity}");
+            var summary = new Label($"{person.FullName} ({role}) - {PeopleModule.DescribeActivity(person.Activity)}");
             summary.AddToClassList("people-panel-row-summary");
             row.Add(summary);
 
-            var detail = new Label($"task: {taskOrJob} | {targetText} | hunger: {DescribeNeed(person, "need.hunger")} | rest: {DescribeNeed(person, "need.rest")}");
+            var detail = new Label($"task: {taskOrJob} | {targetText} | hunger: {DescribeNeed(person, "need.hunger")} | rest: {DescribeNeed(person, "need.rest")} | social: {DescribeNeed(person, "need.social")} | recreation: {DescribeNeed(person, "need.recreation")}");
             detail.AddToClassList("people-panel-row-detail");
             row.Add(detail);
 

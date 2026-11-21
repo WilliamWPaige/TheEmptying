@@ -50,6 +50,9 @@ namespace TheEmptying.Modules.People
         public const string SleepRestRestorePerHourSettingId = "setting.people.sleep_rest_restore_per_hour";
         public const string WanderRadiusCellsSettingId = "setting.people.wander_radius_cells";
         public const string WanderChancePerHourSettingId = "setting.people.wander_chance_per_hour";
+        public const string SocialRestorePerHourTogetherSettingId = "setting.people.social_restore_per_hour_together";
+        public const string RecreationRestorePerHourSettingId = "setting.people.recreation_restore_per_hour";
+        public const string SocialTogetherRadiusCellsSettingId = "setting.people.social_together_radius_cells";
         public const string StartingProvisionsLoavesSettingId = "setting.people.starting_provisions_loaves";
 
         public const string FounderCountSettingId = "setting.people.founder_count";
@@ -113,6 +116,12 @@ namespace TheEmptying.Modules.People
         /// <summary>Whether a person should be at work this hour; false (the default) until Jobs registers the real one.</summary>
         private Func<EntityId, int, bool> _isOnShiftProvider = (id, hour) => false;
 
+        /// <summary>Where to go buy more food, for a person who's hungry with none on hand; null (the default) until Market registers the real one.</summary>
+        private Func<EntityId, GridPoint?> _shoppingDestinationProvider = _ => null;
+
+        /// <summary>Tries to actually buy food once at the shopping destination; false (the default) until Market registers the real one.</summary>
+        private Func<EntityId, bool> _tryShopProvider = _ => false;
+
         /// <summary>
         /// Run synchronously, still-alive EntityId in hand, before the entity is destroyed - unlike
         /// PersonDiedEventId (delivered at the end of the tick, by which point EntityRegistry.Destroy has
@@ -170,6 +179,20 @@ namespace TheEmptying.Modules.People
         }
 
         public GridPoint? GetHomeLocation(EntityId person) => _homeLocationProvider(person);
+
+        /// <summary>Market calls this during its own Initialize, since it's the module that actually knows where food is sold.</summary>
+        public void SetShoppingProvider(Func<EntityId, GridPoint?> destination, Func<EntityId, bool> tryShop)
+        {
+            _shoppingDestinationProvider = destination ?? (_ => null);
+            _tryShopProvider = tryShop ?? (_ => false);
+        }
+
+        /// <summary>A friendly display string for an activity - most just match the enum name, but this one reads better with a space.</summary>
+        public static string DescribeActivity(PersonActivity activity) => activity switch
+        {
+            PersonActivity.RestingAtHome => "Resting at home",
+            _ => activity.ToString()
+        };
 
         /// <summary>Wealth and Inventory-holding modules call this during their own Initialize, to sweep up a dying person's money and goods before their rows disappear.</summary>
         public void RegisterDeathHook(Action<EntityId> hook)
@@ -464,6 +487,9 @@ namespace TheEmptying.Modules.People
             double daysPerLifeYear = _settings.Get(DaysPerLifeYearSettingId);
             float wanderChance = (float)_settings.Get(WanderChancePerHourSettingId);
             int wanderRadius = (int)_settings.Get(WanderRadiusCellsSettingId);
+            float socialRestorePerHour = (float)_settings.Get(SocialRestorePerHourTogetherSettingId);
+            float recreationRestorePerHour = (float)_settings.Get(RecreationRestorePerHourSettingId);
+            int socialTogetherRadius = (int)_settings.Get(SocialTogetherRadiusCellsSettingId);
 
             var toKill = new List<(EntityId Id, string Cause)>();
 
@@ -506,7 +532,7 @@ namespace TheEmptying.Modules.People
                     person.GrubMoodPenaltyHoursRemaining--;
                 }
 
-                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, hungerRestorePerGrub, grubMoodPenaltyHours, grubDigHours, sleepRestorePerHour, wanderChance, wanderRadius);
+                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, hungerRestorePerGrub, grubMoodPenaltyHours, grubDigHours, sleepRestorePerHour, wanderChance, wanderRadius, socialRestorePerHour, recreationRestorePerHour, socialTogetherRadius);
 
                 person.Mood = ComputeMood(person, homeless, homelessPenalty, grubMoodPenalty);
 
@@ -594,7 +620,7 @@ namespace TheEmptying.Modules.People
             return Math.Clamp(average, 0.0, 100.0);
         }
 
-        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float hungerRestorePerGrub, int grubMoodPenaltyHours, double grubDigHours, float sleepRestorePerHour, float wanderChance, int wanderRadius)
+        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float hungerRestorePerGrub, int grubMoodPenaltyHours, double grubDigHours, float sleepRestorePerHour, float wanderChance, int wanderRadius, float socialRestorePerHour, float recreationRestorePerHour, int socialTogetherRadius)
         {
             bool isHungry = person.Needs.TryGetValue("need.hunger", out PersonNeedState hunger) && hunger.Meter <= eatAtPercent;
             EntityId foodSource = _foodSourceProvider(id) ?? id;
@@ -606,11 +632,18 @@ namespace TheEmptying.Modules.People
                 return;
             }
 
-            // People prefer bread; self-foraging (which costs real work time) is the fallback once
-            // there's no bread left. Digging happens on the spot, over several hours, instead of
-            // whatever else this person would otherwise be doing.
+            // People prefer bread; shopping for more (for someone who buys their own, rather than
+            // eating free from the crown storehouse) comes next, and self-foraging (which costs real
+            // work time) is the fallback once there's nowhere to buy from or that didn't work either.
+            // Digging happens on the spot, over several hours, instead of whatever else this person
+            // would otherwise be doing.
             if (isHungry)
             {
+                if (foodSource == id && TryDoShopping(id, person))
+                {
+                    return;
+                }
+
                 if (person.Activity != PersonActivity.ForagingFood)
                 {
                     _mapMovement.Stop(id);
@@ -667,17 +700,28 @@ namespace TheEmptying.Modules.People
                     return;
                 }
 
-                if (person.Activity != PersonActivity.Sleeping)
+                if (person.Activity != PersonActivity.Sleeping && person.Activity != PersonActivity.RestingAtHome)
                 {
                     _mapMovement.Stop(id);
                 }
 
-                person.Activity = PersonActivity.Sleeping;
+                // Night is always Sleeping; a tired-but-daytime rest (off-shift, below the low
+                // threshold) is the same action but a different label, since it's voluntary rather
+                // than the forced overnight case.
+                person.Activity = isNight ? PersonActivity.Sleeping : PersonActivity.RestingAtHome;
                 if (rest != null)
                 {
                     rest.Meter = Math.Min(100f, rest.Meter + sleepRestorePerHour);
                 }
 
+                return;
+            }
+
+            // Off-shift, not hungry, not tired or sleeping: free time, spent visibly on whichever of
+            // social or recreation needs it most (hunger and rest are already handled above). Plain
+            // wandering is the fallback once neither needs attention.
+            if (TryDoFreeTimeActivity(id, person, lowThreshold, socialRestorePerHour, recreationRestorePerHour, socialTogetherRadius, wanderRadius))
+            {
                 return;
             }
 
@@ -719,6 +763,155 @@ namespace TheEmptying.Modules.People
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// Hungry with no bread on hand, for someone who buys their own food (not fed free from the
+        /// crown storehouse): walks to the nearest seller and tries to buy more, instead of
+        /// self-foraging straight away. False - so the caller falls back to foraging the same hour -
+        /// if there's nowhere to buy from, or buying there failed (no stock, or they can't afford it),
+        /// rather than standing at an empty stall indefinitely.
+        /// </summary>
+        private bool TryDoShopping(EntityId id, PersonState person)
+        {
+            GridPoint? destination = _shoppingDestinationProvider(id);
+            if (destination == null)
+            {
+                return false;
+            }
+
+            if (_mapMovement.GetCell(id) != destination.Value)
+            {
+                if (person.Activity != PersonActivity.Shopping || !_mapMovement.IsMover(id))
+                {
+                    _mapMovement.TryMoveTo(id, destination.Value);
+                }
+
+                person.Activity = PersonActivity.Shopping;
+                return true;
+            }
+
+            person.Activity = PersonActivity.Shopping;
+            return _tryShopProvider(id);
+        }
+
+        /// <summary>
+        /// Off-shift, not hungry, not tired: spends the hour on whichever of social or recreation is
+        /// lower, as long as it's at or below the same "needs attention" bar as everything else (the
+        /// low threshold). False when neither need applies or needs attention right now, so the
+        /// caller falls back to plain wandering.
+        /// </summary>
+        private bool TryDoFreeTimeActivity(EntityId id, PersonState person, float lowThreshold, float socialRestorePerHour, float recreationRestorePerHour, int socialTogetherRadius, int strollRadius)
+        {
+            bool hasSocial = person.Needs.TryGetValue("need.social", out PersonNeedState social);
+            bool hasRecreation = person.Needs.TryGetValue("need.recreation", out PersonNeedState recreation);
+
+            float socialMeter = hasSocial ? social.Meter : float.MaxValue;
+            float recreationMeter = hasRecreation ? recreation.Meter : float.MaxValue;
+
+            if (hasSocial && socialMeter <= lowThreshold && socialMeter <= recreationMeter && DoSocializing(id, person, social, socialRestorePerHour, socialTogetherRadius))
+            {
+                return true;
+            }
+
+            if (hasRecreation && recreationMeter <= lowThreshold && DoRecreation(id, person, recreation, recreationRestorePerHour, strollRadius))
+            {
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Walks toward the nearest other free person and, once close enough, stands with them -
+        /// both gain social this way, each independently restoring their own meter for the hour
+        /// they're actually together, with no shared state needed between the two of them.
+        /// </summary>
+        private bool DoSocializing(EntityId id, PersonState person, PersonNeedState social, float restorePerHour, int togetherRadiusCells)
+        {
+            GridPoint myCell = _mapMovement.GetCell(id);
+            EntityId? partner = FindNearestFreePerson(id, myCell);
+            if (partner == null)
+            {
+                return false;
+            }
+
+            GridPoint partnerCell = _mapMovement.GetCell(partner.Value);
+            if (CellDistance(myCell, partnerCell) <= togetherRadiusCells)
+            {
+                if (person.Activity != PersonActivity.Socializing)
+                {
+                    _mapMovement.Stop(id);
+                }
+
+                person.Activity = PersonActivity.Socializing;
+                social.Meter = Math.Min(100f, social.Meter + restorePerHour);
+                return true;
+            }
+
+            _mapMovement.TryMoveTo(id, partnerCell);
+            person.Activity = PersonActivity.Socializing;
+            return true;
+        }
+
+        /// <summary>
+        /// Strolls to a nearby spot - and, once there, another - restoring recreation the whole
+        /// time. A placeholder for "somewhere nearby and back" until real venues (taverns and the
+        /// like) exist.
+        /// </summary>
+        private bool DoRecreation(EntityId id, PersonState person, PersonNeedState recreation, float restorePerHour, int radius)
+        {
+            bool stillWalking = person.Activity == PersonActivity.Strolling && _mapMovement.IsMover(id) && _mapMovement.GetDestination(id).HasValue;
+            if (!stillWalking)
+            {
+                GridPoint currentCell = _mapMovement.GetCell(id);
+                GridPoint? target = FindNearbyPassableCell(currentCell, radius);
+                if (target == null)
+                {
+                    return false;
+                }
+
+                _mapMovement.TryMoveTo(id, target.Value);
+            }
+
+            person.Activity = PersonActivity.Strolling;
+            recreation.Meter = Math.Min(100f, recreation.Meter + restorePerHour);
+            return true;
+        }
+
+        /// <summary>The nearest other person currently free to socialize with (idle, wandering, strolling or already socializing) - null if no one is.</summary>
+        private EntityId? FindNearestFreePerson(EntityId excludeId, GridPoint from)
+        {
+            EntityId? best = null;
+            double bestDistance = double.MaxValue;
+
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.Rows())
+            {
+                if (row.Key == excludeId || !IsFreeForSocializing(row.Value.Activity) || !_mapMovement.IsMover(row.Key))
+                {
+                    continue;
+                }
+
+                double distance = CellDistance(from, _mapMovement.GetCell(row.Key));
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = row.Key;
+                }
+            }
+
+            return best;
+        }
+
+        private static bool IsFreeForSocializing(PersonActivity activity) =>
+            activity == PersonActivity.Idle || activity == PersonActivity.Wandering ||
+            activity == PersonActivity.Socializing || activity == PersonActivity.Strolling;
+
+        private static double CellDistance(GridPoint a, GridPoint b)
+        {
+            double dx = a.X - b.X;
+            double dy = a.Y - b.Y;
+            return Math.Sqrt(dx * dx + dy * dy);
         }
 
         #endregion
