@@ -116,5 +116,32 @@ namespace TheEmptying.Tests.EditMode.Timekeeping
             var date = new GameDate(1, 13, Season.Hollow, 12, 0, 0);
             Assert.AreEqual("Day 12, the Hollow, Year 1", date.ToString());
         }
+
+        /// <summary>3.9i: the clock defaults to 12-hour time with AM/PM.</summary>
+        [Test]
+        public void ToClockString_TwelveHour_FormatsNoonAndMidnightCorrectly()
+        {
+            var noon = new GameDate(1, 1, Season.Waking, 1, 12, 0);
+            var midnight = new GameDate(1, 1, Season.Waking, 1, 0, 0);
+            var morning = new GameDate(1, 1, Season.Waking, 1, 7, 30);
+            var evening = new GameDate(1, 1, Season.Waking, 1, 23, 5);
+
+            Assert.AreEqual("12:00 PM", noon.ToClockString(use24Hour: false));
+            Assert.AreEqual("12:00 AM", midnight.ToClockString(use24Hour: false));
+            Assert.AreEqual("7:30 AM", morning.ToClockString(use24Hour: false));
+            Assert.AreEqual("11:05 PM", evening.ToClockString(use24Hour: false));
+        }
+
+        [Test]
+        public void ToClockString_TwentyFourHour_FormatsWithLeadingZeros()
+        {
+            var noon = new GameDate(1, 1, Season.Waking, 1, 12, 0);
+            var midnight = new GameDate(1, 1, Season.Waking, 1, 0, 0);
+            var evening = new GameDate(1, 1, Season.Waking, 1, 23, 5);
+
+            Assert.AreEqual("12:00", noon.ToClockString(use24Hour: true));
+            Assert.AreEqual("00:00", midnight.ToClockString(use24Hour: true));
+            Assert.AreEqual("23:05", evening.ToClockString(use24Hour: true));
+        }
     }
 }

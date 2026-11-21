@@ -162,6 +162,7 @@ namespace TheEmptying.Modules.Buildings
             }
         }
 
+        /// <summary>3.9i: the keep is the player's seat - a new game starts with it already complete, in the middle of the crown grounds. It is never offered in the build menu and TryPlaceGovernmentBuilding refuses it, so this is the only place one is ever created.</summary>
         private void PlaceInitialKeep()
         {
             if (!_buildingTypesById.TryGetValue(KeepTypeId, out BuildingType keep))
@@ -173,9 +174,51 @@ namespace TheEmptying.Modules.Buildings
             var origin = new GridPoint(
                 grounds.X + (grounds.Width - keep.FootprintWidth) / 2,
                 grounds.Y + (grounds.Height - keep.FootprintDepth) / 2);
+            var rect = new CellRect(origin.X, origin.Y, keep.FootprintWidth, keep.FootprintDepth);
 
-            TryPlaceGovernmentBuilding(KeepTypeId, origin, out _, out _);
+            if (!IsFreeOfBuildingsAndPlots(rect))
+            {
+                return; // shouldn't happen on a fresh map - nothing else has been placed yet
+            }
+
+            EntityId keepId = CreateBuilding(keep, rect, owner: null, plotId: null);
+            HouseFoundersAndMonarchInKeep(keepId);
         }
+
+        /// <summary>
+        /// 3.9i: founders and the monarch live in the keep from the very first tick, not whenever
+        /// the first daily home search (OnNewDay) happens to find them a vacancy - with a noon
+        /// start, that could otherwise leave them homeless for the first 12 in-game hours.
+        /// </summary>
+        private void HouseFoundersAndMonarchInKeep(EntityId keepId)
+        {
+            if (!_buildings.TryGet(keepId, out BuildingState keepBuilding))
+            {
+                return;
+            }
+
+            int nextHousehold = 0;
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.People.ToList())
+            {
+                EntityId personId = row.Key;
+                if (!_people.IsFounder(personId) && !_people.IsMonarch(personId))
+                {
+                    continue;
+                }
+
+                if (nextHousehold >= keepBuilding.Households.Count)
+                {
+                    break; // more founders than household slots - shouldn't happen at the default counts
+                }
+
+                keepBuilding.Households[nextHousehold].Occupant = personId;
+                _homeByPerson[personId] = keepId;
+                nextHousehold++;
+            }
+        }
+
+        /// <summary>3.9i hook for a future lose condition: true once the keep no longer exists. Nothing can destroy it yet, so this is always true in practice.</summary>
+        public bool IsKeepStanding => _buildings.Rows().Any(row => row.Value.BuildingTypeId == KeepTypeId);
 
         #region Placement
 
@@ -255,6 +298,14 @@ namespace TheEmptying.Modules.Buildings
         public bool TryPlaceGovernmentBuilding(string typeId, GridPoint at, out EntityId buildingId, out string error)
         {
             buildingId = EntityId.None;
+
+            // 3.9i: the keep already exists from the start of the game (PlaceInitialKeep is the
+            // only place one is ever created) - it can never be placed, by the player or anything else.
+            if (typeId == KeepTypeId)
+            {
+                error = "The keep already stands in the crown grounds and can never be placed.";
+                return false;
+            }
 
             if (!_buildingTypesById.TryGetValue(typeId, out BuildingType type) || !type.IsGovernment)
             {
@@ -423,8 +474,13 @@ namespace TheEmptying.Modules.Buildings
 
         private EntityId CreateBuilding(BuildingType type, CellRect rect, EntityId? owner, EntityId? plotId)
         {
+            // 3.9i: the keep is pre-built by code, not by its own (currently empty) construction
+            // cost - it must never become a real construction site, draw from the stockpile, or be
+            // placeable again, regardless of what its content asset says.
+            bool startsComplete = type.Id == KeepTypeId;
+
             EntityId id = _entities.Create(EntityKind.Building);
-            var building = new BuildingState { BuildingTypeId = type.Id, Rect = rect, Owner = owner, PlotId = plotId, Construction = new ConstructionState() };
+            var building = new BuildingState { BuildingTypeId = type.Id, Rect = rect, Owner = owner, PlotId = plotId, Construction = startsComplete ? null : new ConstructionState() };
             _buildings.Add(id, building);
 
             foreach (GridPoint cell in rect.Cells())
@@ -432,10 +488,17 @@ namespace TheEmptying.Modules.Buildings
                 _grid.SetOccupied(cell, true);
             }
 
-            CheckCompletion(id, building, type, _currentTick());
-            if (building.Construction != null)
+            if (startsComplete)
             {
-                _events.Post(ConstructionSiteStartedEventId, _currentTick(), new EventData().SetEntity("building", id));
+                MarkBuildingComplete(id, building, type, _currentTick());
+            }
+            else
+            {
+                CheckCompletion(id, building, type, _currentTick());
+                if (building.Construction != null)
+                {
+                    _events.Post(ConstructionSiteStartedEventId, _currentTick(), new EventData().SetEntity("building", id));
+                }
             }
 
             return id;
@@ -578,7 +641,12 @@ namespace TheEmptying.Modules.Buildings
             }
 
             building.Construction = null;
+            MarkBuildingComplete(id, building, type, tick);
+        }
 
+        /// <summary>Sets up households and posts BuildingCompletedEventId - shared by a site finishing construction and a building (the keep) that starts already complete.</summary>
+        private void MarkBuildingComplete(EntityId id, BuildingState building, BuildingType type, long tick)
+        {
             if (type.HouseholdsProvided > 0)
             {
                 building.Households = Enumerable.Range(0, type.HouseholdsProvided).Select(_ => new HouseholdState()).ToList();

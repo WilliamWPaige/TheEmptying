@@ -52,5 +52,23 @@ namespace TheEmptying.Core.Timekeeping
 
             return $"Day {DayOfMonth}, {Season} (month {Month}), Year {Year}";
         }
+
+        /// <summary>3.9i: the clock's own time-of-day string - 12-hour with AM/PM by default (e.g. "7:30 AM", "12:00 PM"), or 24-hour (setting.ui.clock_24h) when use24Hour is true.</summary>
+        public string ToClockString(bool use24Hour)
+        {
+            if (use24Hour)
+            {
+                return $"{Hour:D2}:{Minute:D2}";
+            }
+
+            int hour12 = Hour % 12;
+            if (hour12 == 0)
+            {
+                hour12 = 12;
+            }
+
+            string suffix = Hour < 12 ? "AM" : "PM";
+            return $"{hour12}:{Minute:D2} {suffix}";
+        }
     }
 }

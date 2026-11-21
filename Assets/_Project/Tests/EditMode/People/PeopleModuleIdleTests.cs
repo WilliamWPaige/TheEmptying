@@ -59,6 +59,12 @@ namespace TheEmptying.Tests.EditMode.People
             sim.Settings.Set(PeopleModule.NightEndHourSettingId, 0);
             sim.Settings.Set(PeopleModule.IdleMillChancePerCheckSettingId, 1.0); // deterministic: move the instant their bucket comes up
 
+            // 3.9i: the keep's completion event is posted during module Initialize, before any tick
+            // has run, so it stays pending until the first Step() call - flush it now (it resolves
+            // against the founders it's meant for) so it doesn't also sweep the people spawned below
+            // into a gathering task the instant they're stepped.
+            sim.Step();
+
             var ids = new List<EntityId>();
             for (int i = 0; i < 5; i++)
             {

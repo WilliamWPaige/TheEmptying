@@ -125,6 +125,12 @@ namespace TheEmptying.Tests.EditMode.People
             sim.Settings.Set(PeopleModule.NightEndHourSettingId, 0);
             sim.Settings.Set(PeopleModule.IdleMillChancePerCheckSettingId, 1.0); // always mill once checked
 
+            // 3.9i: the keep's completion event is posted during module Initialize, before any tick
+            // has run, so it stays pending until the first Step() call - flush it now (it resolves
+            // against the founders it's meant for) so it doesn't also sweep the person spawned below
+            // into a gathering task the instant they're stepped.
+            sim.Step();
+
             EntityId id = people.SpawnPerson(30, 30);
 
             // Fresh and alone: social is nowhere near the low threshold yet, so the free-time

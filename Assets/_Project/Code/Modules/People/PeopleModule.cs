@@ -793,13 +793,18 @@ namespace TheEmptying.Modules.People
             int radius = (int)_settings.Get(IdleMillRadiusCellsSettingId);
             long runNumber = tick / IdleMillCheckPeriodTicks;
             int bucket = (int)(runNumber % IdleMillBucketCount);
+            int hour = GameDate.FromTick(tick).Hour;
 
             foreach (KeyValuePair<EntityId, PersonState> row in _people.Rows())
             {
                 EntityId id = row.Key;
                 PersonState person = row.Value;
 
-                if (person.Activity != PersonActivity.Idle || _idleMillBuckets.GetBucket(id.Index) != bucket || !_random.Chance(chance))
+                // 3.9i: Activity alone isn't quite enough - a person can be transiently (and
+                // wrongly) Idle for a moment right after arriving at work, before the next hourly
+                // ChooseActivity call notices (see OnMoverArrived). Never mill someone who's
+                // actually on shift with a task or job right now, however Activity reads.
+                if (person.Activity != PersonActivity.Idle || _idleMillBuckets.GetBucket(id.Index) != bucket || !_random.Chance(chance) || _isOnShiftProvider(id, hour))
                 {
                     continue;
                 }
@@ -1068,10 +1073,39 @@ namespace TheEmptying.Modules.People
 
         #region Movement integration
 
+        /// <summary>
+        /// 3.9i fix: arriving used to stamp Idle unconditionally for Commuting/GoingHome, the same
+        /// as a plain wander - leaving someone who just reached work (or home) mislabeled Idle for
+        /// up to an hour, until the next hourly ChooseActivity call noticed. Idle milling could grab
+        /// them in that window and wander them straight back off the job (the cause of 3.9i's "work,
+        /// then idle, then wandering" symptom). Re-checking shift/tired status right here promotes
+        /// them straight to the correct activity instead.
+        /// </summary>
         private void OnMoverArrived(PostedEvent posted)
         {
             EntityId id = posted.Data.GetEntity("mover");
-            if (_people.TryGet(id, out PersonState person) && (person.Activity == PersonActivity.Wandering || person.Activity == PersonActivity.GoingHome || person.Activity == PersonActivity.Commuting))
+            if (!_people.TryGet(id, out PersonState person))
+            {
+                return;
+            }
+
+            int hour = GameDate.FromTick(posted.Tick).Hour;
+
+            if (person.Activity == PersonActivity.Commuting)
+            {
+                person.Activity = _isOnShiftProvider(id, hour) ? PersonActivity.Working : PersonActivity.Idle;
+                return;
+            }
+
+            if (person.Activity == PersonActivity.GoingHome)
+            {
+                bool isNight = IsNightHour(hour, (int)_settings.Get(NightStartHourSettingId), (int)_settings.Get(NightEndHourSettingId));
+                bool isTired = person.Needs.TryGetValue("need.rest", out PersonNeedState rest) && rest.Meter <= (float)_settings.Get(NeedLowThresholdSettingId);
+                person.Activity = isTired || isNight ? (isNight ? PersonActivity.Sleeping : PersonActivity.RestingAtHome) : PersonActivity.Idle;
+                return;
+            }
+
+            if (person.Activity == PersonActivity.Wandering)
             {
                 person.Activity = PersonActivity.Idle;
             }

@@ -434,6 +434,9 @@ namespace TheEmptying.Presentation
         /// <summary>3.9f: behind setting.debug.log_task_changes, logs every hand-gathering task change - who, old task, new task, why.</summary>
         public const string TaskChangeLogSettingId = "setting.debug.log_task_changes";
 
+        /// <summary>3.9i: off (12-hour, AM/PM) by default; a later settings panel will let the player flip it.</summary>
+        public const string Clock24hSettingId = "setting.ui.clock_24h";
+
         /// <summary>
         /// 3.9e/3.9f: these debug settings default off (even in a loaded save, since settings
         /// round-trip with the save), but the interactive Editor always forces them on so a hand
@@ -790,7 +793,8 @@ namespace TheEmptying.Presentation
             }
 
             GameDate date = _simulation.Clock.CurrentDate;
-            _dateLabel.text = $"{date}, {date.Hour:D2}:{date.Minute:D2}";
+            bool use24h = _simulation.Settings.Get(Clock24hSettingId) != 0;
+            _dateLabel.text = $"{date}, {date.ToClockString(use24h)}";
             _speedLabel.text = _paused ? "Paused" : $"{(int)_speed}x";
             _treasuryLabel.text = _wealthModule != null ? $"Treasury: {_wealthModule.GetBalance(AccountId.Crown)}" : "";
         }

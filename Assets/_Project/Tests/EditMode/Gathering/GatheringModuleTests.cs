@@ -42,6 +42,87 @@ namespace TheEmptying.Tests.EditMode.Gathering
             return (simulation, gathering, buildings, inventory, wealth, market, people, jobs);
         }
 
+        /// <summary>
+        /// 3.9i: a hand test found founders doing about an hour of work, then idle, then wandering,
+        /// then work again - caused by OnMoverArrived unconditionally stamping Idle on arrival at
+        /// work (instead of promoting straight to Working), leaving a transient Idle window that
+        /// idle milling could grab and wander away with. Traces every founder's activity, tick by
+        /// tick, through a full subsequent workday (after letting the first day settle the initial
+        /// task assignment and commute) and logs it hour by hour.
+        /// </summary>
+        [Test]
+        public void Founders_WorkSteadilyThroughTheWholeShift_NoIdleOrWanderingGaps()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            inventory.Add(storehouseId, "good.loaf", 10000); // food isn't short: every founder gathers material, none farm
+
+            int dayStart = (int)sim.Settings.Get(JobsModule.DayShiftStartHourSettingId);
+            int dayEnd = (int)sim.Settings.Get(JobsModule.DayShiftEndHourSettingId);
+
+            EntityId[] founderIds = people.People.Where(row => people.IsFounder(row.Key)).Select(row => row.Key).ToArray();
+
+            // Let the first day settle (initial task assignment, the first commute to a gather spot)
+            // before tracing a clean, already-established workday - this test is about steadiness
+            // during an ongoing shift, not the one-time startup lag before the first hourly
+            // ChooseActivity call ever runs.
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                sim.Step();
+            }
+
+            var gaps = new List<string>();
+            int lastLoggedHour = -1;
+
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                sim.Step();
+                GameDate date = GameDate.FromTick(sim.Clock.CurrentTick);
+                bool withinShift = dayStart <= dayEnd
+                    ? date.Hour >= dayStart && date.Hour < dayEnd
+                    : date.Hour >= dayStart || date.Hour < dayEnd;
+
+                if (date.Hour != lastLoggedHour)
+                {
+                    lastLoggedHour = date.Hour;
+                    foreach (EntityId id in founderIds)
+                    {
+                        people.TryGetPerson(id, out PersonState person);
+                        TestContext.WriteLine($"hour {date.Hour:D2}: {id} activity={person.Activity}, task={gathering.GetTaskKind(id)}");
+                    }
+                }
+
+                if (!withinShift)
+                {
+                    continue;
+                }
+
+                foreach (EntityId id in founderIds)
+                {
+                    if (gathering.GetTaskKind(id) == GatherTaskKind.None)
+                    {
+                        continue;
+                    }
+
+                    people.TryGetPerson(id, out PersonState person);
+                    bool okay = person.Activity == PersonActivity.Working
+                        || person.Activity == PersonActivity.Commuting
+                        || person.Activity == PersonActivity.Eating
+                        || person.Activity == PersonActivity.ForagingFood
+                        || person.Activity == PersonActivity.Shopping;
+
+                    if (!okay)
+                    {
+                        gaps.Add($"tick {sim.Clock.CurrentTick} (hour {date.Hour}): {id} was {person.Activity} while on shift with a {gathering.GetTaskKind(id)} task.");
+                    }
+                }
+            }
+
+            Assert.IsEmpty(gaps, $"Expected no idle/wandering gaps during work hours:\n{string.Join("\n", gaps)}");
+        }
+
         [Test]
         public void Founders_GatherWood_IntoTheStockpile_WithNoOrdersOrHelp()
         {

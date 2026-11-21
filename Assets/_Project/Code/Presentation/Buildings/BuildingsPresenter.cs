@@ -162,7 +162,8 @@ namespace TheEmptying.Presentation.Buildings
             foreach (ContentEntry entry in _content.ListByType(BuiltInContentTypes.BuildingTypeTypeName))
             {
                 var type = (BuildingType)entry.Definition;
-                if (!type.IsGovernment)
+                // 3.9i: the keep already exists from the start of the game and can never be placed.
+                if (!type.IsGovernment || type.Id == BuildingsModule.KeepTypeId)
                 {
                     continue;
                 }
@@ -441,10 +442,13 @@ namespace TheEmptying.Presentation.Buildings
             if (label != null)
             {
                 label.transform.localPosition = new Vector3(0f, 0.55f, 0f);
-                label.text = isSite ? $"{_buildings.GetConstructionProgressPercent(id):F0}%" : "";
-                label.gameObject.SetActive(isSite);
+                // 3.9i: a completed building used to show no label at all, just a bare cube - show
+                // its name once it's done, not just a progress percent while it's still a site.
+                label.text = isSite ? $"{_buildings.GetConstructionProgressPercent(id):F0}%" : type?.Name ?? "";
+                bool showLabel = !string.IsNullOrEmpty(label.text);
+                label.gameObject.SetActive(showLabel);
 
-                if (isSite && _camera != null)
+                if (showLabel && _camera != null)
                 {
                     BillboardUtility.FaceCameraFlat(label.transform, _camera);
                 }
