@@ -1,0 +1,14 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.debug.log_world_clicks",
+            "valueType": "Number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1,
+            "category": "Debug",
+            "description": "On every left mouse press and release, logs the screen position, whether the pointer-over-UI check caught it, which UI element (if any) was picked there, and what world action (if any) it triggered. Off by default; the Editor forces it on at startup (see GameBootstrap)."
+        }
+    ]
+}

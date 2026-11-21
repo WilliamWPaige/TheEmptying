@@ -13,11 +13,15 @@ namespace TheEmptying.Presentation.MapMovement
 {
     /// <summary>
     /// Gray-box rendering for the map and its movers: a flat ground plane
-    /// with grid lines, a capsule per mover that moves smoothly between
-    /// ticks, and click-to-inspect. Pure presentation: reads the module,
-    /// never writes to it. A mover that's also a person (PeopleModule, set
-    /// via SetPeopleModule) is colored by activity and gets a name label
-    /// visible when the camera is close enough to read it.
+    /// with grid lines, a capsule per mover, and click-to-inspect. Each
+    /// capsule's drawn position continuously chases the simulation's actual
+    /// position rather than snapping to it - the simulation can step many
+    /// ticks in a single real frame (at higher game speeds, or catching up
+    /// after a slow frame), so interpolating only the last of those ticks
+    /// would show everything before it as an instant jump. Pure
+    /// presentation: reads the module, never writes to it. A mover that's
+    /// also a person (PeopleModule, set via SetPeopleModule) is colored by
+    /// activity and gets a name label.
     /// </summary>
     public sealed class MapMovementPresenter : MonoBehaviour
     {
@@ -31,12 +35,31 @@ namespace TheEmptying.Presentation.MapMovement
         private Action<EntityId> _onCapsuleSelected;
         private VisualElement _uiRoot;
 
+        /// <summary>Floor for a mover's catch-up speed, so one that hasn't moved yet (or moved zero distance) still has a sane, non-zero speed to chase any future target with.</summary>
+        private const float MinCatchUpSpeedMetersPerSecond = 1f;
+
+        /// <summary>
+        /// How much faster than the observed rate of movement the render is allowed to chase its
+        /// target - headroom so the render comfortably keeps up with ordinary continuous walking
+        /// (never settling into a persistent lag) while still visibly, smoothly catching up rather
+        /// than snapping, even after an unusually large tick catch-up burst in one frame.
+        /// </summary>
+        private const float CatchUpSpeedHeadroom = 3f;
+
         private readonly Dictionary<EntityId, GameObject> _capsules = new Dictionary<EntityId, GameObject>();
-        private readonly Dictionary<EntityId, Vector3> _previousPositions = new Dictionary<EntityId, Vector3>();
+
+        /// <summary>The latest known simulated position for each mover - the render chases this, it never jumps straight to it.</summary>
         private readonly Dictionary<EntityId, Vector3> _currentPositions = new Dictionary<EntityId, Vector3>();
+
+        /// <summary>The smoothly-interpolated position actually drawn for each mover.</summary>
+        private readonly Dictionary<EntityId, Vector3> _renderPositions = new Dictionary<EntityId, Vector3>();
+
+        /// <summary>How fast each mover's render is currently allowed to close the gap to its target, in meters per real second - set from the real interval between the two most recent simulation movement steps, not a single tick.</summary>
+        private readonly Dictionary<EntityId, float> _catchUpSpeeds = new Dictionary<EntityId, float>();
+
         private readonly List<EntityId> _staleIds = new List<EntityId>();
 
-        private float _tickProgress01;
+        private float _lastAdvanceTime = -1f;
 
         public void Initialize(MapMovementModule module, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onCapsuleSelected)
         {
@@ -72,25 +95,38 @@ namespace TheEmptying.Presentation.MapMovement
             }
 
             _capsules.Clear();
-            _previousPositions.Clear();
             _currentPositions.Clear();
+            _renderPositions.Clear();
+            _catchUpSpeeds.Clear();
+            _lastAdvanceTime = -1f;
         }
 
-        /// <summary>Called once per real tick stepped, right after Simulation.Step(), so interpolation always blends between the two most recent tick positions.</summary>
+        /// <summary>
+        /// Called once per frame that actually stepped at least one simulation tick (never once per
+        /// tick - a single frame can step many ticks at once, e.g. after a slow frame or on an
+        /// unpause, and interpolating only the last of those would show everything before it as an
+        /// instant jump). Records each mover's new target and, from the real time since the last call
+        /// and how far that mover's target just moved, how fast the render needs to chase it to keep
+        /// up without a persistent lag.
+        /// </summary>
         public void OnTickAdvanced()
         {
+            float now = Time.unscaledTime;
+            float dt = _lastAdvanceTime >= 0f ? Mathf.Max(now - _lastAdvanceTime, 0.0001f) : Time.unscaledDeltaTime;
+            _lastAdvanceTime = now;
+
             foreach (KeyValuePair<EntityId, MoverState> row in _module.Movers)
             {
                 var worldPos = ToUnityPosition(row.Value.X, row.Value.Y);
-                _previousPositions[row.Key] = _currentPositions.TryGetValue(row.Key, out Vector3 existing) ? existing : worldPos;
+
+                if (_currentPositions.TryGetValue(row.Key, out Vector3 previousTarget))
+                {
+                    float distance = Vector3.Distance(previousTarget, worldPos);
+                    _catchUpSpeeds[row.Key] = Mathf.Max(distance / dt * CatchUpSpeedHeadroom, MinCatchUpSpeedMetersPerSecond);
+                }
+
                 _currentPositions[row.Key] = worldPos;
             }
-        }
-
-        /// <summary>The fraction of the way from the last stepped tick to the next one, for smooth interpolation between ticks.</summary>
-        public void SetTickProgress(float progress01)
-        {
-            _tickProgress01 = Mathf.Clamp01(progress01);
         }
 
         private void Update()
@@ -114,8 +150,9 @@ namespace TheEmptying.Presentation.MapMovement
             {
                 Destroy(_capsules[id]);
                 _capsules.Remove(id);
-                _previousPositions.Remove(id);
                 _currentPositions.Remove(id);
+                _renderPositions.Remove(id);
+                _catchUpSpeeds.Remove(id);
             }
 
             foreach (KeyValuePair<EntityId, Vector3> entry in _currentPositions)
@@ -133,8 +170,11 @@ namespace TheEmptying.Presentation.MapMovement
                     _capsules[entry.Key] = capsule;
                 }
 
-                Vector3 previous = _previousPositions.TryGetValue(entry.Key, out Vector3 p) ? p : entry.Value;
-                capsule.transform.position = Vector3.Lerp(previous, entry.Value, _tickProgress01);
+                Vector3 current = _renderPositions.TryGetValue(entry.Key, out Vector3 r) ? r : entry.Value;
+                float speed = _catchUpSpeeds.TryGetValue(entry.Key, out float s) ? s : MinCatchUpSpeedMetersPerSecond;
+                Vector3 smoothed = Vector3.MoveTowards(current, entry.Value, speed * Time.unscaledDeltaTime);
+                _renderPositions[entry.Key] = smoothed;
+                capsule.transform.position = smoothed;
 
                 UpdatePersonAppearance(entry.Key, capsule);
             }
@@ -191,6 +231,9 @@ namespace TheEmptying.Presentation.MapMovement
                 default: return "";
             }
         }
+
+        /// <summary>For tests: a mover's actual drawn (smoothed) position, as distinct from the simulation's raw position - null if it has no capsule yet.</summary>
+        public Vector3? RenderedPositionForTesting(EntityId id) => _renderPositions.TryGetValue(id, out Vector3 p) ? p : (Vector3?)null;
 
         private static Color ColorForActivity(PersonActivity activity)
         {

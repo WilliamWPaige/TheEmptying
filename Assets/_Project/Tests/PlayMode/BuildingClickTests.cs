@@ -53,6 +53,37 @@ namespace TheEmptying.Tests.PlayMode
         }
 
         [UnityTest]
+        public IEnumerator PlacingABuilding_ClearsTheSelection_SoASecondClickPlacesNothing()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            Assert.IsTrue(bootstrap.PlaceInitialStockpileForTesting(new GridPoint(5, 5)), "Setup: placing the stockpile should succeed.");
+            yield return null;
+
+            var farCorner = new Vector2(Screen.width - 5f, 5f);
+            EntityId? firstPlaced = bootstrap.SimulatePlacementClickForTesting("building.crown_lodging", new GridPoint(20, 20), farCorner);
+            Assert.IsTrue(firstPlaced.HasValue, "Setup: the first placement should succeed.");
+
+            Assert.IsNull(bootstrap.SelectedBuildTypeIdForTesting, "3.9e: placing a building should clear the selected type.");
+
+            string buildingsAfterFirst = bootstrap.RunConsoleCommandForTesting("buildings");
+            int countAfterFirst = CountBuildingLines(buildingsAfterFirst);
+
+            // A second world click, with no type re-selected, at a different (otherwise valid) spot.
+            EntityId? secondPlaced = bootstrap.SimulateWorldClickWithCurrentSelectionForTesting(new GridPoint(30, 30), farCorner);
+
+            Assert.IsNull(secondPlaced, "With no type selected, a world click should place nothing.");
+
+            string buildingsAfterSecond = bootstrap.RunConsoleCommandForTesting("buildings");
+            Assert.AreEqual(countAfterFirst, CountBuildingLines(buildingsAfterSecond), "No second building should have been placed.");
+        }
+
+        [UnityTest]
         public IEnumerator ClickingAConstructionSite_OpensTheBuildingPanel()
         {
             yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);

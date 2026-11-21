@@ -213,6 +213,9 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: runs the exact guarded placement decision a real left-click at screenPosition would. Returns the placed building's id, if any.</summary>
         public EntityId? SimulatePlacementClickForTesting(string typeId, GridPoint cell, Vector2 screenPosition) => _buildingsPresenter?.SimulatePlacementClickForTesting(typeId, cell, screenPosition);
 
+        /// <summary>For tests: the same guarded placement decision, using whatever type is (or isn't) currently selected (see BuildingsPresenter.SimulateWorldClickWithCurrentSelectionForTesting).</summary>
+        public EntityId? SimulateWorldClickWithCurrentSelectionForTesting(GridPoint cell, Vector2 screenPosition) => _buildingsPresenter?.SimulateWorldClickWithCurrentSelectionForTesting(cell, screenPosition);
+
         /// <summary>For tests: runs the exact guarded click-to-inspect decision a real left-click at screenPosition would.</summary>
         public void ClickAtForTesting(Vector2 screenPosition) => _buildingsPresenter?.ClickAtForTesting(screenPosition);
 
@@ -253,6 +256,9 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: a mover's current simulated world position, if it has one.</summary>
         public (double X, double Y)? MoverPositionForTesting(EntityId id) =>
             _mapMovementModule != null && _mapMovementModule.TryGetPosition(id, out double x, out double y) ? (x, y) : ((double, double)?)null;
+
+        /// <summary>For tests: a mover's actual drawn (smoothed) position, as distinct from the simulation's raw position (see MapMovementPresenter.RenderedPositionForTesting).</summary>
+        public Vector3? MoverRenderedPositionForTesting(EntityId id) => _mapPresenter?.RenderedPositionForTesting(id);
 
         /// <summary>For tests: a construction site's overall progress percent (see BuildingsModule.GetConstructionProgressPercent).</summary>
         public double ConstructionProgressPercentForTesting(EntityId siteId) => _buildingsModule?.GetConstructionProgressPercent(siteId) ?? 100.0;
@@ -327,15 +333,17 @@ namespace TheEmptying.Presentation
             for (int i = 0; i < ticksToRun; i++)
             {
                 _simulation.Step();
-                _mapPresenter?.OnTickAdvanced();
             }
 
             if (ticksToRun > 0)
             {
+                // Once per frame, after every tick this frame has run, not once per tick: a single
+                // frame can step many ticks at once (a higher game speed, or catching up after a slow
+                // frame), and the presenter needs the real time this whole batch took to smoothly
+                // interpolate movers across it, not just whatever the very last tick alone covered.
+                _mapPresenter?.OnTickAdvanced();
                 RefreshHud();
             }
-
-            _mapPresenter?.SetTickProgress((float)(leftover * ticksPerRealSecond));
         }
 
         /// <summary>
@@ -386,6 +394,14 @@ namespace TheEmptying.Presentation
             return sources;
         }
 
+        /// <summary>3.9e: setting.debug.log_world_clicks defaults off (even in a loaded save, since settings round-trip with the save), but the Editor always forces it on so a hand test can watch the log without remembering to flip it.</summary>
+        private void ForceDebugLoggingDefaultInEditor()
+        {
+#if UNITY_EDITOR
+            _simulation.Settings.Set(WorldClickDebugLogger.EnabledSettingId, 1);
+#endif
+        }
+
         private StartupReport BuildSimulation()
         {
             List<string> sources = ResolveSourceFolders();
@@ -401,6 +417,7 @@ namespace TheEmptying.Presentation
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
+            ForceDebugLoggingDefaultInEditor();
 
             BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
 
@@ -467,7 +484,7 @@ namespace TheEmptying.Presentation
             InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
             var presenterObject = new GameObject("BuildingsPresenter");
             _buildingsPresenter = presenterObject.AddComponent<BuildingsPresenter>();
-            _buildingsPresenter.Initialize(_buildingsModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnBuildingSelected, OnInitialStockpilePlaced);
+            _buildingsPresenter.Initialize(_buildingsModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnBuildingSelected, OnInitialStockpilePlaced, _simulation.Settings);
 
             var panelObject = new GameObject("BuildingPanelPresenter");
             _buildingPanelPresenter = panelObject.AddComponent<BuildingPanelPresenter>();
@@ -1101,6 +1118,7 @@ namespace TheEmptying.Presentation
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
 
                 _simulation = loaded;
+                ForceDebugLoggingDefaultInEditor();
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _mapPresenter?.Rebind(_mapMovementModule);
                 _mapPresenter?.SetPeopleModule(_peopleModule);

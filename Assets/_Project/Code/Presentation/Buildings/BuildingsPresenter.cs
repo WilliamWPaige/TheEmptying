@@ -31,6 +31,7 @@ namespace TheEmptying.Presentation.Buildings
         private Action<EntityId> _onBuildingSelected;
         private VisualElement _uiRoot;
         private Action _onInitialStockpilePlaced;
+        private SettingsRegistry _settings;
 
         private VisualElement _menuPanel;
         private Button _buildMenuToggleButton;
@@ -43,7 +44,7 @@ namespace TheEmptying.Presentation.Buildings
         private GameObject _previewCube;
         private readonly Dictionary<EntityId, GameObject> _buildingCubes = new Dictionary<EntityId, GameObject>();
 
-        public void Initialize(BuildingsModule buildings, ContentDatabase content, MapGrid grid, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onBuildingSelected, Action onInitialStockpilePlaced = null)
+        public void Initialize(BuildingsModule buildings, ContentDatabase content, MapGrid grid, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onBuildingSelected, Action onInitialStockpilePlaced = null, SettingsRegistry settings = null)
         {
             _buildings = buildings;
             _content = content;
@@ -53,6 +54,7 @@ namespace TheEmptying.Presentation.Buildings
             _onBuildingSelected = onBuildingSelected;
             _uiRoot = uiRoot;
             _onInitialStockpilePlaced = onInitialStockpilePlaced;
+            _settings = settings;
 
             BuildMenu(uiRoot);
             BuildStockpilePrompt(uiRoot);
@@ -82,6 +84,21 @@ namespace TheEmptying.Presentation.Buildings
             SyncBuildingCubes();
             HandlePreviewAndPlacement();
             HandleBuildingClick();
+            LogReleaseForDebugging();
+        }
+
+        /// <summary>
+        /// 3.9e: nothing here reacts to a left release - every world action in this presenter fires
+        /// on press - but logging it too (behind setting.debug.log_world_clicks) shows whether
+        /// UiInputUtility's pick result differs between press and release, which would point at an
+        /// event-order mismatch with UI Toolkit's own click dispatch (which fires on release).
+        /// </summary>
+        private void LogReleaseForDebugging()
+        {
+            if (Mouse.current != null && Mouse.current.leftButton.wasReleasedThisFrame)
+            {
+                WorldClickDebugLogger.LogRelease(_settings, _uiRoot, Mouse.current.position.ReadValue(), "none (no world action in this presenter reacts to release)");
+            }
         }
 
         #region Build menu
@@ -190,6 +207,7 @@ namespace TheEmptying.Presentation.Buildings
         /// <summary>The actual placement decision, given a cell and a screen position - factored out of HandlePreviewAndPlacement so a test can drive it without touching mouse hardware. Returns the placed building's id, if the click actually placed one.</summary>
         private EntityId? ProcessGovernmentPlacementClick(GridPoint cell, Vector2 screenPos, bool leftClicked, bool rightClicked)
         {
+            string typeIdForLogging = _selectedTypeId;
             BuildingType type = FindType(_selectedTypeId);
             if (type == null)
             {
@@ -206,6 +224,20 @@ namespace TheEmptying.Presentation.Buildings
             if (valid && leftClicked && !clickBlockedByUi && _buildings.TryPlaceGovernmentBuilding(_selectedTypeId, cell, out EntityId newId, out _))
             {
                 placedId = newId;
+
+                // 3.9e: placing one drops the selection - placing another requires picking a type
+                // again. The build menu itself may stay open.
+                _selectedTypeId = null;
+                HidePreview();
+            }
+
+            if (leftClicked)
+            {
+                string action = placedId.HasValue ? $"placed {typeIdForLogging} -> {placedId}"
+                    : clickBlockedByUi ? "blocked by UI"
+                    : !valid ? "blocked (invalid placement spot)"
+                    : "placement attempt failed";
+                WorldClickDebugLogger.LogPress(_settings, _uiRoot, screenPos, action);
             }
 
             if (rightClicked)
@@ -236,14 +268,27 @@ namespace TheEmptying.Presentation.Buildings
             bool valid = IsPlacementPreviewValid(rect);
             ShowPreview(rect, valid);
 
-            bool clickBlockedByUi = Mouse.current.leftButton.wasPressedThisFrame && UiInputUtility.IsPointerOverUi(_uiRoot, Mouse.current.position.ReadValue());
+            bool pressedThisFrame = Mouse.current.leftButton.wasPressedThisFrame;
+            Vector2 screenPos = Mouse.current.position.ReadValue();
+            bool clickBlockedByUi = pressedThisFrame && UiInputUtility.IsPointerOverUi(_uiRoot, screenPos);
 
-            if (valid && Mouse.current.leftButton.wasPressedThisFrame && !clickBlockedByUi && _buildings.TryPlaceInitialStockpile(cell, out _, out _))
+            bool placed = false;
+            if (valid && pressedThisFrame && !clickBlockedByUi && _buildings.TryPlaceInitialStockpile(cell, out _, out _))
             {
+                placed = true;
                 _placingInitialStockpile = false;
                 _stockpilePrompt.style.display = DisplayStyle.None;
                 HidePreview();
                 _onInitialStockpilePlaced?.Invoke();
+            }
+
+            if (pressedThisFrame)
+            {
+                string action = placed ? "placed initial stockpile"
+                    : clickBlockedByUi ? "blocked by UI"
+                    : !valid ? "blocked (invalid placement spot)"
+                    : "placement attempt failed";
+                WorldClickDebugLogger.LogPress(_settings, _uiRoot, screenPos, action);
             }
         }
 
@@ -427,6 +472,7 @@ namespace TheEmptying.Presentation.Buildings
         {
             if (UiInputUtility.IsPointerOverUi(_uiRoot, screenPos))
             {
+                WorldClickDebugLogger.LogPress(_settings, _uiRoot, screenPos, "blocked by UI");
                 return;
             }
 
@@ -435,6 +481,7 @@ namespace TheEmptying.Presentation.Buildings
             // here, a click on a building right after it's placed can silently miss.
             Physics.SyncTransforms();
 
+            string action = "no building hit";
             Ray ray = _camera.ScreenPointToRay(screenPos);
             if (Physics.Raycast(ray, out RaycastHit hit, 1000f))
             {
@@ -442,8 +489,11 @@ namespace TheEmptying.Presentation.Buildings
                 if (tag != null)
                 {
                     _onBuildingSelected?.Invoke(tag.BuildingId);
+                    action = $"inspect {tag.BuildingId}";
                 }
             }
+
+            WorldClickDebugLogger.LogPress(_settings, _uiRoot, screenPos, action);
         }
 
         #region Testing
@@ -463,7 +513,12 @@ namespace TheEmptying.Presentation.Buildings
             return true;
         }
 
-        /// <summary>For tests: the build menu's own toggle button, as a stand-in for a real UI screen position (this project's PanelSettings use a 1:1 pixel scale, so panel space and screen space coincide).</summary>
+        /// <summary>
+        /// For tests: the build menu's own toggle button's panel-space position. GamePanelSettings
+        /// uses Scale With Screen Size against a 1920x1080 reference, so panel space and screen space
+        /// do NOT coincide at other resolutions - convert with ScreenPositionForPanelPointForTesting,
+        /// never assume a 1:1 mapping.
+        /// </summary>
         public Vector2 BuildMenuToggleButtonPositionForTesting => _buildMenuToggleButton.worldBound.center;
 
         /// <summary>For tests: a building type's button inside the (opened) build menu, by panel position - null if that type has no button (menu closed, or not a government type).</summary>
@@ -522,6 +577,10 @@ namespace TheEmptying.Presentation.Buildings
             _selectedTypeId = typeId;
             return ProcessGovernmentPlacementClick(cell, screenPosition, leftClicked: true, rightClicked: false);
         }
+
+        /// <summary>For tests: the same guarded placement decision, but using whatever type is (or isn't) currently selected - unlike SimulatePlacementClickForTesting, this never forces a type, so it can verify that placing one building clears the selection and a follow-up click places nothing.</summary>
+        public EntityId? SimulateWorldClickWithCurrentSelectionForTesting(GridPoint cell, Vector2 screenPosition) =>
+            ProcessGovernmentPlacementClick(cell, screenPosition, leftClicked: true, rightClicked: false);
 
         /// <summary>For tests: opens the tool with a type already selected and the menu showing, without simulating the clicks that would normally get there - so a test about one specific real click doesn't also depend on another UI element's layout timing.</summary>
         public void OpenBuildMenuWithTypeSelectedForTesting(string typeId)
