@@ -23,7 +23,7 @@ MonoBehaviour:
   _isBasic: 0
   _isGovernment: 1
   _allowedZones: []
-  _isHome: 0
-  _householdsProvided: 0
+  _isHome: 1
+  _householdsProvided: 9
   _homeClass: 0
-  _description: Placeholder. The crown's keep; built already, at no cost, when a new game starts.
+  _description: Placeholder. The crown's keep; built already, at no cost, when a new game starts. Houses the 8 founders and the monarch for free (sized for the default founder count + 1).

@@ -3,6 +3,7 @@
     "rootNamespace": "TheEmptying.Tests.PlayMode",
     "references": [
         "TheEmptying.Core",
+        "TheEmptying.Modules.MapMovement",
         "TheEmptying.Presentation",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"

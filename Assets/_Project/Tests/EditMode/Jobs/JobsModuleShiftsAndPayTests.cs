@@ -7,6 +7,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -30,7 +31,8 @@ namespace TheEmptying.Tests.EditMode.Jobs
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             foreach (var row in people.People.ToList())
             {
@@ -100,10 +102,7 @@ namespace TheEmptying.Tests.EditMode.Jobs
 
         private static EntityId BuildAndFinishCrownStorehouse(Simulation sim, BuildingsModule buildings, GridPoint at)
         {
-            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", at, out EntityId id, out string error), error);
-            buildings.TryDeliverGoods(id, "good.plank", 20, out _);
-            buildings.TryDeliverGoods(id, "good.stone", 10, out _);
-            buildings.TryAddLaborHours(id, 30, out _);
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(at, out EntityId id, out string error), error);
             return id;
         }
 
@@ -247,6 +246,55 @@ namespace TheEmptying.Tests.EditMode.Jobs
             StepDays(sim, 1);
 
             Assert.AreEqual(workerBalanceBefore.HundredthsOfShil, wealth.GetBalance(AccountId.Person(worker)).HundredthsOfShil, "A penniless crown can't pay, so the worker's balance shouldn't move.");
+        }
+
+        [Test]
+        public void AFounder_NeverQuits_EvenManyDaysUnpaid()
+        {
+            using var core = new TempCoreContentCopy();
+
+            // Build() (above) destroys the starting founders to isolate its own spawned test subjects;
+            // this test is about a founder specifically, so it builds the stack itself and keeps them.
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            EntityId storehouseId = BuildAndFinishCrownStorehouse(sim, buildings, new GridPoint(10, 10));
+            StepDays(sim, 2); // the storehouse's one worker slot opens, and a founder (top-skilled, no commute) should fill it
+
+            Assert.IsTrue(jobs.TryGetJobs(storehouseId, out JobsState state));
+            Assert.IsNotNull(state.Worker);
+            EntityId? hired = state.Worker.Occupants[0];
+            Assert.IsTrue(hired.HasValue, "Someone should have been hired into the storehouse's worker slot.");
+            Assert.IsTrue(people.IsFounder(hired.Value), "A founder should be the one hired: maxed Hauling skill, right next door.");
+
+            // Drain the crown treasury entirely, so it stays unable to pay for many days running.
+            Money crownBalance = wealth.GetBalance(AccountId.Crown);
+            EntityId sink = sim.Entities.Create(EntityKind.Person);
+            wealth.TryTransfer(AccountId.Crown, AccountId.Person(sink), crownBalance, TransferReason.Other);
+
+            int quitCount = 0;
+            sim.Events.Subscribe(JobsModule.QuitEventId, e =>
+            {
+                if (e.Data.GetEntity("person") == hired.Value)
+                {
+                    quitCount++;
+                }
+            });
+
+            StepDays(sim, 10); // far past the 2 unpaid days that would make an ordinary worker quit
+            sim.Step();
+
+            Assert.AreEqual(0, quitCount, "A founder should never quit, no matter how long they go unpaid.");
+            Assert.IsTrue(jobs.TryGetJobs(storehouseId, out JobsState stillState));
+            Assert.AreEqual(hired, stillState.Worker.Occupants[0], "The founder should still be in the job.");
         }
     }
 }

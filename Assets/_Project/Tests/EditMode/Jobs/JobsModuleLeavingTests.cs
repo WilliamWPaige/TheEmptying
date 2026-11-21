@@ -7,6 +7,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -30,7 +31,8 @@ namespace TheEmptying.Tests.EditMode.Jobs
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             foreach (var row in people.People.ToList())
             {
@@ -87,10 +89,7 @@ namespace TheEmptying.Tests.EditMode.Jobs
 
         private static EntityId BuildAndFinishCrownStorehouse(Simulation sim, BuildingsModule buildings, GridPoint at)
         {
-            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", at, out EntityId id, out string error), error);
-            buildings.TryDeliverGoods(id, "good.plank", 20, out _);
-            buildings.TryDeliverGoods(id, "good.stone", 10, out _);
-            buildings.TryAddLaborHours(id, 30, out _);
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(at, out EntityId id, out string error), error);
             return id;
         }
 

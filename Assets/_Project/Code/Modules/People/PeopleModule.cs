@@ -46,10 +46,17 @@ namespace TheEmptying.Modules.People
         public const string SleepRestRestorePerHourSettingId = "setting.people.sleep_rest_restore_per_hour";
         public const string WanderRadiusCellsSettingId = "setting.people.wander_radius_cells";
         public const string WanderChancePerHourSettingId = "setting.people.wander_chance_per_hour";
-        public const string StartingImmigrantCountSettingId = "setting.people.starting_immigrant_count";
-        public const string StartingImmigrantMinAgeSettingId = "setting.people.starting_immigrant_min_age";
-        public const string StartingImmigrantMaxAgeSettingId = "setting.people.starting_immigrant_max_age";
         public const string StartingProvisionsLoavesSettingId = "setting.people.starting_provisions_loaves";
+
+        public const string FounderCountSettingId = "setting.people.founder_count";
+        public const string FounderMinAgeSettingId = "setting.people.founder_min_age";
+        public const string FounderMaxAgeSettingId = "setting.people.founder_max_age";
+        public const string FounderLifespanMinYearsSettingId = "setting.people.founder_lifespan_min_years";
+        public const string FounderLifespanMaxYearsSettingId = "setting.people.founder_lifespan_max_years";
+        public const string FounderSkillMaxLevelSettingId = "setting.people.founder_skill_max_level";
+        public const string FounderSkillAverageLevelSettingId = "setting.people.founder_skill_average_level";
+        public const string MonarchMinAgeSettingId = "setting.people.monarch_min_age";
+        public const string MonarchMaxAgeSettingId = "setting.people.monarch_max_age";
 
         public const string PersonDiedEventId = "event.people.person_died";
         public const string NeedLowEventId = "event.people.need_low";
@@ -93,6 +100,9 @@ namespace TheEmptying.Modules.People
         /// <summary>A housed person's home cell; null (the default, meaning homeless) until Buildings registers the real one.</summary>
         private Func<EntityId, GridPoint?> _homeLocationProvider = _ => null;
 
+        /// <summary>Where a person's food comes from; null (the default) means their own inventory. Buildings registers founders and the monarch as eating free from the crown storehouse.</summary>
+        private Func<EntityId, EntityId?> _foodSourceProvider = _ => null;
+
         /// <summary>A working person's workplace cell; null (the default, meaning no job) until Jobs registers the real one.</summary>
         private Func<EntityId, GridPoint?> _workplaceLocationProvider = _ => null;
 
@@ -106,6 +116,12 @@ namespace TheEmptying.Modules.People
         /// need the dying person's own row, so they register here instead of subscribing to the event.
         /// </summary>
         private readonly List<Action<EntityId>> _deathHooks = new List<Action<EntityId>>();
+
+        /// <summary>The founder picked at random at new-game start to stand in for the player's ministries. Null until spawned (or while loading, until Read restores it).</summary>
+        private EntityId? _advisorId;
+
+        /// <summary>The separate 9th starting person: upper class, no job, lives in the keep.</summary>
+        private EntityId? _monarchId;
 
         public PeopleModule(MapMovementModule mapMovement, InventoryModule inventory)
         {
@@ -123,11 +139,24 @@ namespace TheEmptying.Modules.People
 
         public bool TryGetPerson(EntityId id, out PersonState person) => _people.TryGet(id, out person);
 
+        /// <summary>The founder picked at random at new-game start to stand in for the player's ministries; null until spawned.</summary>
+        public EntityId? AdvisorId => _advisorId;
+
+        /// <summary>The separate 9th starting person: upper class, no job, lives in the keep; null until spawned.</summary>
+        public EntityId? MonarchId => _monarchId;
+
+        public bool IsFounder(EntityId id) => _people.TryGet(id, out PersonState person) && person.IsFounder;
+        public bool IsMonarch(EntityId id) => _people.TryGet(id, out PersonState person) && person.IsMonarch;
+        public bool IsAdvisor(EntityId id) => _advisorId == id;
+
         /// <summary>Wealth calls this during its own Initialize, since it's the module that actually computes class.</summary>
         public void SetClassProvider(Func<EntityId, SocialClass> provider) => _classProvider = provider ?? (_ => SocialClass.Lower);
 
         /// <summary>Buildings calls this during its own Initialize, since it's the module that actually tracks who lives where.</summary>
         public void SetHomeLocationProvider(Func<EntityId, GridPoint?> provider) => _homeLocationProvider = provider ?? (_ => null);
+
+        /// <summary>Buildings calls this during its own Initialize, since it's the module that actually tracks the crown storehouse: founders and the monarch eat free from it instead of their own inventory.</summary>
+        public void SetFoodSourceProvider(Func<EntityId, EntityId?> provider) => _foodSourceProvider = provider ?? (_ => null);
 
         /// <summary>Jobs calls this during its own Initialize, since it's the module that actually tracks who works where and when.</summary>
         public void SetWorkplaceProvider(Func<EntityId, GridPoint?> location, Func<EntityId, int, bool> isOnShift)
@@ -198,7 +227,7 @@ namespace TheEmptying.Modules.People
 
             if (!context.IsLoading)
             {
-                SpawnStartingImmigrants();
+                SpawnFoundersAndMonarch();
             }
         }
 
@@ -231,33 +260,94 @@ namespace TheEmptying.Modules.People
 
         #region New game setup
 
-        private void SpawnStartingImmigrants()
+        /// <summary>
+        /// A new game creates 8 founders (one of them the advisor) and a
+        /// separate monarch, replacing the Phase 4 start of 8 ordinary
+        /// immigrants. Founders carry no food of their own - they eat free
+        /// from the crown storehouse once one exists (Buildings' food source
+        /// provider) - so unlike SpawnPerson, nothing is added to their
+        /// inventory here.
+        /// </summary>
+        private void SpawnFoundersAndMonarch()
         {
-            int count = (int)_settings.Get(StartingImmigrantCountSettingId);
-            int minAge = (int)_settings.Get(StartingImmigrantMinAgeSettingId);
-            int maxAge = (int)_settings.Get(StartingImmigrantMaxAgeSettingId);
-            int provisions = (int)_settings.Get(StartingProvisionsLoavesSettingId);
+            int founderCount = (int)_settings.Get(FounderCountSettingId);
+            int minAge = (int)_settings.Get(FounderMinAgeSettingId);
+            int maxAge = (int)_settings.Get(FounderMaxAgeSettingId);
+            int lifespanMin = (int)_settings.Get(FounderLifespanMinYearsSettingId);
+            int lifespanMax = (int)_settings.Get(FounderLifespanMaxYearsSettingId);
+            int skillMax = (int)_settings.Get(FounderSkillMaxLevelSettingId);
+            int skillAverage = (int)_settings.Get(FounderSkillAverageLevelSettingId);
 
-            MapGrid grid = _mapMovement.Grid;
-            var center = new GridPoint(grid.Width / 2, grid.Depth / 2);
+            var founderIds = new List<EntityId>(founderCount);
 
-            for (int i = 0; i < count; i++)
+            for (int i = 0; i < founderCount; i++)
             {
-                GridPoint? cell = FindNearbyPassableCell(center, 5) ?? grid.RandomPassableCell(_random);
-                if (cell == null)
+                EntityId? id = SpawnCrownPerson(minAge, maxAge, lifespanMin, lifespanMax, out PersonState person);
+                if (id == null)
                 {
                     continue; // no passable cell exists at all; nothing more we can do
                 }
 
-                EntityId id = _entities.Create(EntityKind.Person);
-                _mapMovement.MakeMover(id, cell.Value);
+                person.IsFounder = true;
+                person.NeverRefusesOrFails = true;
+                person.NeedsClassOverride = SocialClass.Lower;
+                ApplyFounderSkills(person, skillMax, skillAverage);
 
-                PersonState person = CreatePerson(minAge, maxAge);
-                _people.Add(id, person);
-                SyncNeedsToClass(id, person);
-
-                _inventory.Add(id, FoodGoodId, provisions);
+                founderIds.Add(id.Value);
             }
+
+            if (founderIds.Count > 0)
+            {
+                _advisorId = founderIds[_random.NextInt(0, founderIds.Count)];
+            }
+
+            int monarchMinAge = (int)_settings.Get(MonarchMinAgeSettingId);
+            int monarchMaxAge = (int)_settings.Get(MonarchMaxAgeSettingId);
+            EntityId? monarchId = SpawnCrownPerson(monarchMinAge, monarchMaxAge,
+                (int)_settings.Get(LifespanMinYearsSettingId), (int)_settings.Get(LifespanMaxYearsSettingId), out PersonState monarch);
+
+            if (monarchId != null)
+            {
+                monarch.IsMonarch = true;
+                _monarchId = monarchId;
+            }
+        }
+
+        /// <summary>Spawns one crown-housed person near the map center (a founder or the monarch) with a custom lifespan range; null if no passable cell exists at all.</summary>
+        private EntityId? SpawnCrownPerson(int minAge, int maxAge, int lifespanMin, int lifespanMax, out PersonState person)
+        {
+            MapGrid grid = _mapMovement.Grid;
+            var center = new GridPoint(grid.Width / 2, grid.Depth / 2);
+
+            GridPoint? cell = FindNearbyPassableCell(center, 5) ?? grid.RandomPassableCell(_random);
+            if (cell == null)
+            {
+                person = null;
+                return null;
+            }
+
+            EntityId id = _entities.Create(EntityKind.Person);
+            _mapMovement.MakeMover(id, cell.Value);
+
+            person = CreatePerson(minAge, maxAge, lifespanMin, lifespanMax);
+            _people.Add(id, person);
+            SyncNeedsToClass(id, person);
+
+            return id;
+        }
+
+        private static void ApplyFounderSkills(PersonState person, int skillMax, int skillAverage)
+        {
+            for (int i = 0; i < person.Skills.Length; i++)
+            {
+                person.Skills[i] = skillAverage;
+            }
+
+            person.Skills[(int)Skill.Construction] = skillMax;
+            person.Skills[(int)Skill.Mining] = skillMax;
+            person.Skills[(int)Skill.Logging] = skillMax;
+            person.Skills[(int)Skill.Hauling] = skillMax;
+            person.Skills[(int)Skill.Farming] = skillMax;
         }
 
         /// <summary>Spawns one more person at a random passable cell, ages minAge to maxAge, with the usual starting provisions. For benchmarks and tests; not used by new-game setup, which goes through SpawnStartingImmigrants instead.</summary>
@@ -272,7 +362,7 @@ namespace TheEmptying.Modules.People
             EntityId id = _entities.Create(EntityKind.Person);
             _mapMovement.MakeMover(id, cell.Value);
 
-            PersonState person = CreatePerson(minAge, maxAge);
+            PersonState person = CreatePerson(minAge, maxAge, (int)_settings.Get(LifespanMinYearsSettingId), (int)_settings.Get(LifespanMaxYearsSettingId));
             _people.Add(id, person);
             SyncNeedsToClass(id, person);
 
@@ -282,14 +372,14 @@ namespace TheEmptying.Modules.People
             return id;
         }
 
-        private PersonState CreatePerson(int minAge, int maxAge)
+        private PersonState CreatePerson(int minAge, int maxAge, int lifespanMinYears, int lifespanMaxYears)
         {
             var person = new PersonState
             {
                 FirstName = PickRandomName(_firstNames),
                 FamilyName = PickRandomName(_familyNames),
                 AgeLifeYears = _random.NextInt(minAge, maxAge + 1),
-                LifespanYears = _random.NextInt((int)_settings.Get(LifespanMinYearsSettingId), (int)_settings.Get(LifespanMaxYearsSettingId) + 1),
+                LifespanYears = _random.NextInt(lifespanMinYears, lifespanMaxYears + 1),
                 IsBeliever = _random.Chance((float)_settings.Get(BelieverChanceSettingId))
             };
 
@@ -306,7 +396,7 @@ namespace TheEmptying.Modules.People
         /// </summary>
         private void SyncNeedsToClass(EntityId id, PersonState person)
         {
-            SocialClass personClass = _classProvider(id);
+            SocialClass personClass = person.NeedsClassOverride ?? _classProvider(id);
 
             foreach (Need need in _needsById.Values)
             {
@@ -489,7 +579,8 @@ namespace TheEmptying.Modules.People
         private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float sleepRestorePerHour, float wanderChance, int wanderRadius)
         {
             bool isHungry = person.Needs.TryGetValue("need.hunger", out PersonNeedState hunger) && hunger.Meter <= eatAtPercent;
-            if (isHungry && _inventory.TryRemove(id, FoodGoodId, 1))
+            EntityId foodSource = _foodSourceProvider(id) ?? id;
+            if (isHungry && _inventory.TryRemove(foodSource, FoodGoodId, 1))
             {
                 hunger.Meter = Math.Min(100f, hunger.Meter + hungerRestorePerLoaf);
                 person.Activity = PersonActivity.Eating;
@@ -689,6 +780,18 @@ namespace TheEmptying.Modules.People
 
         public void Write(SaveWriter writer)
         {
+            writer.WriteBool(_advisorId.HasValue);
+            if (_advisorId.HasValue)
+            {
+                writer.WriteEntityId(_advisorId.Value);
+            }
+
+            writer.WriteBool(_monarchId.HasValue);
+            if (_monarchId.HasValue)
+            {
+                writer.WriteEntityId(_monarchId.Value);
+            }
+
             writer.WriteInt(_people.Count);
             foreach (KeyValuePair<EntityId, PersonState> row in _people.Rows())
             {
@@ -704,6 +807,15 @@ namespace TheEmptying.Modules.People
                 writer.WriteDouble(person.Mood);
                 writer.WriteInt((int)person.Activity);
                 writer.WriteDouble(person.HoursHungerEmpty);
+
+                writer.WriteBool(person.IsFounder);
+                writer.WriteBool(person.IsMonarch);
+                writer.WriteBool(person.NeverRefusesOrFails);
+                writer.WriteBool(person.NeedsClassOverride.HasValue);
+                if (person.NeedsClassOverride.HasValue)
+                {
+                    writer.WriteInt((int)person.NeedsClassOverride.Value);
+                }
 
                 writer.WriteInt(person.HoursTrackedThisMonth);
                 writer.WriteInt(person.HoursHungerCriticalThisMonth);
@@ -734,6 +846,16 @@ namespace TheEmptying.Modules.People
 
         public void Read(SaveReader reader, int savedVersion)
         {
+            if (reader.ReadBool())
+            {
+                _advisorId = reader.ReadEntityId();
+            }
+
+            if (reader.ReadBool())
+            {
+                _monarchId = reader.ReadEntityId();
+            }
+
             int count = reader.ReadInt();
             for (int i = 0; i < count; i++)
             {
@@ -750,6 +872,11 @@ namespace TheEmptying.Modules.People
                     Activity = (PersonActivity)reader.ReadInt(),
                     HoursHungerEmpty = reader.ReadDouble()
                 };
+
+                person.IsFounder = reader.ReadBool();
+                person.IsMonarch = reader.ReadBool();
+                person.NeverRefusesOrFails = reader.ReadBool();
+                person.NeedsClassOverride = reader.ReadBool() ? (SocialClass)reader.ReadInt() : (SocialClass?)null;
 
                 person.HoursTrackedThisMonth = reader.ReadInt();
                 person.HoursHungerCriticalThisMonth = reader.ReadInt();
@@ -800,6 +927,12 @@ namespace TheEmptying.Modules.People
 
             yield return $"{person.FullName}, age {person.AgeLifeYears:F1} (lifespan {person.LifespanYears:F1}), health {person.Health:F0}, mood {person.Mood:F0}";
             yield return $"activity: {person.Activity}, believer: {person.IsBeliever}, class: {_classProvider(entity)}";
+
+            if (person.IsFounder || person.IsMonarch)
+            {
+                string role = person.IsMonarch ? "monarch" : IsAdvisor(entity) ? "founder, advisor" : "founder";
+                yield return $"role: {role}";
+            }
 
             var skillLines = new List<string>();
             for (int i = 0; i < person.Skills.Length; i++)

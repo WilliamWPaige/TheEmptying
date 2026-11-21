@@ -8,6 +8,7 @@ using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Jobs;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -30,7 +31,17 @@ namespace TheEmptying.Tests.EditMode.People
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            // This file's tests track a single spawned person's own aging and death in isolation; the
+            // starting founders would otherwise also age (and, over a long enough run with no food
+            // production chain yet, eventually starve), confounding a global PersonDiedEventId subscription.
+            foreach (var row in people.People.ToList())
+            {
+                simulation.Entities.Destroy(row.Key);
+            }
+
             return (simulation, people);
         }
 

@@ -1,6 +1,7 @@
 using System.Collections;
 using NUnit.Framework;
 using TheEmptying.Core.Rules;
+using TheEmptying.Modules.MapMovement;
 using TheEmptying.Presentation;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -18,6 +19,9 @@ namespace TheEmptying.Tests.PlayMode
 
             var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
             Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            // A new game starts paused until the player places the stockpile.
+            bootstrap.PlaceInitialStockpileForTesting(new GridPoint(5, 5));
 
             yield return null; // let the initial layout settle
 
@@ -41,6 +45,9 @@ namespace TheEmptying.Tests.PlayMode
 
             var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
             Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            // A new game starts paused until the player places the stockpile.
+            bootstrap.PlaceInitialStockpileForTesting(new GridPoint(5, 5));
 
             yield return null;
 
@@ -67,6 +74,9 @@ namespace TheEmptying.Tests.PlayMode
 
             var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
             Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            // A new game starts paused until the player places the stockpile.
+            bootstrap.PlaceInitialStockpileForTesting(new GridPoint(5, 5));
 
             yield return null;
 
@@ -104,6 +114,9 @@ namespace TheEmptying.Tests.PlayMode
 
             var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
             Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            // A new game starts paused until the player places the stockpile.
+            bootstrap.PlaceInitialStockpileForTesting(new GridPoint(5, 5));
 
             yield return null;
 

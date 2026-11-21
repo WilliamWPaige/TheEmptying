@@ -2,12 +2,14 @@ using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
+using TheEmptying.Core.Content;
 using TheEmptying.Core.Economy;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Jobs;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -30,7 +32,8 @@ namespace TheEmptying.Tests.EditMode.Wealth
             var buildings = new BuildingsModule(mapMovement, land, wealthModule, inventory, people);
             var jobs = new JobsModule(buildings, wealthModule, people, mapMovement);
             var market = new MarketModule(buildings, wealthModule, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealthModule, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealthModule, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, wealthModule, people);
         }
 
@@ -47,7 +50,11 @@ namespace TheEmptying.Tests.EditMode.Wealth
                 Money balance = wealth.GetBalance(AccountId.Person(row.Key));
                 Assert.GreaterOrEqual(balance.HundredthsOfShil, 0);
                 Assert.LessOrEqual(balance.HundredthsOfShil, Money.FromShil(300).HundredthsOfShil);
-                Assert.AreEqual(TheEmptying.Core.Content.SocialClass.Lower, wealth.GetClass(row.Key));
+
+                // 3.9b: the advisor and the monarch are upper class (power/no job respectively); every
+                // other founder, like a plain immigrant, is lower.
+                SocialClass expectedClass = people.IsAdvisor(row.Key) || people.IsMonarch(row.Key) ? SocialClass.Upper : SocialClass.Lower;
+                Assert.AreEqual(expectedClass, wealth.GetClass(row.Key));
             }
         }
 

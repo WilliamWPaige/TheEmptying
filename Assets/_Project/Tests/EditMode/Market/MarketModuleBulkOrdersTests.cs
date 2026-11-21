@@ -9,6 +9,7 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -33,7 +34,14 @@ namespace TheEmptying.Tests.EditMode.Market
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            // This file's tests track the storehouse's exact leftover stock after each construction
+            // draw; start it empty so TryPlaceInitialStockpile's own placeholder stock doesn't skew that.
+            simulation.Settings.Set(BuildingsModule.InitialStockpilePlanksSettingId, 0);
+            simulation.Settings.Set(BuildingsModule.InitialStockpileStoneSettingId, 0);
+            simulation.Settings.Set(PeopleModule.FounderCountSettingId, 0); // and no loaves either
 
             foreach (var row in people.People.ToList())
             {
@@ -62,10 +70,7 @@ namespace TheEmptying.Tests.EditMode.Market
         {
             if (!buildings.TryFindCrownStorehouse(out EntityId storehouseId))
             {
-                Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(at.X + 30, at.Y + 30), out storehouseId, out string storehouseError), storehouseError);
-                buildings.TryDeliverGoods(storehouseId, "good.plank", 20, out _); // the storehouse's own construction is free (nothing else can supply the first one)
-                buildings.TryDeliverGoods(storehouseId, "good.stone", 10, out _);
-                buildings.TryAddLaborHours(storehouseId, 9999, out _);
+                Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(at.X + 30, at.Y + 30), out storehouseId, out string storehouseError), storehouseError);
             }
 
             inventory.Add(storehouseId, "good.plank", 20); // exactly the market's own construction need
@@ -122,10 +127,7 @@ namespace TheEmptying.Tests.EditMode.Market
             using var core = new TempCoreContentCopy();
             (Simulation sim, MarketModule market, BuildingsModule buildings, WealthModule wealth, LandModule land, InventoryModule inventory, PeopleModule people) = Build(core);
 
-            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(90, 90), out EntityId storehouseId, out string storehouseError), storehouseError);
-            buildings.TryDeliverGoods(storehouseId, "good.plank", 20, out _); // the storehouse's own construction is free (nothing else can supply the first one)
-            buildings.TryDeliverGoods(storehouseId, "good.stone", 10, out _);
-            buildings.TryAddLaborHours(storehouseId, 9999, out _);
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(90, 90), out EntityId storehouseId, out string storehouseError), storehouseError);
 
             // Building the seller below (also a crown site) draws its own 20 plank + 10 stone from this
             // same storehouse first, so the test's intended leftover stock is only added afterward.
@@ -187,7 +189,8 @@ namespace TheEmptying.Tests.EditMode.Market
             var buildings2 = new BuildingsModule(mapMovement2, land2, wealth2, inventory2, people2);
             var jobs2 = new JobsModule(buildings2, wealth2, people2, mapMovement2);
             var market2 = new MarketModule(buildings2, wealth2, inventory2, people2, mapMovement2);
-            (Simulation loaded, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { mapMovement2, inventory2, people2, wealth2, land2, buildings2, jobs2, market2 }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering2 = new GatheringModule(people2, buildings2, jobs2, inventory2, market2, mapMovement2);
+            (Simulation loaded, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { mapMovement2, inventory2, people2, wealth2, land2, buildings2, jobs2, market2, gathering2 }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             StepDays(uninterrupted, 3);
             StepDays(loaded, 3);

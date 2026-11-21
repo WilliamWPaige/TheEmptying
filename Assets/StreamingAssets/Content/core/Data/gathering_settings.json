@@ -1,0 +1,10 @@
+{
+    "type": "setting_definition",
+    "items": [
+        { "id": "setting.gathering.hand_log_hours_per_unit", "valueType": "Number", "default": 4, "minimum": 0.1, "maximum": 1000, "category": "Gathering", "description": "Placeholder. Hours of hand woodcutting per log, at work speed 1.0 (a quarter of a real woodcutter's rate)." },
+        { "id": "setting.gathering.hand_stone_hours_per_unit", "valueType": "Number", "default": 4, "minimum": 0.1, "maximum": 1000, "category": "Gathering", "description": "Placeholder. Hours of hand quarrying per stone, at work speed 1.0 (a quarter of a real quarry's rate)." },
+        { "id": "setting.gathering.hand_wheat_per_harvest", "valueType": "Integer", "default": 50, "minimum": 0, "maximum": 100000, "category": "Gathering", "description": "Placeholder. Wheat from one hand-farmed harvest (a quarter of a real farm field's rate)." },
+        { "id": "setting.gathering.radius_cells", "valueType": "Integer", "default": 15, "minimum": 1, "maximum": 1000, "category": "Gathering", "description": "How far from the crown storehouse a hand gatherer's spot may be." },
+        { "id": "setting.gathering.wheat_needed_per_person_per_month", "valueType": "Number", "default": 50, "minimum": 0, "maximum": 100000, "category": "Gathering", "description": "Placeholder. Wheat counted as a month's supply, per living person, when deciding whether to farm." }
+    ]
+}

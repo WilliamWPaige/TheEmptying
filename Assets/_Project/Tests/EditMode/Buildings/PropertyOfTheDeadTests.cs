@@ -6,6 +6,7 @@ using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -30,7 +31,8 @@ namespace TheEmptying.Tests.EditMode.Buildings
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             foreach (var row in people.People.ToList())
             {
@@ -132,10 +134,7 @@ namespace TheEmptying.Tests.EditMode.Buildings
             using var core = new TempCoreContentCopy();
             (Simulation sim, BuildingsModule buildings, LandModule land, WealthModule wealth, PeopleModule people, InventoryModule inventory) = Build(core);
 
-            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(10, 10), out EntityId storehouseId, out string placeError), placeError);
-            Assert.IsTrue(buildings.TryDeliverGoods(storehouseId, "good.plank", 20, out string plankError), plankError);
-            Assert.IsTrue(buildings.TryDeliverGoods(storehouseId, "good.stone", 10, out string stoneError), stoneError);
-            Assert.IsTrue(buildings.TryAddLaborHours(storehouseId, 9999, out string laborError), laborError);
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string placeError), placeError);
 
             EntityId person = people.SpawnPerson(30, 30); // starts with some automatic food provisions
             wealth.Grant(AccountId.Person(person), Money.FromShil(500));

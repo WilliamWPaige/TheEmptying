@@ -6,6 +6,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -29,7 +30,8 @@ namespace TheEmptying.Tests.EditMode.Jobs
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             foreach (var row in people.People.ToList())
             {
@@ -52,6 +54,11 @@ namespace TheEmptying.Tests.EditMode.Jobs
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, JobsModule jobs, BuildingsModule buildings, PeopleModule people, InventoryModule inventory) = Build(core);
+
+            // A second storehouse needs a first, already-complete one to draw its own construction materials from.
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(50, 50), out EntityId fundingStorehouseId, out string fundError), fundError);
+            inventory.Add(fundingStorehouseId, "good.plank", 1000);
+            inventory.Add(fundingStorehouseId, "good.stone", 1000);
 
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(10, 10), out EntityId siteId, out string error), error);
             buildings.TryDeliverGoods(siteId, "good.plank", 20, out _);

@@ -33,6 +33,12 @@ namespace TheEmptying.Modules.Buildings
         public const string RentPerMonthLowerSettingId = "setting.buildings.rent_per_month.lower";
         public const string RentPerMonthMiddleSettingId = "setting.buildings.rent_per_month.middle";
         public const string RentPerMonthUpperSettingId = "setting.buildings.rent_per_month.upper";
+        public const string InitialStockpilePlanksSettingId = "setting.buildings.initial_stockpile_planks";
+        public const string InitialStockpileStoneSettingId = "setting.buildings.initial_stockpile_stone";
+
+        private const string PlankGoodId = "good.plank";
+        private const string StoneGoodId = "good.stone";
+        private const string LoafGoodId = "good.loaf";
 
         public const string BuildingCompletedEventId = "event.buildings.building_completed";
 
@@ -72,6 +78,9 @@ namespace TheEmptying.Modules.Buildings
 
         /// <summary>Reverse index: a housed person's building, for O(1) home lookups from People's hourly schedule.</summary>
         private readonly Dictionary<EntityId, EntityId> _homeByPerson = new Dictionary<EntityId, EntityId>();
+
+        /// <summary>Whether the player's first action - placing the free, instant starting stockpile - has happened yet.</summary>
+        private bool _initialStockpilePlaced;
 
         public BuildingsModule(MapMovementModule mapMovement, LandModule land, WealthModule wealth, InventoryModule inventory, PeopleModule people)
         {
@@ -113,6 +122,7 @@ namespace TheEmptying.Modules.Buildings
 
             _wealth.AddPropertyValueProvider(GetPropertyValue);
             _people.SetHomeLocationProvider(GetHomeLocation);
+            _people.SetFoodSourceProvider(GetFoodSource);
 
             context.Subscribe<NewDayEvent>(OnNewDay);
             context.Subscribe<NewMonthEvent>(OnNewMonth);
@@ -159,6 +169,73 @@ namespace TheEmptying.Modules.Buildings
 
         #region Placement
 
+        /// <summary>True until the player has placed the starting stockpile (a new game's first action); always false once loaded from a save where it was already placed.</summary>
+        public bool NeedsInitialStockpilePlacement => !_initialStockpilePlaced;
+
+        /// <summary>
+        /// The player's first action: places the crown storehouse for free and
+        /// instantly (no construction at all), stocked with the placeholder
+        /// starting planks, stone and the founders' provisions. Only the very
+        /// first stockpile is free this way; a later one is requested like any
+        /// other government building and costs materials normally.
+        /// </summary>
+        public bool TryPlaceInitialStockpile(GridPoint at, out EntityId buildingId, out string error)
+        {
+            buildingId = EntityId.None;
+
+            if (_initialStockpilePlaced)
+            {
+                error = "The stockpile has already been placed.";
+                return false;
+            }
+
+            if (!_buildingTypesById.TryGetValue(CrownStorehouseTypeId, out BuildingType type))
+            {
+                error = $"'{CrownStorehouseTypeId}' is not a known building type.";
+                return false;
+            }
+
+            var rect = new CellRect(at.X, at.Y, type.FootprintWidth, type.FootprintDepth);
+            if (!IsFreeOfBuildingsAndPlots(rect))
+            {
+                error = "That spot isn't free of other buildings and plots.";
+                return false;
+            }
+
+            EntityId id = _entities.Create(EntityKind.Building);
+            var building = new BuildingState { BuildingTypeId = type.Id, Rect = rect, Owner = null, PlotId = null, Construction = null };
+            _buildings.Add(id, building);
+
+            foreach (GridPoint cell in rect.Cells())
+            {
+                _grid.SetOccupied(cell, true);
+            }
+
+            int initialPlanks = (int)_settings.Get(InitialStockpilePlanksSettingId);
+            if (initialPlanks > 0)
+            {
+                _inventory.Add(id, PlankGoodId, initialPlanks);
+            }
+
+            int initialStone = (int)_settings.Get(InitialStockpileStoneSettingId);
+            if (initialStone > 0)
+            {
+                _inventory.Add(id, StoneGoodId, initialStone);
+            }
+
+            int loavesPerFounder = (int)_settings.Get(PeopleModule.StartingProvisionsLoavesSettingId);
+            int founderCount = (int)_settings.Get(PeopleModule.FounderCountSettingId);
+            if (loavesPerFounder > 0 && founderCount > 0)
+            {
+                _inventory.Add(id, LoafGoodId, loavesPerFounder * founderCount);
+            }
+
+            _initialStockpilePlaced = true;
+            buildingId = id;
+            error = null;
+            return true;
+        }
+
         public bool TryPlaceGovernmentBuilding(string typeId, GridPoint at, out EntityId buildingId, out string error)
         {
             buildingId = EntityId.None;
@@ -185,6 +262,12 @@ namespace TheEmptying.Modules.Buildings
         public bool TryRequestPrivateBuilding(EntityId person, string typeId, out EntityId buildingId, out string error)
         {
             buildingId = EntityId.None;
+
+            if (_wealth.IsFounder(person))
+            {
+                error = "A crown servant owns nothing.";
+                return false;
+            }
 
             if (!_buildingTypesById.TryGetValue(typeId, out BuildingType type) || type.IsGovernment)
             {
@@ -390,11 +473,12 @@ namespace TheEmptying.Modules.Buildings
                     return false;
                 }
             }
-            else if (site.BuildingTypeId != CrownStorehouseTypeId)
+            else
             {
                 // A crown site draws from the crown storehouse, like any owner draws from their own
-                // inventory - crown buildings are never free. The storehouse's own construction is the
-                // one exception: nothing else can supply the very first one, so it stays free.
+                // inventory - crown buildings are never free. The very first storehouse is placed
+                // already complete (TryPlaceInitialStockpile); only a later, additional one goes
+                // through this normal paid path.
                 EntityId? storehouseId = FindCrownStorehouse();
                 if (!storehouseId.HasValue || !_inventory.TryRemove(storehouseId.Value, goodId, toDeliver))
                 {
@@ -435,6 +519,10 @@ namespace TheEmptying.Modules.Buildings
 
         private double TotalLaborNeeded(BuildingType type) =>
             type.ConstructionCost.Sum(c => c.Amount) * _settings.Get(LaborHoursPerGoodUnitSettingId);
+
+        /// <summary>Total labor hours a construction site needs to finish, for the building panel's progress display; 0 for a finished building or an unknown site.</summary>
+        public double GetLaborHoursNeeded(EntityId siteId) =>
+            _buildings.TryGet(siteId, out BuildingState site) && site.Construction != null ? TotalLaborNeeded(_buildingTypesById[site.BuildingTypeId]) : 0.0;
 
         private void CheckCompletion(EntityId id, BuildingState building, BuildingType type, long tick)
         {
@@ -481,6 +569,20 @@ namespace TheEmptying.Modules.Buildings
             if (_homeByPerson.TryGetValue(person, out EntityId buildingId) && _buildings.TryGet(buildingId, out BuildingState building))
             {
                 return FindDoorstep(building.Rect);
+            }
+
+            return null;
+        }
+
+        /// <summary>Crown lodging and the keep (built free, at no cost) both house people for free; everything else charges rent.</summary>
+        private static bool IsFreeLodging(string buildingTypeId) => buildingTypeId == CrownLodgingTypeId || buildingTypeId == KeepTypeId;
+
+        /// <summary>Founders and the monarch eat free from the crown storehouse, once one exists; everyone else eats from their own inventory (People's default).</summary>
+        private EntityId? GetFoodSource(EntityId person)
+        {
+            if ((_people.IsFounder(person) || _people.IsMonarch(person)) && TryFindCrownStorehouse(out EntityId storehouseId))
+            {
+                return storehouseId;
             }
 
             return null;
@@ -566,13 +668,20 @@ namespace TheEmptying.Modules.Buildings
                     continue;
                 }
 
+                // The keep houses only founders and the monarch for free; everyone else competes for
+                // ordinary housing (crown lodging included) like any citizen.
+                if (building.BuildingTypeId == KeepTypeId && !_people.IsFounder(personId) && !_people.IsMonarch(personId))
+                {
+                    continue;
+                }
+
                 BuildingType type = _buildingTypesById[building.BuildingTypeId];
                 if (!type.HomeClass.HasValue || type.HomeClass.Value > personClass)
                 {
                     continue;
                 }
 
-                Money rent = building.BuildingTypeId == CrownLodgingTypeId ? Money.Zero : RentForClass(type.HomeClass.Value);
+                Money rent = IsFreeLodging(building.BuildingTypeId) ? Money.Zero : RentForClass(type.HomeClass.Value);
                 if (rent.HundredthsOfShil > balance.HundredthsOfShil)
                 {
                     continue;
@@ -603,10 +712,10 @@ namespace TheEmptying.Modules.Buildings
             }
 
             _buildings.TryGet(bestBuilding, out BuildingState chosen);
-            bool crownLodging = chosen.BuildingTypeId == CrownLodgingTypeId;
+            bool freeLodging = IsFreeLodging(chosen.BuildingTypeId);
             AccountId landlord = chosen.Owner.HasValue ? AccountId.Person(chosen.Owner.Value) : AccountId.Crown;
 
-            if (crownLodging || _wealth.TryTransfer(AccountId.Person(personId), landlord, bestRent, TransferReason.Rent))
+            if (freeLodging || _wealth.TryTransfer(AccountId.Person(personId), landlord, bestRent, TransferReason.Rent))
             {
                 chosen.Households[bestHouseholdIndex].Occupant = personId;
                 _homeByPerson[personId] = bestBuilding;
@@ -618,9 +727,9 @@ namespace TheEmptying.Modules.Buildings
             foreach (KeyValuePair<EntityId, BuildingState> row in _buildings.Rows())
             {
                 BuildingState building = row.Value;
-                if (building.Construction != null || building.Households.Count == 0 || building.BuildingTypeId == CrownLodgingTypeId)
+                if (building.Construction != null || building.Households.Count == 0 || IsFreeLodging(building.BuildingTypeId))
                 {
-                    continue; // crown lodging charges no rent, so is never evicted
+                    continue; // crown lodging and the keep charge no rent, so are never evicted
                 }
 
                 BuildingType type = _buildingTypesById[building.BuildingTypeId];
@@ -891,6 +1000,18 @@ namespace TheEmptying.Modules.Buildings
                 return string.Join("\n", Inspect(id));
             }));
 
+            context.RegisterCommand(new ConsoleCommand("placestockpile", "placestockpile <x> <y> - the player's first action: places the free, instant starting stockpile.", args =>
+            {
+                if (args.Length != 2 || !ConsoleArgs.TryParseInt(args[0], out int x) || !ConsoleArgs.TryParseInt(args[1], out int y))
+                {
+                    return "Usage: placestockpile <x> <y>";
+                }
+
+                return TryPlaceInitialStockpile(new GridPoint(x, y), out EntityId id, out string error)
+                    ? $"Placed the stockpile at ({x},{y}) ({id})."
+                    : error;
+            }));
+
             context.RegisterCommand(new ConsoleCommand("requestbuilding", "requestbuilding <personId> <buildingType> - simulates demand for a private building.", args =>
             {
                 if (args.Length != 2 || !EntityId.TryParse(args[0], out EntityId person))
@@ -933,6 +1054,8 @@ namespace TheEmptying.Modules.Buildings
 
         public void Write(SaveWriter writer)
         {
+            writer.WriteBool(_initialStockpilePlaced);
+
             writer.WriteInt(_buildings.Count);
             foreach (KeyValuePair<EntityId, BuildingState> row in _buildings.Rows())
             {
@@ -1006,6 +1129,8 @@ namespace TheEmptying.Modules.Buildings
 
         public void Read(SaveReader reader, int savedVersion)
         {
+            _initialStockpilePlaced = reader.ReadBool();
+
             int count = reader.ReadInt();
             for (int i = 0; i < count; i++)
             {

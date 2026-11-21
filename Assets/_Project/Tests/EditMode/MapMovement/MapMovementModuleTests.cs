@@ -5,6 +5,7 @@ using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -54,7 +55,8 @@ namespace TheEmptying.Tests.EditMode.MapMovement
             var buildings = new BuildingsModule(module, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, module);
             var market = new MarketModule(buildings, wealth, inventory, people, module);
-            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { module, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, module);
+            (Simulation simulation, _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, new IModule[] { module, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, module);
         }
 

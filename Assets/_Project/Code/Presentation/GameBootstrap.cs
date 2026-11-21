@@ -15,6 +15,7 @@ using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
 using TheEmptying.Presentation.Buildings;
@@ -104,6 +105,7 @@ namespace TheEmptying.Presentation
         private LandModule _landModule;
         private BuildingsModule _buildingsModule;
         private JobsModule _jobsModule;
+        private MarketModule _marketModule;
         private MapMovementPresenter _mapPresenter;
         private LandPresenter _landPresenter;
         private BuildingsPresenter _buildingsPresenter;
@@ -192,6 +194,49 @@ namespace TheEmptying.Presentation
 
         /// <summary>For tests: the simulation's current living entity count.</summary>
         public int EntityCountForTesting => _simulation.Entities.Count;
+
+        /// <summary>For tests: places the stockpile directly, with the same side effects a successful click would have, so a test that isn't about the player's first action doesn't have to simulate that click too.</summary>
+        public bool PlaceInitialStockpileForTesting(GridPoint cell) => _buildingsPresenter != null && _buildingsPresenter.PlaceInitialStockpileForTesting(cell);
+
+        /// <summary>For tests: the build menu's own toggle button screen position (see BuildingsPresenter.BuildMenuToggleButtonPositionForTesting).</summary>
+        public Vector2? BuildMenuToggleButtonPositionForTesting => _buildingsPresenter?.BuildMenuToggleButtonPositionForTesting;
+
+        /// <summary>For tests: runs the exact guarded placement decision a real left-click at screenPosition would. Returns the placed building's id, if any.</summary>
+        public EntityId? SimulatePlacementClickForTesting(string typeId, GridPoint cell, Vector2 screenPosition) => _buildingsPresenter?.SimulatePlacementClickForTesting(typeId, cell, screenPosition);
+
+        /// <summary>For tests: runs the exact guarded click-to-inspect decision a real left-click at screenPosition would.</summary>
+        public void ClickAtForTesting(Vector2 screenPosition) => _buildingsPresenter?.ClickAtForTesting(screenPosition);
+
+        /// <summary>For tests: closes the build menu/tool, exactly as clicking its toggle button a second time would.</summary>
+        public void CloseBuildMenuForTesting() => _buildingsPresenter?.CloseBuildMenuForTesting();
+
+        /// <summary>For tests: describes whatever a raycast from screenPosition would hit, for debugging.</summary>
+        public string DescribeRaycastForTesting(Vector2 screenPosition) => _buildingsPresenter?.DescribeRaycastForTesting(screenPosition) ?? "no presenter";
+
+        /// <summary>For tests: lists every tracked building cube's id, position, scale and active state, for debugging.</summary>
+        public string DescribeAllBuildingCubesForTesting() => _buildingsPresenter?.DescribeAllBuildingCubesForTesting() ?? "no presenter";
+
+        /// <summary>For tests: raycasts straight down through a world XZ position, bypassing the camera entirely, for debugging.</summary>
+        public string DescribeStraightDownRaycastForTesting(float worldX, float worldZ) => _buildingsPresenter?.DescribeStraightDownRaycastForTesting(worldX, worldZ) ?? "no presenter";
+
+        /// <summary>For tests: whether a click at this screen position would currently be swallowed by UI.</summary>
+        public bool IsPointerOverUiForTesting(Vector2 screenPosition) => _buildingsPresenter != null && _buildingsPresenter.IsPointerOverUiForTesting(screenPosition);
+
+        /// <summary>For tests: the build menu's own toggle button's resolved world-space (panel-space) rect, for debugging coordinate conversions.</summary>
+        public Rect? BuildMenuToggleButtonWorldBoundForTesting => _buildingsPresenter?.BuildMenuToggleButtonWorldBoundForTesting;
+
+        /// <summary>For tests: the screen position that maps to this panel-space position (see BuildingsPresenter.ScreenPositionForPanelPointForTesting).</summary>
+        public Vector2? ScreenPositionForPanelPointForTesting(Vector2 panelPosition) => _buildingsPresenter?.ScreenPositionForPanelPointForTesting(panelPosition);
+
+        /// <summary>For tests: whether the building panel is currently shown, and which building.</summary>
+        public bool IsBuildingPanelOpenForTesting => _buildingPanelPresenter?.IsShowingForTesting ?? false;
+        public EntityId BuildingPanelShownIdForTesting => _buildingPanelPresenter?.ShownBuildingIdForTesting ?? EntityId.None;
+
+        /// <summary>For tests: the main camera presenting the world, for projecting a known world position to a screen position.</summary>
+        public Camera CameraForTesting => Camera.main;
+
+        /// <summary>For tests: the grid's cell size, to convert a cell coordinate into a world position for CameraForTesting.WorldToScreenPoint.</summary>
+        public double CellSizeMetersForTesting => _mapMovementModule?.Grid.CellSizeMeters ?? 1.0;
 
         /// <summary>For tests: the simulation's current state hash.</summary>
         public ulong StateHashForTesting => _simulation.ComputeStateHash();
@@ -333,6 +378,7 @@ namespace TheEmptying.Presentation
             _landModule = modules.OfType<LandModule>().FirstOrDefault();
             _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
             _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
+            _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
@@ -373,7 +419,7 @@ namespace TheEmptying.Presentation
 
             var presenterObject = new GameObject("MapMovementPresenter");
             _mapPresenter = presenterObject.AddComponent<MapMovementPresenter>();
-            _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, OnMoverCapsuleSelected);
+            _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
             _mapPresenter.SetPeopleModule(_peopleModule);
             _mapPresenter.SetWealthModule(_wealthModule);
         }
@@ -402,11 +448,22 @@ namespace TheEmptying.Presentation
             InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
             var presenterObject = new GameObject("BuildingsPresenter");
             _buildingsPresenter = presenterObject.AddComponent<BuildingsPresenter>();
-            _buildingsPresenter.Initialize(_buildingsModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnBuildingSelected);
+            _buildingsPresenter.Initialize(_buildingsModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnBuildingSelected, OnInitialStockpilePlaced);
 
             var panelObject = new GameObject("BuildingPanelPresenter");
             _buildingPanelPresenter = panelObject.AddComponent<BuildingPanelPresenter>();
-            _buildingPanelPresenter.Initialize(_buildingsModule, _jobsModule, _uiDocument.rootVisualElement, command => _simulation.Commands.Execute(command));
+            _buildingPanelPresenter.Initialize(_buildingsModule, _jobsModule, _marketModule, _uiDocument.rootVisualElement, command => _simulation.Commands.Execute(command));
+
+            if (_buildingsModule.NeedsInitialStockpilePlacement)
+            {
+                SetPaused(true);
+            }
+        }
+
+        /// <summary>The player just placed the starting stockpile: nothing else to gate on, so resume play automatically.</summary>
+        private void OnInitialStockpilePlaced()
+        {
+            SetPaused(false);
         }
 
         /// <summary>Clicking a capsule or a plot shows its entity in the existing inspector: the console's own "inspect" command.</summary>
@@ -1018,6 +1075,7 @@ namespace TheEmptying.Presentation
                 _landModule = modules.OfType<LandModule>().FirstOrDefault();
                 _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
                 _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
+                _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
@@ -1029,7 +1087,12 @@ namespace TheEmptying.Presentation
                 _mapPresenter?.SetWealthModule(_wealthModule);
                 _landPresenter?.Rebind(_landModule, _mapMovementModule.Grid);
                 _buildingsPresenter?.Rebind(_buildingsModule, _mapMovementModule.Grid);
-                _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule);
+                _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule, _marketModule);
+
+                if (_buildingsModule != null && _buildingsModule.NeedsInitialStockpilePlacement)
+                {
+                    SetPaused(true);
+                }
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

@@ -93,13 +93,21 @@ namespace TheEmptying.Modules.Wealth
                 int max = (int)_settings.Get(ImmigrantStartingShilMaxSettingId);
                 foreach (KeyValuePair<EntityId, PersonState> row in _people.People)
                 {
+                    EntityId id = row.Key;
+                    bool isFounder = _people.IsFounder(id);
+
+                    // Founders own nothing; the advisor is upper class in name and power only (the
+                    // monarch too, with no job or income to qualify on its own). Both are fixed here
+                    // and skipped by the monthly check below, so they never change.
+                    SocialClass startingClass = _people.IsAdvisor(id) || _people.IsMonarch(id) ? SocialClass.Upper : SocialClass.Lower;
+
                     var state = new PersonWealthState
                     {
-                        Balance = Money.FromShil(_random.NextInt(min, max + 1)),
-                        Class = SocialClass.Lower,
+                        Balance = isFounder ? Money.Zero : Money.FromShil(_random.NextInt(min, max + 1)),
+                        Class = startingClass,
                         Ambition = RollAmbition()
                     };
-                    _wealth.Add(row.Key, state);
+                    _wealth.Add(id, state);
                 }
             }
         }
@@ -145,6 +153,9 @@ namespace TheEmptying.Modules.Wealth
         }
 
         public SocialClass GetClass(EntityId person) => _wealth.TryGet(person, out PersonWealthState s) ? s.Class : SocialClass.Lower;
+
+        /// <summary>Pass-through to People: Land and Buildings already hold a Wealth reference, so they read founder status through here instead of taking a new dependency on People.</summary>
+        public bool IsFounder(EntityId person) => _people.IsFounder(person);
 
         public double GetAmbition(EntityId person) => _wealth.TryGet(person, out PersonWealthState s) ? s.Ambition : 0.0;
 
@@ -249,6 +260,11 @@ namespace TheEmptying.Modules.Wealth
             {
                 EntityId id = row.Key;
                 PersonWealthState state = row.Value;
+
+                if (_people.IsFounder(id) || _people.IsMonarch(id))
+                {
+                    continue; // founders own nothing and never change class; the monarch stays upper
+                }
 
                 SocialClass qualifyingTier = ComputeQualifyingTier(id, state, laborerWage, middleDays, upperDays, adultAgeYears);
 

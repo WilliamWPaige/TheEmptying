@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using TheEmptying.Core.Content;
 
 namespace TheEmptying.Modules.People
 {
@@ -15,6 +16,18 @@ namespace TheEmptying.Modules.People
         public bool IsBeliever;
         public double Mood = 100.0;
         public PersonActivity Activity = PersonActivity.Idle;
+
+        /// <summary>An unpaid crown servant, spawned at new-game start: lower class forever, owns nothing, maxed in a handful of labor skills.</summary>
+        public bool IsFounder;
+
+        /// <summary>The separate 9th starting person: upper class, no job, lives in the keep.</summary>
+        public bool IsMonarch;
+
+        /// <summary>Set for founders: never quits, never refuses an order, always passes a willpower check. Needs still drop and neglect can still kill them.</summary>
+        public bool NeverRefusesOrFails;
+
+        /// <summary>Overrides which class's needs apply, independent of social class - the advisor is upper class in name but keeps lower-class needs. Null (the default) means "use the real social class".</summary>
+        public SocialClass? NeedsClassOverride;
 
         /// <summary>One entry per need this person's class (and, for faith, believer status) makes applicable. Keyed by the need's content Id.</summary>
         public readonly Dictionary<string, PersonNeedState> Needs = new Dictionary<string, PersonNeedState>();

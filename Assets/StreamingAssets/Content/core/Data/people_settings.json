@@ -23,9 +23,15 @@
         { "id": "setting.people.sleep_rest_restore_per_hour", "valueType": "Number", "default": 12.5, "minimum": 0, "maximum": 100, "category": "People", "description": "Rest restored per hour of sleep." },
         { "id": "setting.people.wander_radius_cells", "valueType": "Integer", "default": 10, "minimum": 1, "maximum": 1000, "category": "People", "description": "Placeholder. How far an idle person may wander from their current spot." },
         { "id": "setting.people.wander_chance_per_hour", "valueType": "Number", "default": 0.2, "minimum": 0, "maximum": 1, "category": "People", "description": "Placeholder. Chance per hour an idle person wanders instead of staying put." },
-        { "id": "setting.people.starting_immigrant_count", "valueType": "Integer", "default": 8, "minimum": 0, "maximum": 10000, "category": "People", "description": "How many immigrants appear at the start of a new game." },
-        { "id": "setting.people.starting_immigrant_min_age", "valueType": "Integer", "default": 18, "minimum": 0, "maximum": 200, "category": "People", "description": "Youngest age (in life-years) for a starting immigrant." },
-        { "id": "setting.people.starting_immigrant_max_age", "valueType": "Integer", "default": 45, "minimum": 0, "maximum": 200, "category": "People", "description": "Oldest age (in life-years) for a starting immigrant." },
-        { "id": "setting.people.starting_provisions_loaves", "valueType": "Integer", "default": 56, "minimum": 0, "maximum": 100000, "category": "People", "description": "Placeholder. Loaves of bread each starting immigrant carries." }
+        { "id": "setting.people.starting_provisions_loaves", "valueType": "Integer", "default": 56, "minimum": 0, "maximum": 100000, "category": "People", "description": "Placeholder. Loaves of bread per founder, added to the stockpile when it's placed." },
+        { "id": "setting.people.founder_count", "valueType": "Integer", "default": 8, "minimum": 0, "maximum": 10000, "category": "People", "description": "How many founders appear at the start of a new game." },
+        { "id": "setting.people.founder_min_age", "valueType": "Integer", "default": 18, "minimum": 0, "maximum": 200, "category": "People", "description": "Youngest age (in life-years) for a starting founder." },
+        { "id": "setting.people.founder_max_age", "valueType": "Integer", "default": 45, "minimum": 0, "maximum": 200, "category": "People", "description": "Oldest age (in life-years) for a starting founder." },
+        { "id": "setting.people.founder_lifespan_min_years", "valueType": "Integer", "default": 80, "minimum": 1, "maximum": 200, "category": "People", "description": "Placeholder. A founder's base lifespan, low end of the random range (10 more than normal)." },
+        { "id": "setting.people.founder_lifespan_max_years", "valueType": "Integer", "default": 90, "minimum": 1, "maximum": 200, "category": "People", "description": "Placeholder. A founder's base lifespan, high end of the random range (10 more than normal)." },
+        { "id": "setting.people.founder_skill_max_level", "valueType": "Integer", "default": 20, "minimum": 0, "maximum": 20, "category": "People", "description": "A founder's starting skill level in logging, quarrying, farming, hauling and construction." },
+        { "id": "setting.people.founder_skill_average_level", "valueType": "Integer", "default": 10, "minimum": 0, "maximum": 20, "category": "People", "description": "A founder's starting skill level in everything else." },
+        { "id": "setting.people.monarch_min_age", "valueType": "Integer", "default": 25, "minimum": 0, "maximum": 200, "category": "People", "description": "Youngest age (in life-years) for the starting monarch." },
+        { "id": "setting.people.monarch_max_age", "valueType": "Integer", "default": 55, "minimum": 0, "maximum": 200, "category": "People", "description": "Oldest age (in life-years) for the starting monarch." }
     ]
 }

@@ -299,6 +299,13 @@ namespace TheEmptying.Modules.Land
 
         public bool TryBuyPlot(EntityId buyer, string zoneId, GridPoint? at, out EntityId plotId, out string error)
         {
+            if (_wealth.IsFounder(buyer))
+            {
+                plotId = EntityId.None;
+                error = "A crown servant owns nothing.";
+                return false;
+            }
+
             if (!ValidateZoneId(zoneId, out error) || !ResolveSpot(zoneId, buyer, at, out CellRect rect, out error))
             {
                 plotId = EntityId.None;

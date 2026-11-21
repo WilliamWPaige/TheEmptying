@@ -8,6 +8,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -31,7 +32,8 @@ namespace TheEmptying.Tests.EditMode.Jobs
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             foreach (var row in people.People.ToList())
             {
@@ -172,6 +174,11 @@ namespace TheEmptying.Tests.EditMode.Jobs
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, JobsModule jobs, BuildingsModule buildings, LandModule land, WealthModule wealth, PeopleModule people, InventoryModule inventory) = Build(core);
+
+            // A second storehouse needs a first, already-complete one to draw its own construction materials from.
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(50, 50), out EntityId fundingStorehouseId, out string fundError), fundError);
+            inventory.Add(fundingStorehouseId, "good.plank", 1000);
+            inventory.Add(fundingStorehouseId, "good.stone", 1000);
 
             // The builder slot on a government construction site is skilled (Construction), but it's still a
             // government job, so it shouldn't elevate class the way an equally skilled private job would.

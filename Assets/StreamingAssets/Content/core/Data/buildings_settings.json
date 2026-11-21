@@ -4,6 +4,8 @@
         { "id": "setting.buildings.labor_hours_per_good_unit", "valueType": "Number", "default": 1, "minimum": 0, "maximum": 1000, "category": "Buildings", "description": "Placeholder. Labor hours needed per unit of goods in a building's construction cost." },
         { "id": "setting.buildings.rent_per_month.lower", "valueType": "Number", "default": 140, "minimum": 0, "maximum": 1000000, "category": "Buildings", "description": "Monthly rent for a lower-class home, in shil." },
         { "id": "setting.buildings.rent_per_month.middle", "valueType": "Number", "default": 400, "minimum": 0, "maximum": 1000000, "category": "Buildings", "description": "Monthly rent for a middle-class home, in shil." },
-        { "id": "setting.buildings.rent_per_month.upper", "valueType": "Number", "default": 1000, "minimum": 0, "maximum": 1000000, "category": "Buildings", "description": "Monthly rent for an upper-class home, in shil." }
+        { "id": "setting.buildings.rent_per_month.upper", "valueType": "Number", "default": 1000, "minimum": 0, "maximum": 1000000, "category": "Buildings", "description": "Monthly rent for an upper-class home, in shil." },
+        { "id": "setting.buildings.initial_stockpile_planks", "valueType": "Integer", "default": 100, "minimum": 0, "maximum": 1000000, "category": "Buildings", "description": "Placeholder. Planks the starting stockpile holds when the player places it." },
+        { "id": "setting.buildings.initial_stockpile_stone", "valueType": "Integer", "default": 40, "minimum": 0, "maximum": 1000000, "category": "Buildings", "description": "Placeholder. Stone the starting stockpile holds when the player places it." }
     ]
 }

@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
+using TheEmptying.Presentation;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
@@ -36,6 +37,7 @@ namespace TheEmptying.Presentation.Land
         private Camera _camera;
         private InputAction _selectAction;
         private Action<EntityId> _onPlotSelected;
+        private VisualElement _uiRoot;
 
         private VisualElement _toolPanel;
         private bool _overlayVisible;
@@ -58,6 +60,7 @@ namespace TheEmptying.Presentation.Land
             _camera = camera;
             _selectAction = gameplayMap.FindAction("Select");
             _onPlotSelected = onPlotSelected;
+            _uiRoot = uiRoot;
 
             BuildToolPanel(uiRoot);
             BuildOverlayPlane();
@@ -167,7 +170,7 @@ namespace TheEmptying.Presentation.Land
                 return;
             }
 
-            if (Mouse.current.leftButton.wasPressedThisFrame && TryPickCell(out GridPoint cell))
+            if (Mouse.current.leftButton.wasPressedThisFrame && !UiInputUtility.IsPointerOverUi(_uiRoot, Mouse.current.position.ReadValue()) && TryPickCell(out GridPoint cell))
             {
                 _dragging = true;
                 _dragStart = cell;
@@ -243,6 +246,11 @@ namespace TheEmptying.Presentation.Land
             }
 
             Vector2 screenPos = Mouse.current.position.ReadValue();
+            if (UiInputUtility.IsPointerOverUi(_uiRoot, screenPos))
+            {
+                return;
+            }
+
             Ray ray = _camera.ScreenPointToRay(screenPos);
             if (Physics.Raycast(ray, out RaycastHit hit, 1000f))
             {

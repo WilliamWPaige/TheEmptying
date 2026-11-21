@@ -1,3 +1,4 @@
+using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
 using TheEmptying.Core.Economy;
@@ -7,6 +8,7 @@ using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Jobs;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -29,7 +31,17 @@ namespace TheEmptying.Tests.EditMode.Land
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            // This file's tests are about leases and land tax, not the starting founders; with no
+            // stockpile placed in this isolated world they'd have no food source at all and starve
+            // within days, which would otherwise show up as unrelated crown income (property of the dead).
+            foreach (var row in people.People.ToList())
+            {
+                simulation.Entities.Destroy(row.Key);
+            }
+
             return (simulation, land, wealth);
         }
 

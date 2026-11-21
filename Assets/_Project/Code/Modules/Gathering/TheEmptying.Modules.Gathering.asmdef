@@ -1,0 +1,23 @@
+{
+    "name": "TheEmptying.Modules.Gathering",
+    "rootNamespace": "TheEmptying.Modules.Gathering",
+    "references": [
+        "TheEmptying.Core",
+        "TheEmptying.Modules.MapMovement",
+        "TheEmptying.Modules.Land",
+        "TheEmptying.Modules.People",
+        "TheEmptying.Modules.Inventory",
+        "TheEmptying.Modules.Buildings",
+        "TheEmptying.Modules.Jobs",
+        "TheEmptying.Modules.Market"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

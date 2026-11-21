@@ -90,7 +90,7 @@ namespace TheEmptying.Tests.EditMode.Startup
 
             Assert.AreEqual(simA.ComputeStateHash(), simB.ComputeStateHash());
             CollectionAssert.AreEqual(logA, logB);
-            Assert.Greater(logA.Count, 0, "Sanity check: a 3-month run with 8 immigrants should post at least some events.");
+            Assert.Greater(logA.Count, 0, "Sanity check: a 3-month run with 8 founders and a monarch should post at least some events.");
         }
 
         [Test]

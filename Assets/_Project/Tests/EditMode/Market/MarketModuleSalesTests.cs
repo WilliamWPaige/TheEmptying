@@ -7,6 +7,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -30,7 +31,8 @@ namespace TheEmptying.Tests.EditMode.Market
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             foreach (var row in people.People.ToList())
             {
@@ -51,10 +53,7 @@ namespace TheEmptying.Tests.EditMode.Market
         /// <summary>Crown sites draw materials from the crown storehouse (3.9), so a market building needs a complete, well-stocked storehouse before it can finish too.</summary>
         private static EntityId PlaceCompleteMarket(BuildingsModule buildings, InventoryModule inventory, GridPoint at)
         {
-            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(at.X + 200, at.Y + 200), out EntityId storehouseId, out string storehouseError), storehouseError);
-            buildings.TryDeliverGoods(storehouseId, "good.plank", 20, out _); // the storehouse's own construction is free (nothing else can supply the first one)
-            buildings.TryDeliverGoods(storehouseId, "good.stone", 10, out _);
-            buildings.TryAddLaborHours(storehouseId, 9999, out _);
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(at.X + 200, at.Y + 200), out EntityId storehouseId, out string storehouseError), storehouseError);
             inventory.Add(storehouseId, "good.plank", 1000);
             inventory.Add(storehouseId, "good.stone", 1000);
 

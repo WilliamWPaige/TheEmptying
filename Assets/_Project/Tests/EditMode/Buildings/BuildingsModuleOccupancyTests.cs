@@ -7,6 +7,7 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Jobs;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -29,7 +30,8 @@ namespace TheEmptying.Tests.EditMode.Buildings
             buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market };
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering };
         }
 
         [Test]

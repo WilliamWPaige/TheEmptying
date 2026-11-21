@@ -4,6 +4,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Presentation;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
@@ -28,15 +29,20 @@ namespace TheEmptying.Presentation.Buildings
         private Camera _camera;
         private InputAction _selectAction;
         private Action<EntityId> _onBuildingSelected;
+        private VisualElement _uiRoot;
+        private Action _onInitialStockpilePlaced;
 
         private VisualElement _menuPanel;
+        private Button _buildMenuToggleButton;
         private string _selectedTypeId;
         private bool _toolActive;
+        private bool _placingInitialStockpile;
+        private Label _stockpilePrompt;
 
         private GameObject _previewCube;
         private readonly Dictionary<EntityId, GameObject> _buildingCubes = new Dictionary<EntityId, GameObject>();
 
-        public void Initialize(BuildingsModule buildings, ContentDatabase content, MapGrid grid, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onBuildingSelected)
+        public void Initialize(BuildingsModule buildings, ContentDatabase content, MapGrid grid, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onBuildingSelected, Action onInitialStockpilePlaced = null)
         {
             _buildings = buildings;
             _content = content;
@@ -44,8 +50,17 @@ namespace TheEmptying.Presentation.Buildings
             _camera = camera;
             _selectAction = gameplayMap.FindAction("Select");
             _onBuildingSelected = onBuildingSelected;
+            _uiRoot = uiRoot;
+            _onInitialStockpilePlaced = onInitialStockpilePlaced;
 
             BuildMenu(uiRoot);
+            BuildStockpilePrompt(uiRoot);
+
+            if (_buildings.NeedsInitialStockpilePlacement)
+            {
+                _placingInitialStockpile = true;
+                _stockpilePrompt.style.display = DisplayStyle.Flex;
+            }
         }
 
         public void Rebind(BuildingsModule buildings, MapGrid grid)
@@ -70,13 +85,35 @@ namespace TheEmptying.Presentation.Buildings
 
         #region Build menu
 
+        private void BuildStockpilePrompt(VisualElement root)
+        {
+            _stockpilePrompt = new Label("Place the stockpile: click a spot on the ground for the crown's first storehouse.")
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 8,
+                    left = 0,
+                    right = 0,
+                    unityTextAlign = TextAnchor.MiddleCenter,
+                    color = Color.white,
+                    backgroundColor = new Color(0f, 0f, 0f, 0.6f),
+                    paddingTop = 6,
+                    paddingBottom = 6,
+                    display = DisplayStyle.None
+                }
+            };
+
+            root.Add(_stockpilePrompt);
+        }
+
         private void BuildMenu(VisualElement root)
         {
-            var toggleButton = new Button { text = "Build" };
-            toggleButton.style.position = Position.Absolute;
-            toggleButton.style.top = 8;
-            toggleButton.style.right = 96;
-            toggleButton.clicked += () =>
+            _buildMenuToggleButton = new Button { text = "Build" };
+            _buildMenuToggleButton.style.position = Position.Absolute;
+            _buildMenuToggleButton.style.top = 8;
+            _buildMenuToggleButton.style.right = 96;
+            _buildMenuToggleButton.clicked += () =>
             {
                 _toolActive = !_toolActive;
                 _menuPanel.style.display = _toolActive ? DisplayStyle.Flex : DisplayStyle.None;
@@ -85,7 +122,7 @@ namespace TheEmptying.Presentation.Buildings
                     _selectedTypeId = null;
                 }
             };
-            root.Add(toggleButton);
+            root.Add(_buildMenuToggleButton);
 
             _menuPanel = new VisualElement
             {
@@ -127,6 +164,12 @@ namespace TheEmptying.Presentation.Buildings
 
         private void HandlePreviewAndPlacement()
         {
+            if (_placingInitialStockpile)
+            {
+                HandleInitialStockpilePlacement();
+                return;
+            }
+
             if (!_toolActive || string.IsNullOrEmpty(_selectedTypeId) || _camera == null || Mouse.current == null || _grid == null)
             {
                 HidePreview();
@@ -139,7 +182,49 @@ namespace TheEmptying.Presentation.Buildings
                 return;
             }
 
+            ProcessGovernmentPlacementClick(cell, Mouse.current.position.ReadValue(), Mouse.current.leftButton.wasPressedThisFrame, Mouse.current.rightButton.wasPressedThisFrame);
+        }
+
+        /// <summary>The actual placement decision, given a cell and a screen position - factored out of HandlePreviewAndPlacement so a test can drive it without touching mouse hardware. Returns the placed building's id, if the click actually placed one.</summary>
+        private EntityId? ProcessGovernmentPlacementClick(GridPoint cell, Vector2 screenPos, bool leftClicked, bool rightClicked)
+        {
             BuildingType type = FindType(_selectedTypeId);
+            if (type == null)
+            {
+                return null;
+            }
+
+            var rect = new CellRect(cell.X, cell.Y, type.FootprintWidth, type.FootprintDepth);
+            bool valid = IsPlacementPreviewValid(rect);
+            ShowPreview(rect, valid);
+
+            bool clickBlockedByUi = leftClicked && UiInputUtility.IsPointerOverUi(_uiRoot, screenPos);
+
+            EntityId? placedId = null;
+            if (valid && leftClicked && !clickBlockedByUi && _buildings.TryPlaceGovernmentBuilding(_selectedTypeId, cell, out EntityId newId, out _))
+            {
+                placedId = newId;
+            }
+
+            if (rightClicked)
+            {
+                _selectedTypeId = null;
+                HidePreview();
+            }
+
+            return placedId;
+        }
+
+        /// <summary>The player's first action: every other tool is disabled while this is active, and there's nothing to cancel back out of.</summary>
+        private void HandleInitialStockpilePlacement()
+        {
+            if (_camera == null || Mouse.current == null || _grid == null || !TryPickCell(out GridPoint cell))
+            {
+                HidePreview();
+                return;
+            }
+
+            BuildingType type = _buildings.GetBuildingType(BuildingsModule.CrownStorehouseTypeId);
             if (type == null)
             {
                 return;
@@ -149,15 +234,14 @@ namespace TheEmptying.Presentation.Buildings
             bool valid = IsPlacementPreviewValid(rect);
             ShowPreview(rect, valid);
 
-            if (valid && Mouse.current.leftButton.wasPressedThisFrame)
-            {
-                _buildings.TryPlaceGovernmentBuilding(_selectedTypeId, cell, out _, out _);
-            }
+            bool clickBlockedByUi = Mouse.current.leftButton.wasPressedThisFrame && UiInputUtility.IsPointerOverUi(_uiRoot, Mouse.current.position.ReadValue());
 
-            if (Mouse.current.rightButton.wasPressedThisFrame)
+            if (valid && Mouse.current.leftButton.wasPressedThisFrame && !clickBlockedByUi && _buildings.TryPlaceInitialStockpile(cell, out _, out _))
             {
-                _selectedTypeId = null;
+                _placingInitialStockpile = false;
+                _stockpilePrompt.style.display = DisplayStyle.None;
                 HidePreview();
+                _onInitialStockpilePlaced?.Invoke();
             }
         }
 
@@ -312,6 +396,11 @@ namespace TheEmptying.Presentation.Buildings
                 label.transform.localPosition = new Vector3(0f, 0.55f, 0f);
                 label.text = isSite ? $"{ConstructionProgressPercent(building, type):F0}%" : "";
                 label.gameObject.SetActive(isSite);
+
+                if (isSite && _camera != null)
+                {
+                    BillboardUtility.FaceCameraUpright(label.transform, _camera);
+                }
             }
         }
 
@@ -341,12 +430,27 @@ namespace TheEmptying.Presentation.Buildings
 
         private void HandleBuildingClick()
         {
-            if (_selectAction == null || !_selectAction.WasPressedThisFrame() || _camera == null || Mouse.current == null || _toolActive)
+            if (_selectAction == null || !_selectAction.WasPressedThisFrame() || _camera == null || Mouse.current == null || _toolActive || _placingInitialStockpile)
             {
                 return;
             }
 
-            Vector2 screenPos = Mouse.current.position.ReadValue();
+            TryHandleBuildingClickAt(Mouse.current.position.ReadValue());
+        }
+
+        /// <summary>The actual click-to-inspect decision, given a screen position - factored out of HandleBuildingClick so a test can drive it without touching mouse hardware.</summary>
+        private void TryHandleBuildingClickAt(Vector2 screenPos)
+        {
+            if (UiInputUtility.IsPointerOverUi(_uiRoot, screenPos))
+            {
+                return;
+            }
+
+            // A cube just created or moved this same frame (SyncBuildingCubes, above) doesn't update
+            // the physics engine's own broadphase data until the next sync point - without forcing it
+            // here, a click on a building right after it's placed can silently miss.
+            Physics.SyncTransforms();
+
             Ray ray = _camera.ScreenPointToRay(screenPos);
             if (Physics.Raycast(ray, out RaycastHit hit, 1000f))
             {
@@ -357,6 +461,140 @@ namespace TheEmptying.Presentation.Buildings
                 }
             }
         }
+
+        #region Testing
+
+        /// <summary>For tests: places the stockpile directly, with the same side effects a successful click would have (clearing the prompt, resuming play) - so a test that isn't about the player's first action doesn't have to simulate that click too.</summary>
+        public bool PlaceInitialStockpileForTesting(GridPoint cell)
+        {
+            if (!_buildings.TryPlaceInitialStockpile(cell, out _, out _))
+            {
+                return false;
+            }
+
+            _placingInitialStockpile = false;
+            _stockpilePrompt.style.display = DisplayStyle.None;
+            HidePreview();
+            _onInitialStockpilePlaced?.Invoke();
+            return true;
+        }
+
+        /// <summary>For tests: the build menu's own toggle button, as a stand-in for a real UI screen position (this project's PanelSettings use a 1:1 pixel scale, so panel space and screen space coincide).</summary>
+        public Vector2 BuildMenuToggleButtonPositionForTesting => _buildMenuToggleButton.worldBound.center;
+
+        /// <summary>For tests: whether a click at this screen position would currently be swallowed by UI instead of reaching the 3D world.</summary>
+        public bool IsPointerOverUiForTesting(Vector2 screenPosition) => UiInputUtility.IsPointerOverUi(_uiRoot, screenPosition);
+
+        /// <summary>For tests: the build menu's own toggle button's resolved world-space (panel-space) rect, for debugging coordinate conversions.</summary>
+        public Rect BuildMenuToggleButtonWorldBoundForTesting => _buildMenuToggleButton.worldBound;
+
+        /// <summary>
+        /// For tests: the screen position that maps to this panel-space position, found by bisection
+        /// rather than assumed from Screen.width/height - UI Toolkit's runtime panel can run at a
+        /// different scale (DPI, reference resolution) than the raw screen size, and only the
+        /// screen-to-panel direction (RuntimePanelUtils.ScreenToPanel, used by the real click path) is
+        /// exposed, so this inverts it numerically instead of guessing the scale factor.
+        /// </summary>
+        public Vector2 ScreenPositionForPanelPointForTesting(Vector2 panelPosition)
+        {
+            float xLo = -Screen.width, xHi = Screen.width * 2f;
+            float yLo = -Screen.height, yHi = Screen.height * 2f;
+
+            // Each axis might map increasing or decreasing (a Y-flip is typical; X usually isn't,
+            // but this doesn't assume that) - probe the direction once before bisecting on it.
+            bool xIncreasing = RuntimePanelUtils.ScreenToPanel(_uiRoot.panel, new Vector2(xHi, 0f)).x
+                > RuntimePanelUtils.ScreenToPanel(_uiRoot.panel, new Vector2(xLo, 0f)).x;
+            bool yIncreasing = RuntimePanelUtils.ScreenToPanel(_uiRoot.panel, new Vector2(0f, yHi)).y
+                > RuntimePanelUtils.ScreenToPanel(_uiRoot.panel, new Vector2(0f, yLo)).y;
+
+            for (int i = 0; i < 40; i++)
+            {
+                float xMid = (xLo + xHi) * 0.5f;
+                float panelX = RuntimePanelUtils.ScreenToPanel(_uiRoot.panel, new Vector2(xMid, 0f)).x;
+                if ((panelX < panelPosition.x) == xIncreasing) { xLo = xMid; } else { xHi = xMid; }
+
+                float yMid = (yLo + yHi) * 0.5f;
+                float panelY = RuntimePanelUtils.ScreenToPanel(_uiRoot.panel, new Vector2(0f, yMid)).y;
+                if ((panelY < panelPosition.y) == yIncreasing) { yLo = yMid; } else { yHi = yMid; }
+            }
+
+            return new Vector2((xLo + xHi) * 0.5f, (yLo + yHi) * 0.5f);
+        }
+
+        /// <summary>For tests: runs the exact guarded placement decision a real left-click at screenPosition would, with typeId selected and the tool active. Returns the placed building's id, if any.</summary>
+        public EntityId? SimulatePlacementClickForTesting(string typeId, GridPoint cell, Vector2 screenPosition)
+        {
+            _toolActive = true;
+            _selectedTypeId = typeId;
+            return ProcessGovernmentPlacementClick(cell, screenPosition, leftClicked: true, rightClicked: false);
+        }
+
+        /// <summary>For tests: closes the build menu/tool, exactly as clicking its toggle button a second time would.</summary>
+        public void CloseBuildMenuForTesting()
+        {
+            _toolActive = false;
+            _selectedTypeId = null;
+            _menuPanel.style.display = DisplayStyle.None;
+            HidePreview(); // the ghost preview cube stays parked at the last-aimed cell otherwise, intercepting any raycast there
+        }
+
+        /// <summary>For tests: raycasts straight down through a world XZ position, bypassing the camera entirely, for debugging.</summary>
+        public string DescribeStraightDownRaycastForTesting(float worldX, float worldZ)
+        {
+            var origin = new Vector3(worldX, 100f, worldZ);
+            if (!Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 200f))
+            {
+                return $"no hit; origin={origin}";
+            }
+
+            var tag = hit.collider.GetComponent<BuildingTag>();
+            return $"hit {hit.collider.gameObject.name} at {hit.point}, hasBuildingTag={tag != null}";
+        }
+
+        /// <summary>For tests: lists every tracked building cube's id, position, scale and active state, for debugging.</summary>
+        public string DescribeAllBuildingCubesForTesting()
+        {
+            var lines = new List<string>();
+            foreach (KeyValuePair<EntityId, GameObject> entry in _buildingCubes)
+            {
+                GameObject cube = entry.Value;
+                Collider collider = cube.GetComponent<Collider>();
+                lines.Add($"{entry.Key}: pos={cube.transform.position} scale={cube.transform.localScale} activeSelf={cube.activeSelf} activeInHierarchy={cube.activeInHierarchy} hasCollider={collider != null} colliderEnabled={collider != null && collider.enabled}");
+            }
+
+            return lines.Count == 0 ? "no cubes tracked" : string.Join(" ||| ", lines);
+        }
+
+        /// <summary>For tests: describes whatever a raycast from screenPosition would hit, for debugging.</summary>
+        public string DescribeRaycastForTesting(Vector2 screenPosition)
+        {
+            if (_camera == null)
+            {
+                return "no camera";
+            }
+
+            Ray ray = _camera.ScreenPointToRay(screenPosition);
+            if (!Physics.Raycast(ray, out RaycastHit hit, 1000f))
+            {
+                return $"no hit; ray origin={ray.origin} dir={ray.direction}";
+            }
+
+            var tag = hit.collider.GetComponent<BuildingTag>();
+            return $"hit {hit.collider.gameObject.name} at {hit.point}, distance={hit.distance}, hasBuildingTag={tag != null}";
+        }
+
+        /// <summary>For tests: runs the exact guarded click-to-inspect decision a real left-click at screenPosition would.</summary>
+        public void ClickAtForTesting(Vector2 screenPosition)
+        {
+            if (_toolActive || _placingInitialStockpile)
+            {
+                return;
+            }
+
+            TryHandleBuildingClickAt(screenPosition);
+        }
+
+        #endregion
 
         #endregion
 

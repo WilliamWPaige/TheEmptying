@@ -129,6 +129,12 @@ namespace TheEmptying.Modules.Market
 
         public Money GetPrice(string goodId) => _prices.TryGetValue(goodId, out MarketPriceState state) ? state.CurrentPrice : Money.Zero;
 
+        /// <summary>How much of a good is currently for sale anywhere (a shop's own inventory or a stall) - the building panel's "none for sale" diagnostic for a stalled site.</summary>
+        public int GetTotalStockForSale(string goodId) => TotalStockOf(goodId);
+
+        /// <summary>How much of a good is already on order (paid for, in transit) for a construction site - the building panel's materials-on-order line.</summary>
+        public int GetOnOrder(EntityId siteId, string goodId) => _onOrderForSite.TryGetValue((siteId, goodId), out int amount) ? amount : 0;
+
         private int TotalStockOf(string goodId)
         {
             int total = 0;
@@ -464,6 +470,67 @@ namespace TheEmptying.Modules.Market
             return true;
         }
 
+        /// <summary>
+        /// The crown as buyer of last resort: buys straight from a person's own
+        /// stock (a hand gatherer with no shop or stall) at the market price,
+        /// tax withheld, crediting the crown storehouse - not through
+        /// FindSellers, since a person's own inventory is never a listed
+        /// seller. Fails only if there's no crown storehouse yet, the person
+        /// doesn't have the goods, or the treasury can't afford it.
+        /// </summary>
+        public bool TryCrownBuyFromPerson(EntityId seller, string goodId, int count, out int boughtCount, out string error)
+        {
+            boughtCount = 0;
+            if (count <= 0)
+            {
+                error = "Count must be positive.";
+                return false;
+            }
+
+            if (!_prices.TryGetValue(goodId, out MarketPriceState priceState))
+            {
+                error = $"No such good: {goodId}.";
+                return false;
+            }
+
+            if (!_buildings.TryFindCrownStorehouse(out EntityId storehouseId))
+            {
+                error = "No crown storehouse exists yet.";
+                return false;
+            }
+
+            int stock = _inventory.GetCount(seller, goodId);
+            int toBuy = Math.Min(count, stock);
+            if (toBuy <= 0)
+            {
+                error = $"{seller} has no {goodId} to sell.";
+                return false;
+            }
+
+            Money price = priceState.CurrentPrice;
+            Money totalCost = price * toBuy;
+            if (!_wealth.TryTransfer(AccountId.Crown, AccountId.Person(seller), totalCost, TransferReason.Purchase))
+            {
+                error = "The treasury can't afford it.";
+                return false;
+            }
+
+            double taxPercent = _settings.Get(SalesTaxPercentSettingId);
+            Money tax = Money.FromHundredthsOfShil((long)Math.Round(totalCost.HundredthsOfShil * taxPercent / 100.0));
+            if (tax.HundredthsOfShil > 0)
+            {
+                _wealth.TryTransfer(AccountId.Person(seller), AccountId.Crown, tax, TransferReason.Tax);
+            }
+
+            _inventory.TryRemove(seller, goodId, toBuy);
+            _inventory.Add(storehouseId, goodId, toBuy);
+
+            priceState.UnitsSoldToday += toBuy;
+            boughtCount = toBuy;
+            error = null;
+            return true;
+        }
+
         #endregion
 
         #region Personal shopping
@@ -736,6 +803,18 @@ namespace TheEmptying.Modules.Market
 
                 return TryBuy(personId, AccountId.Person(personId), args[1], count, out int bought, out string error)
                     ? $"Bought {bought} {args[1]} for {personId}."
+                    : error;
+            }));
+
+            context.RegisterCommand(new ConsoleCommand("crownbuy", "crownbuy <personId> <goodId> <count> - the crown buys straight from a person's own stock, for testing.", args =>
+            {
+                if (args.Length != 3 || !EntityId.TryParse(args[0], out EntityId personId) || !ConsoleArgs.TryParseInt(args[2], out int count))
+                {
+                    return "Usage: crownbuy <personId> <goodId> <count>";
+                }
+
+                return TryCrownBuyFromPerson(personId, args[1], count, out int bought, out string error)
+                    ? $"The crown bought {bought} {args[1]} from {personId}."
                     : error;
             }));
         }

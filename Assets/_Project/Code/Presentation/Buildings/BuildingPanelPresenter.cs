@@ -1,7 +1,9 @@
 using System;
+using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Jobs;
+using TheEmptying.Modules.Market;
 using UnityEngine;
 using UnityEngine.UIElements;
 using EntityId = TheEmptying.Core.Entities.EntityId;
@@ -9,17 +11,22 @@ using EntityId = TheEmptying.Core.Entities.EntityId;
 namespace TheEmptying.Presentation.Buildings
 {
     /// <summary>
-    /// The panel that opens when a building with job slots is clicked: every
-    /// slot group's pay, coverage, minimum on duty, minimum skill, allowed
-    /// classes and who fills each slot. Government buildings get editable
-    /// fields (applied next tick through JobsModule) and a Fire button per
-    /// worker; private buildings are read-only. Pure presentation: reads the
-    /// modules, writes only through their public APIs.
+    /// The panel that opens when any building is clicked, finished or not.
+    /// A construction site shows percent complete, materials delivered,
+    /// on order and needed per good, labor done versus needed, builders
+    /// working and a plain reason when stuck. A finished building shows
+    /// every slot group's pay, coverage, minimum on duty, minimum skill,
+    /// allowed classes and who fills each slot; government buildings get
+    /// editable fields (applied next tick through JobsModule) and a Fire
+    /// button per worker, private buildings are read-only. Pure
+    /// presentation: reads the modules, writes only through their public
+    /// APIs.
     /// </summary>
     public sealed class BuildingPanelPresenter : MonoBehaviour
     {
         private BuildingsModule _buildings;
         private JobsModule _jobs;
+        private MarketModule _market;
         private Action<string> _executeCommand;
 
         private VisualElement _root;
@@ -30,10 +37,15 @@ namespace TheEmptying.Presentation.Buildings
         private EntityId _shownBuildingId;
         private bool _isShowing;
 
-        public void Initialize(BuildingsModule buildings, JobsModule jobs, VisualElement uiRoot, Action<string> executeCommand)
+        /// <summary>For tests: whether the panel is currently shown, and which building it's showing.</summary>
+        public bool IsShowingForTesting => _isShowing;
+        public EntityId ShownBuildingIdForTesting => _shownBuildingId;
+
+        public void Initialize(BuildingsModule buildings, JobsModule jobs, MarketModule market, VisualElement uiRoot, Action<string> executeCommand)
         {
             _buildings = buildings;
             _jobs = jobs;
+            _market = market;
             _executeCommand = executeCommand;
 
             var asset = Resources.Load<VisualTreeAsset>("BuildingPanel");
@@ -54,10 +66,11 @@ namespace TheEmptying.Presentation.Buildings
             _root.style.display = DisplayStyle.None;
         }
 
-        public void Rebind(BuildingsModule buildings, JobsModule jobs)
+        public void Rebind(BuildingsModule buildings, JobsModule jobs, MarketModule market)
         {
             _buildings = buildings;
             _jobs = jobs;
+            _market = market;
             Hide();
         }
 
@@ -70,10 +83,10 @@ namespace TheEmptying.Presentation.Buildings
             }
         }
 
-        /// <summary>Opens on a building with job slots; does nothing (and hides) for anything else, since the console inspector already covers the rest.</summary>
+        /// <summary>Opens on any building, finished or not.</summary>
         public void Show(EntityId buildingId)
         {
-            if (_root == null || _jobs == null || !_jobs.TryGetJobs(buildingId, out JobsState jobs) || !_buildings.TryGetBuilding(buildingId, out BuildingState building))
+            if (_root == null || !_buildings.TryGetBuilding(buildingId, out BuildingState building))
             {
                 Hide();
                 return;
@@ -81,15 +94,15 @@ namespace TheEmptying.Presentation.Buildings
 
             _shownBuildingId = buildingId;
             _isShowing = true;
-            Populate(buildingId, building, jobs);
+            Populate(buildingId, building);
             _root.style.display = DisplayStyle.Flex;
         }
 
         private void Update()
         {
-            if (_isShowing && _jobs != null && _jobs.TryGetJobs(_shownBuildingId, out JobsState jobs) && _buildings.TryGetBuilding(_shownBuildingId, out BuildingState building))
+            if (_isShowing && _buildings.TryGetBuilding(_shownBuildingId, out BuildingState building))
             {
-                Populate(_shownBuildingId, building, jobs);
+                Populate(_shownBuildingId, building);
             }
             else if (_isShowing)
             {
@@ -97,13 +110,26 @@ namespace TheEmptying.Presentation.Buildings
             }
         }
 
-        private void Populate(EntityId buildingId, BuildingState building, JobsState jobs)
+        private void Populate(EntityId buildingId, BuildingState building)
         {
             BuildingType type = _buildings.GetBuildingType(building.BuildingTypeId);
             bool isGovernment = !building.Owner.HasValue;
             _title.text = $"{type?.Name ?? building.BuildingTypeId} {buildingId}" + (isGovernment ? " (crown)" : " (private)");
 
             _slotsContainer.Clear();
+
+            if (building.Construction != null)
+            {
+                PopulateConstructionSite(buildingId, building, type);
+                return;
+            }
+
+            JobsState jobs = _jobs != null && _jobs.TryGetJobs(buildingId, out JobsState foundJobs) ? foundJobs : null;
+            if (jobs == null)
+            {
+                _slotsContainer.Add(new Label("No job slots.") { style = { color = Color.gray } });
+                return;
+            }
 
             AddGroup(buildingId, JobSlotType.Builder, jobs.Builder, isGovernment);
             AddGroup(buildingId, JobSlotType.Worker, jobs.Worker, isGovernment);
@@ -115,6 +141,79 @@ namespace TheEmptying.Presentation.Buildings
                 _slotsContainer.Add(new Label("No job slots.") { style = { color = Color.gray } });
             }
         }
+
+        #region Construction site
+
+        private void PopulateConstructionSite(EntityId siteId, BuildingState site, BuildingType type)
+        {
+            if (type == null)
+            {
+                _slotsContainer.Add(new Label("Unknown building type.") { style = { color = Color.gray } });
+                return;
+            }
+
+            double totalGoods = type.ConstructionCost.Sum(c => c.Amount);
+            double deliveredGoods = type.ConstructionCost.Sum(c => Math.Min(c.Amount, site.Construction.DeliveredGoods.TryGetValue(c.Good.Id, out int d) ? d : 0));
+            double laborNeeded = _buildings.GetLaborHoursNeeded(siteId);
+            double progress = totalGoods + laborNeeded > 0 ? (deliveredGoods + site.Construction.LaborHoursDone) / (totalGoods + laborNeeded) * 100.0 : 100.0;
+
+            _slotsContainer.Add(new Label($"{progress:F0}% complete") { style = { unityFontStyleAndWeight = FontStyle.Bold } });
+
+            foreach (GoodAmount cost in type.ConstructionCost)
+            {
+                int delivered = site.Construction.DeliveredGoods.TryGetValue(cost.Good.Id, out int d) ? d : 0;
+                int onOrder = _market != null ? _market.GetOnOrder(siteId, cost.Good.Id) : 0;
+                _slotsContainer.Add(new Label($"{cost.Good.Id}: {delivered}/{cost.Amount} delivered" + (onOrder > 0 ? $", {onOrder} on order" : "")));
+            }
+
+            int builderCount = 0;
+            if (_jobs != null && _jobs.TryGetJobs(siteId, out JobsState jobs) && jobs.Builder != null)
+            {
+                builderCount = jobs.Builder.Occupants.Count(o => o.HasValue);
+            }
+
+            _slotsContainer.Add(new Label($"Labor: {site.Construction.LaborHoursDone:F0}/{laborNeeded:F0} hours, {builderCount} builder(s) working"));
+
+            string reason = DescribeWhatIsStuck(siteId, site, type, builderCount);
+            if (reason != null)
+            {
+                _slotsContainer.Add(new Label(reason) { style = { color = new Color(0.9f, 0.7f, 0.2f) } });
+            }
+        }
+
+        /// <summary>A plain reason the player can act on, or null if the site is simply progressing normally.</summary>
+        private string DescribeWhatIsStuck(EntityId siteId, BuildingState site, BuildingType type, int builderCount)
+        {
+            foreach (GoodAmount cost in type.ConstructionCost)
+            {
+                int delivered = site.Construction.DeliveredGoods.TryGetValue(cost.Good.Id, out int d) ? d : 0;
+                if (delivered >= cost.Amount)
+                {
+                    continue;
+                }
+
+                int onOrder = _market != null ? _market.GetOnOrder(siteId, cost.Good.Id) : 0;
+                if (onOrder > 0)
+                {
+                    continue; // already on its way
+                }
+
+                int forSale = _market != null ? _market.GetTotalStockForSale(cost.Good.Id) : 0;
+                if (forSale <= 0)
+                {
+                    return $"Waiting for {cost.Good.Id}: none for sale.";
+                }
+            }
+
+            if (builderCount == 0)
+            {
+                return "No builders.";
+            }
+
+            return null;
+        }
+
+        #endregion
 
         private void AddGroup(EntityId buildingId, JobSlotType type, JobSlotGroup group, bool isGovernment)
         {

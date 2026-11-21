@@ -3,8 +3,10 @@ using System.Collections.Generic;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
+using TheEmptying.Presentation;
 using UnityEngine;
 using UnityEngine.InputSystem;
+using UnityEngine.UIElements;
 using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation.MapMovement
@@ -28,6 +30,7 @@ namespace TheEmptying.Presentation.MapMovement
         private Camera _camera;
         private InputAction _selectAction;
         private Action<EntityId> _onCapsuleSelected;
+        private VisualElement _uiRoot;
 
         private readonly Dictionary<EntityId, GameObject> _capsules = new Dictionary<EntityId, GameObject>();
         private readonly Dictionary<EntityId, Vector3> _previousPositions = new Dictionary<EntityId, Vector3>();
@@ -36,11 +39,12 @@ namespace TheEmptying.Presentation.MapMovement
 
         private float _tickProgress01;
 
-        public void Initialize(MapMovementModule module, Camera camera, InputActionMap gameplayMap, Action<EntityId> onCapsuleSelected)
+        public void Initialize(MapMovementModule module, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onCapsuleSelected)
         {
             _module = module;
             _camera = camera;
             _selectAction = gameplayMap.FindAction("Select");
+            _uiRoot = uiRoot;
             _onCapsuleSelected = onCapsuleSelected;
 
             BuildGround();
@@ -165,7 +169,7 @@ namespace TheEmptying.Presentation.MapMovement
 
             if (closeEnoughToRead)
             {
-                label.transform.rotation = Quaternion.LookRotation(label.transform.position - _camera.transform.position);
+                BillboardUtility.FaceCameraUpright(label.transform, _camera);
             }
         }
 
@@ -222,6 +226,11 @@ namespace TheEmptying.Presentation.MapMovement
             }
 
             Vector2 screenPos = Mouse.current.position.ReadValue();
+            if (UiInputUtility.IsPointerOverUi(_uiRoot, screenPos))
+            {
+                return;
+            }
+
             Ray ray = _camera.ScreenPointToRay(screenPos);
 
             if (Physics.Raycast(ray, out RaycastHit hit, 1000f))

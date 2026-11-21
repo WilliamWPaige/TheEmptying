@@ -279,10 +279,15 @@ namespace TheEmptying.Modules.Jobs
         private static bool IsHourInWindow(int hour, int start, int end) =>
             start > end ? hour >= start || hour < end : hour >= start && hour < end;
 
-        private GridPoint? GetWorkplaceLocation(EntityId person) =>
+        /// <summary>Whether this person currently holds any job (builder, worker, manager or trainer) at any building.</summary>
+        public bool IsEmployed(EntityId person) => _employmentByPerson.ContainsKey(person);
+
+        /// <summary>Null when the person holds no job - Gathering layers its own hand-gathering workplace underneath this one.</summary>
+        public GridPoint? GetWorkplaceLocation(EntityId person) =>
             _employmentByPerson.TryGetValue(person, out (EntityId Building, JobSlotType Type) employment) ? _buildings.GetDoorstep(employment.Building) : null;
 
-        private bool IsOnShift(EntityId person, int hour)
+        /// <summary>False when the person holds no job - Gathering layers its own hand-gathering shift underneath this one.</summary>
+        public bool IsOnShift(EntityId person, int hour)
         {
             if (!_employmentByPerson.TryGetValue(person, out (EntityId Building, JobSlotType Type) employment) || !_jobs.TryGet(employment.Building, out JobsState jobs))
             {
@@ -375,7 +380,8 @@ namespace TheEmptying.Modules.Jobs
             _events.Post(UnpaidEventId, tick, new EventData().SetEntity("person", worker).SetEntity("building", buildingId));
 
             int unpaidDaysBeforeQuit = (int)_settings.Get(UnpaidDaysBeforeQuitSettingId);
-            if (group.UnpaidDaysInARow[slotIndex] >= unpaidDaysBeforeQuit)
+            bool neverQuits = _people.TryGetPerson(worker, out PersonState workerState) && workerState.NeverRefusesOrFails;
+            if (!neverQuits && group.UnpaidDaysInARow[slotIndex] >= unpaidDaysBeforeQuit)
             {
                 Vacate(group, slotIndex, worker);
                 _events.Post(QuitEventId, tick, new EventData().SetEntity("person", worker).SetEntity("building", buildingId).SetString("reason", "unpaid"));
@@ -424,6 +430,11 @@ namespace TheEmptying.Modules.Jobs
                             Vacate(group, i, fired);
                             _events.Post(FiredEventId, tick, new EventData().SetEntity("person", fired).SetEntity("building", buildingId).SetString("reason", "low_skill"));
                             continue;
+                        }
+
+                        if (person.NeverRefusesOrFails)
+                        {
+                            continue; // founders never leave a job for bad mood
                         }
 
                         if (person.Mood < badMoodThreshold)
@@ -506,7 +517,7 @@ namespace TheEmptying.Modules.Jobs
             {
                 EntityId personId = personRow.Key;
                 PersonState person = personRow.Value;
-                if (person.AgeLifeYears < adultAge)
+                if (person.AgeLifeYears < adultAge || person.IsMonarch)
                 {
                     continue;
                 }

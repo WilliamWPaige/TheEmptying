@@ -9,6 +9,7 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -32,7 +33,8 @@ namespace TheEmptying.Tests.EditMode.Jobs
             buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market };
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering };
         }
 
         /// <summary>A private bakery with a hired skilled worker, and a government construction site with a hired builder, so every piece of Jobs' state (slots, pay counters, skill progress) has something in it.</summary>
@@ -68,6 +70,11 @@ namespace TheEmptying.Tests.EditMode.Jobs
             buildings.TryDeliverGoods(bakeryId, "good.plank", 20, out _);
             buildings.TryDeliverGoods(bakeryId, "good.stone", 10, out _);
             buildings.TryAddLaborHours(bakeryId, 30, out _);
+
+            // A second storehouse needs a first, already-complete one to draw its own construction materials from.
+            buildings.TryPlaceInitialStockpile(new GridPoint(90, 90), out EntityId fundingStorehouseId, out _);
+            inventory.Add(fundingStorehouseId, "good.plank", 1000);
+            inventory.Add(fundingStorehouseId, "good.stone", 1000);
 
             buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(10, 10), out EntityId storehouseId, out _);
             buildings.TryDeliverGoods(storehouseId, "good.plank", 20, out _);

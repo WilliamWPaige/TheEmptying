@@ -8,6 +8,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
@@ -31,7 +32,8 @@ namespace TheEmptying.Tests.EditMode.Inventory
             var buildings = new BuildingsModule(mapMovement, land, wealth, module, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, module, people, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { module, mapMovement, people, wealth, land, buildings, jobs, market }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var gathering = new GatheringModule(people, buildings, jobs, module, market, mapMovement);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { module, mapMovement, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, module);
         }
 
@@ -129,7 +131,8 @@ namespace TheEmptying.Tests.EditMode.Inventory
             var firstBuildings = new BuildingsModule(firstMapMovement, firstLand, firstWealth, firstModule, firstPeople);
             var firstJobs = new JobsModule(firstBuildings, firstWealth, firstPeople, firstMapMovement);
             var firstMarket = new MarketModule(firstBuildings, firstWealth, firstModule, firstPeople, firstMapMovement);
-            (Simulation firstSim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { firstModule, firstMapMovement, firstPeople, firstWealth, firstLand, firstBuildings, firstJobs, firstMarket }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var firstGathering = new GatheringModule(firstPeople, firstBuildings, firstJobs, firstModule, firstMarket, firstMapMovement);
+            (Simulation firstSim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { firstModule, firstMapMovement, firstPeople, firstWealth, firstLand, firstBuildings, firstJobs, firstMarket, firstGathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             EntityId a = firstSim.Entities.Create(EntityKind.Item);
             EntityId b = firstSim.Entities.Create(EntityKind.Item);
@@ -149,7 +152,8 @@ namespace TheEmptying.Tests.EditMode.Inventory
             var secondBuildings = new BuildingsModule(secondMapMovement, secondLand, secondWealth, secondModule, secondPeople);
             var secondJobs = new JobsModule(secondBuildings, secondWealth, secondPeople, secondMapMovement);
             var secondMarket = new MarketModule(secondBuildings, secondWealth, secondModule, secondPeople, secondMapMovement);
-            (Simulation secondSim, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { secondModule, secondMapMovement, secondPeople, secondWealth, secondLand, secondBuildings, secondJobs, secondMarket }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var secondGathering = new GatheringModule(secondPeople, secondBuildings, secondJobs, secondModule, secondMarket, secondMapMovement);
+            (Simulation secondSim, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { secondModule, secondMapMovement, secondPeople, secondWealth, secondLand, secondBuildings, secondJobs, secondMarket, secondGathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             Assert.AreEqual(10, secondModule.GetCount(a, "good.loaf"));
             Assert.AreEqual(4, secondModule.GetCount(b, "good.plank"));
