@@ -57,16 +57,30 @@ namespace TheEmptying.Tests.EditMode.People
             }
         }
 
+        /// <summary>3.9h: a new game starts at noon, not midnight, so a test that needs a specific hour of day steps to it directly rather than assuming a round number of hours lands outside work hours.</summary>
+        private static void StepUntilHour(Simulation sim, int hour)
+        {
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                if (GameDate.FromTick(sim.Clock.CurrentTick).Hour == hour)
+                {
+                    return;
+                }
+
+                sim.Step();
+            }
+        }
+
         [Test]
         public void TwoFreePeople_WithSocialAsTheirLowestNeed_BothGainSocialWhileTogether()
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, PeopleModule people, MapMovementModule mapMovement, _) = Build(core);
 
-            // No night, ever, and no plain wandering - isolate the free-time decision.
+            // No night, ever, and no idle milling - isolate the free-time decision.
             sim.Settings.Set(PeopleModule.NightStartHourSettingId, 0);
             sim.Settings.Set(PeopleModule.NightEndHourSettingId, 0);
-            sim.Settings.Set(PeopleModule.WanderChancePerHourSettingId, 0.0);
+            sim.Settings.Set(PeopleModule.IdleMillChancePerCheckSettingId, 0.0);
             // The setting's own maximum (50) clamps anything higher - still far more than enough to
             // cross the whole map well within the handful of ticks given below.
             sim.Settings.Set(MapMovementModule.WalkingSpeedMetersPerTickSettingId, 1000.0);
@@ -74,7 +88,14 @@ namespace TheEmptying.Tests.EditMode.People
             EntityId a = people.SpawnPerson(30, 30);
             EntityId b = people.SpawnPerson(30, 30);
 
-            // Put them on the same cell, regardless of where each one spawned.
+            // An hour clear of the day shift (07:00-15:00) first - the world's own starting buildings
+            // can give a jobless adult a hand-gathering task before this point, and being on shift
+            // would otherwise take priority over the free-time decision this test is isolating. Doing
+            // this before positioning them means any such task (and whatever walking it causes) is
+            // long since moot by the time we check "are they on the same cell".
+            StepUntilHour(sim, 16);
+
+            // Put them on the same cell, regardless of where each one spawned or wandered since.
             mapMovement.TryMoveTo(b, mapMovement.GetCell(a));
             for (int i = 0; i < 50 && mapMovement.GetCell(b) != mapMovement.GetCell(a); i++)
             {
@@ -95,22 +116,33 @@ namespace TheEmptying.Tests.EditMode.People
         }
 
         [Test]
-        public void OffShiftPerson_WithEveryNeedFine_WandersInstead()
+        public void OffShiftPerson_WithEveryNeedFine_MillsAboutInstead()
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, PeopleModule people, _, _) = Build(core);
 
             sim.Settings.Set(PeopleModule.NightStartHourSettingId, 0);
             sim.Settings.Set(PeopleModule.NightEndHourSettingId, 0);
-            sim.Settings.Set(PeopleModule.WanderChancePerHourSettingId, 1.0); // always wander once free time applies
+            sim.Settings.Set(PeopleModule.IdleMillChancePerCheckSettingId, 1.0); // always mill once checked
 
             EntityId id = people.SpawnPerson(30, 30);
 
-            StepHours(sim, 1);
-
             // Fresh and alone: social is nowhere near the low threshold yet, so the free-time
-            // dispatcher should decline and fall through to plain wandering.
-            Assert.AreEqual(PersonActivity.Wandering, GetPerson(people, id).Activity);
+            // dispatcher should decline every hour, leaving idle milling as the only thing that can
+            // ever move them. Idle milling only checks a slice of idle people each tick (see
+            // PeopleModule.UpdateIdleMilling), so watch across the whole hour rather than sampling
+            // the activity at one single tick.
+            bool everWandered = false;
+            for (long i = 0; i < CalendarConstants.TicksPerHour; i++)
+            {
+                sim.Step();
+                if (GetPerson(people, id).Activity == PersonActivity.Wandering)
+                {
+                    everWandered = true;
+                }
+            }
+
+            Assert.IsTrue(everWandered, "Expected the idle person to have milled about (Wandering) at least once within the hour.");
         }
     }
 }

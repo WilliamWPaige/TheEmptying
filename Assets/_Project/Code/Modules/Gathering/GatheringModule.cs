@@ -246,7 +246,9 @@ namespace TheEmptying.Modules.Gathering
 
             if (newKind == GatherTaskKind.Build)
             {
-                task.Spot = targetSite.HasValue ? _buildings.GetDoorstep(targetSite.Value) ?? anchor : anchor;
+                // Recomputed every call (not just when kindChanged), same as before - but spread
+                // around the site's edge instead of everyone sharing the single doorstep.
+                task.Spot = targetSite.HasValue ? FindFreeBuildSpot(personId, targetSite.Value, anchor) : anchor;
                 return;
             }
 
@@ -257,7 +259,50 @@ namespace TheEmptying.Modules.Gathering
 
             task.WorkHoursAccumulated = 0;
             task.Planted = false;
-            task.Spot = FindGatherSpot(anchor, radius) ?? anchor;
+            task.Spot = FindGatherSpot(anchor, radius, OtherGatherSpots(personId)) ?? anchor;
+        }
+
+        /// <summary>
+        /// A builder's spot: the first edge cell around the site not already claimed by another
+        /// builder there, so several founders building the same site spread around its edge instead
+        /// of stacking on the single doorstep. Falls back to the (shared) doorstep only once every
+        /// edge cell is already taken by other builders.
+        /// </summary>
+        private GridPoint FindFreeBuildSpot(EntityId personId, EntityId siteId, GridPoint anchor)
+        {
+            var claimed = new HashSet<GridPoint>();
+            foreach (KeyValuePair<EntityId, GatherTaskState> row in _tasks.Rows())
+            {
+                if (row.Key != personId && row.Value.Kind == GatherTaskKind.Build && row.Value.TargetSite == siteId)
+                {
+                    claimed.Add(row.Value.Spot);
+                }
+            }
+
+            foreach (GridPoint candidate in _buildings.GetEdgeCells(siteId))
+            {
+                if (!claimed.Contains(candidate))
+                {
+                    return candidate;
+                }
+            }
+
+            return _buildings.GetDoorstep(siteId) ?? anchor;
+        }
+
+        /// <summary>Every spot currently claimed by another active, non-Build hand-gathering task - so gatherers spread out from each other the same way builders do.</summary>
+        private HashSet<GridPoint> OtherGatherSpots(EntityId excludePersonId)
+        {
+            var spots = new HashSet<GridPoint>();
+            foreach (KeyValuePair<EntityId, GatherTaskState> row in _tasks.Rows())
+            {
+                if (row.Key != excludePersonId && row.Value.Kind != GatherTaskKind.Build && row.Value.Kind != GatherTaskKind.None)
+                {
+                    spots.Add(row.Value.Spot);
+                }
+            }
+
+            return spots;
         }
 
         /// <summary>Posts TaskChangedEventId so the presentation layer can log it behind setting.debug.log_task_changes - see GameBootstrap.</summary>
@@ -362,8 +407,8 @@ namespace TheEmptying.Modules.Gathering
             return new GridPoint(grid.Width / 2, grid.Depth / 2);
         }
 
-        /// <summary>Tries a handful of random cells within radius of anchor, falling back to null.</summary>
-        private GridPoint? FindGatherSpot(GridPoint anchor, int radius)
+        /// <summary>Tries a handful of random cells within radius of anchor, avoiding any cell in excluding (another gatherer's spot), falling back to null.</summary>
+        private GridPoint? FindGatherSpot(GridPoint anchor, int radius, HashSet<GridPoint> excluding = null)
         {
             MapGrid grid = _mapMovement.Grid;
             const int attempts = 12;
@@ -374,7 +419,7 @@ namespace TheEmptying.Modules.Gathering
                 int dy = _random.NextInt(-radius, radius + 1);
                 var candidate = new GridPoint(anchor.X + dx, anchor.Y + dy);
 
-                if (grid.IsPassable(candidate))
+                if (grid.IsPassable(candidate) && (excluding == null || !excluding.Contains(candidate)))
                 {
                     return candidate;
                 }
@@ -442,7 +487,12 @@ namespace TheEmptying.Modules.Gathering
 
         #region Workplace provider (layered underneath Jobs)
 
-        /// <summary>This person's current gathering task location (build site doorstep, or their gather/farm spot); null if they have no active task.</summary>
+        /// <summary>
+        /// This person's current gathering task location (their own edge spot on a build site, or
+        /// their gather/farm spot); null if they have no active task. Trusts task.Spot directly
+        /// (SetTask already keeps it current) rather than re-deriving a build site's doorstep here,
+        /// which would give every builder on the same site the identical cell again.
+        /// </summary>
         public GridPoint? GetLocation(EntityId personId)
         {
             if (!_tasks.TryGet(personId, out GatherTaskState task) || task.Kind == GatherTaskKind.None)
@@ -450,9 +500,7 @@ namespace TheEmptying.Modules.Gathering
                 return null;
             }
 
-            return task.Kind == GatherTaskKind.Build && task.TargetSite.HasValue
-                ? _buildings.GetDoorstep(task.TargetSite.Value) ?? task.Spot
-                : task.Spot;
+            return task.Spot;
         }
 
         private bool IsWorkingHour(EntityId personId, int hour)

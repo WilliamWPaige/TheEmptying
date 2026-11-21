@@ -110,6 +110,14 @@ namespace TheEmptying.Modules.Buildings
         /// <summary>A passable cell just outside a building's footprint, for anyone (a tenant, a worker) who needs to walk to it.</summary>
         public GridPoint? GetDoorstep(EntityId buildingId) => _buildings.TryGet(buildingId, out BuildingState building) ? FindDoorstep(building.Rect) : null;
 
+        /// <summary>
+        /// Every passable cell just outside a building's footprint, in a stable order (the same one
+        /// GetDoorstep's single result comes from) - for spreading several workers around one site's
+        /// edge instead of everyone sharing the single doorstep.
+        /// </summary>
+        public IEnumerable<GridPoint> GetEdgeCells(EntityId buildingId) =>
+            _buildings.TryGet(buildingId, out BuildingState building) ? EdgeCellsOf(building.Rect) : Enumerable.Empty<GridPoint>();
+
         public void Initialize(ModuleContext context)
         {
             _settings = context.Settings;
@@ -618,20 +626,23 @@ namespace TheEmptying.Modules.Buildings
         }
 
         /// <summary>A passable cell just outside the building's footprint. The footprint itself is marked occupied, so pathfinding could never reach it as a goal.</summary>
-        private GridPoint? FindDoorstep(CellRect rect)
+        private GridPoint? FindDoorstep(CellRect rect) => EdgeCellsOf(rect).Cast<GridPoint?>().FirstOrDefault() ?? rect.Center; // no free doorstep found; fall back to the footprint itself rather than leaving the person stuck with no destination at all
+
+        /// <summary>Every passable cell in the single layer just outside rect's footprint, in a stable scan order (top row, bottom row, left column, right column).</summary>
+        private IEnumerable<GridPoint> EdgeCellsOf(CellRect rect)
         {
             for (int x = rect.X; x < rect.X + rect.Width; x++)
             {
                 var above = new GridPoint(x, rect.Y - 1);
                 if (_grid.IsPassable(above))
                 {
-                    return above;
+                    yield return above;
                 }
 
                 var below = new GridPoint(x, rect.Y + rect.Height);
                 if (_grid.IsPassable(below))
                 {
-                    return below;
+                    yield return below;
                 }
             }
 
@@ -640,17 +651,15 @@ namespace TheEmptying.Modules.Buildings
                 var left = new GridPoint(rect.X - 1, y);
                 if (_grid.IsPassable(left))
                 {
-                    return left;
+                    yield return left;
                 }
 
                 var right = new GridPoint(rect.X + rect.Width, y);
                 if (_grid.IsPassable(right))
                 {
-                    return right;
+                    yield return right;
                 }
             }
-
-            return rect.Center; // no free doorstep found; fall back to the footprint itself rather than leaving the person stuck with no destination at all
         }
 
         private Money RentForClass(SocialClass homeClass)

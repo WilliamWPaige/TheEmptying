@@ -81,7 +81,8 @@ namespace TheEmptying.Tests.EditMode.Rules
                 stream.Position = 0;
 
                 (Simulation loaded, LoadReport loadReport) = GameSave.Load(stream, sources, Array.Empty<IModule>(), ErrorMode.Development, sink);
-                Assert.AreEqual(savePoint, loaded.Clock.CurrentTick, $"save point {savePoint}: a load must resume at the exact saved tick.");
+                // 3.9h: a new game (and this throwaway benchmark build) starts at noon, not tick 0.
+                Assert.AreEqual(SimulationBuilder.NewGameStartingTick + savePoint, loaded.Clock.CurrentTick, $"save point {savePoint}: a load must resume at the exact saved tick.");
 
                 RunTicks(loaded, ticksPerDay - savePoint);
 

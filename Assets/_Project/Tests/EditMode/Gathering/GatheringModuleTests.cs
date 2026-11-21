@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
@@ -203,6 +204,32 @@ namespace TheEmptying.Tests.EditMode.Gathering
             int buildCount = founderIds.Count(id => gathering.GetTaskKind(id) == GatherTaskKind.Build);
 
             Assert.AreEqual(founderIds.Length, buildCount, "With food not short, there's no farming carve-out: every founder should build.");
+        }
+
+        /// <summary>3.9h: builders on the same site used to all head for the identical doorstep cell and stand stacked on top of each other.</summary>
+        [Test]
+        public void SeveralFoundersBuildingOneSite_OccupyDifferentCells()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            inventory.Add(storehouseId, "good.plank", 1000);
+            inventory.Add(storehouseId, "good.stone", 1000);
+            inventory.Add(storehouseId, "good.loaf", 10000); // plenty of bread: food isn't short, so every founder builds
+
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+
+            sim.Step();
+
+            EntityId[] builderIds = people.People
+                .Where(row => people.IsFounder(row.Key) && gathering.GetTaskKind(row.Key) == GatherTaskKind.Build)
+                .Select(row => row.Key)
+                .ToArray();
+            Assert.Greater(builderIds.Length, 1, "Setup: expected more than one founder building this site.");
+
+            var spots = new HashSet<GridPoint>(builderIds.Select(id => gathering.GetLocation(id).Value));
+            Assert.AreEqual(builderIds.Length, spots.Count, "Expected every builder on the same site to occupy a different cell.");
         }
 
         [Test]

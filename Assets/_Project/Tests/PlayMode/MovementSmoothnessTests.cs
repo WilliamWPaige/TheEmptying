@@ -55,19 +55,21 @@ namespace TheEmptying.Tests.PlayMode
             // See GameBootstrap.SetTestTimeMultiplierForTesting.
             bootstrap.SetTestTimeMultiplierForTesting(TestFastForwardMultiplier);
 
-            // The game starts at hour 0, and the day shift (hence any founder actually walking
-            // anywhere) doesn't begin until setting.jobs.day_shift_start_hour (default 7, i.e. 4200
-            // ticks - about 70 real seconds at speed 3, divided by TestFastForwardMultiplier here).
-            // Batch mode renders at a very high, uneven frame rate, so polling by frame count doesn't
-            // reliably map to real time, and calling a parsed console command every single frame is
-            // expensive enough to throttle that frame rate itself - wait the bulk of it coarsely
-            // (real time, not frames), then poll finely only once close, so the brief commuting
-            // window itself isn't missed.
-            yield return new WaitForSecondsRealtime(60f / (float)TestFastForwardMultiplier);
-
+            // 3.9h: the game now starts at noon (hour 12), already inside the day shift
+            // (setting.jobs.day_shift_start_hour/end_hour, default 7-15) - a founder should start
+            // commuting to the waiting site almost immediately once unpaused, not after waiting for a
+            // shift start that's already in the past. Poll finely from the start instead of the old
+            // long coarse wait (which, at this fast-forward rate, would now run straight through the
+            // rest of the shift and into night before ever checking). Batch mode renders at a very
+            // high, uneven frame rate, so polling by frame count doesn't reliably map to real time.
+            // At speed 3 with this fast-forward multiplier, the game runs 600 ticks per real second,
+            // so the first hourly tick (where ChooseActivity actually sets Commuting) lands about one
+            // real second after unpausing - this deadline is a flat real-second budget, not divided
+            // by the multiplier, since it's the actual wall-clock time to allow, independent of how
+            // much game-time races by within it.
             bool isCommuting = false;
             string lastPersonInfo = "";
-            float fineDeadline = Time.realtimeSinceStartup + 40f / (float)TestFastForwardMultiplier;
+            float fineDeadline = Time.realtimeSinceStartup + 10f;
             while (!isCommuting && Time.realtimeSinceStartup < fineDeadline)
             {
                 yield return new WaitForSecondsRealtime(0.1f);

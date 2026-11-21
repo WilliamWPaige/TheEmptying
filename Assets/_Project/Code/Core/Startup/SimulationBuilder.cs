@@ -5,6 +5,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Rules;
 using TheEmptying.Core.Rules.CoreBlocks;
+using TheEmptying.Core.Timekeeping;
 
 namespace TheEmptying.Core.Startup
 {
@@ -17,6 +18,9 @@ namespace TheEmptying.Core.Startup
     /// </summary>
     public static class SimulationBuilder
     {
+        /// <summary>3.9h: a new game starts at noon on day 1, not midnight, so the founders are awake and working from the start. Irrelevant for a load - RestoreTick overwrites it from the save right after Build returns.</summary>
+        public const long NewGameStartingTick = CalendarConstants.TicksPerDay / 2;
+
         public static (Simulation Simulation, StartupReport Report) Build(
             ulong worldSeed,
             IEnumerable<string> sourceFolders,
@@ -35,6 +39,11 @@ namespace TheEmptying.Core.Startup
 
             // 2. Create the Simulation; validate, order and apply disabling using the data manifests.
             var simulation = new Simulation(worldSeed, errorMode);
+            if (!isLoading)
+            {
+                simulation.Clock.RestoreTick(NewGameStartingTick);
+            }
+
             simulation.Modules.ValidateAndOrder(moduleList, manifests);
 
             // 3. Run the declaration phase (built-in content types must exist first; the core registers its own block types too).

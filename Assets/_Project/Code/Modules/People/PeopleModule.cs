@@ -48,8 +48,9 @@ namespace TheEmptying.Modules.People
         public const string GrubMoodPenaltyHoursSettingId = "setting.people.grub_mood_penalty_hours";
         public const string GrubDigHoursPerMealSettingId = "setting.people.grub_dig_hours_per_meal";
         public const string SleepRestRestorePerHourSettingId = "setting.people.sleep_rest_restore_per_hour";
-        public const string WanderRadiusCellsSettingId = "setting.people.wander_radius_cells";
-        public const string WanderChancePerHourSettingId = "setting.people.wander_chance_per_hour";
+        public const string StrollRadiusCellsSettingId = "setting.people.stroll_radius_cells";
+        public const string IdleMillRadiusCellsSettingId = "setting.people.idle_mill_radius_cells";
+        public const string IdleMillChancePerCheckSettingId = "setting.people.idle_mill_chance_per_check";
         public const string SocialRestorePerHourTogetherSettingId = "setting.people.social_restore_per_hour_together";
         public const string RecreationRestorePerHourSettingId = "setting.people.recreation_restore_per_hour";
         public const string SocialTogetherRadiusCellsSettingId = "setting.people.social_together_radius_cells";
@@ -87,6 +88,23 @@ namespace TheEmptying.Modules.People
             public string Id => ModuleId + ".hourly";
             public void Update(long tick) => _owner.UpdateHourly(tick);
         }
+
+        /// <summary>3.9h: idle people mill about instead of standing frozen. Runs far more often than the hourly system, but only checks a staggered slice of idle people each time (see IdleMillBuckets) so they don't all move on the same tick.</summary>
+        private sealed class IdleMillSystem : ISimSystem
+        {
+            private readonly PeopleModule _owner;
+            public IdleMillSystem(PeopleModule owner) => _owner = owner;
+            public string Id => ModuleId + ".idle_mill";
+            public void Update(long tick) => _owner.UpdateIdleMilling(tick);
+        }
+
+        /// <summary>How often (in ticks) the idle-milling system checks a slice of idle people. Not a setting - it's a scheduling/staggering detail, not a gameplay knob; IdleMillChancePerCheckSettingId and IdleMillRadiusCellsSettingId are the tunable parts.</summary>
+        private const int IdleMillCheckPeriodTicks = 5;
+
+        /// <summary>How many staggered slices idle people are split into - one full cycle is IdleMillBucketCount * IdleMillCheckPeriodTicks ticks (60 * 5 = 300, half an in-game hour), so different people are checked on different ticks instead of all at once.</summary>
+        private const int IdleMillBucketCount = 60;
+
+        private readonly BucketedWork _idleMillBuckets = new BucketedWork(IdleMillBucketCount);
 
         private readonly MapMovementModule _mapMovement;
         private readonly InventoryModule _inventory;
@@ -247,8 +265,10 @@ namespace TheEmptying.Modules.People
 
             context.Subscribe<NewMonthEvent>(OnNewMonth);
             context.Subscribe(MapMovementModule.MoverArrivedEventId, OnMoverArrived);
+            context.Subscribe(MapMovementModule.MoverNoPathEventId, OnMoverNoPath);
             context.Subscribe(ClassChangedEventId, OnClassChanged);
             context.RegisterSystem(new HourlySystem(this), CalendarConstants.TicksPerHour, 0, 0);
+            context.RegisterSystem(new IdleMillSystem(this), IdleMillCheckPeriodTicks, 0, 1);
 
             RegisterCommands(context);
 
@@ -485,8 +505,7 @@ namespace TheEmptying.Modules.People
             double starvationHoursBeforeDeath = _settings.Get(StarvationHoursBeforeDeathSettingId);
             double homelessHealthDamage = _settings.Get(HomelessHealthDamagePerNightSettingId);
             double daysPerLifeYear = _settings.Get(DaysPerLifeYearSettingId);
-            float wanderChance = (float)_settings.Get(WanderChancePerHourSettingId);
-            int wanderRadius = (int)_settings.Get(WanderRadiusCellsSettingId);
+            int strollRadius = (int)_settings.Get(StrollRadiusCellsSettingId);
             float socialRestorePerHour = (float)_settings.Get(SocialRestorePerHourTogetherSettingId);
             float recreationRestorePerHour = (float)_settings.Get(RecreationRestorePerHourSettingId);
             int socialTogetherRadius = (int)_settings.Get(SocialTogetherRadiusCellsSettingId);
@@ -532,7 +551,7 @@ namespace TheEmptying.Modules.People
                     person.GrubMoodPenaltyHoursRemaining--;
                 }
 
-                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, hungerRestorePerGrub, grubMoodPenaltyHours, grubDigHours, sleepRestorePerHour, wanderChance, wanderRadius, socialRestorePerHour, recreationRestorePerHour, socialTogetherRadius);
+                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, hungerRestorePerGrub, grubMoodPenaltyHours, grubDigHours, sleepRestorePerHour, strollRadius, socialRestorePerHour, recreationRestorePerHour, socialTogetherRadius);
 
                 person.Mood = ComputeMood(person, homeless, homelessPenalty, grubMoodPenalty);
 
@@ -620,7 +639,7 @@ namespace TheEmptying.Modules.People
             return Math.Clamp(average, 0.0, 100.0);
         }
 
-        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float hungerRestorePerGrub, int grubMoodPenaltyHours, double grubDigHours, float sleepRestorePerHour, float wanderChance, int wanderRadius, float socialRestorePerHour, float recreationRestorePerHour, int socialTogetherRadius)
+        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float hungerRestorePerGrub, int grubMoodPenaltyHours, double grubDigHours, float sleepRestorePerHour, int strollRadius, float socialRestorePerHour, float recreationRestorePerHour, int socialTogetherRadius)
         {
             bool isHungry = person.Needs.TryGetValue("need.hunger", out PersonNeedState hunger) && hunger.Meter <= eatAtPercent;
             EntityId foodSource = _foodSourceProvider(id) ?? id;
@@ -719,26 +738,20 @@ namespace TheEmptying.Modules.People
 
             // Off-shift, not hungry, not tired or sleeping: free time, spent visibly on whichever of
             // social or recreation needs it most (hunger and rest are already handled above). Plain
-            // wandering is the fallback once neither needs attention.
-            if (TryDoFreeTimeActivity(id, person, lowThreshold, socialRestorePerHour, recreationRestorePerHour, socialTogetherRadius, wanderRadius))
+            // idleness (with occasional milling - see UpdateIdleMilling) is the fallback once neither
+            // needs attention.
+            if (TryDoFreeTimeActivity(id, person, lowThreshold, socialRestorePerHour, recreationRestorePerHour, socialTogetherRadius, strollRadius))
             {
                 return;
             }
 
-            if (person.Activity == PersonActivity.Wandering && _mapMovement.IsMover(id))
+            // Still actually walking somewhere (an idle mill, most likely) - checking the mover's real
+            // destination, not just the Activity label, is what keeps this from getting stuck: if the
+            // path failed, GetDestination is already null (OnMoverNoPath also resets Activity, but
+            // this guard would otherwise trust a stale label even without it).
+            if (person.Activity == PersonActivity.Wandering && _mapMovement.GetDestination(id) != null)
             {
-                return; // still en route; the arrival event resets this to Idle
-            }
-
-            if (_random.Chance(wanderChance))
-            {
-                GridPoint currentCell = _mapMovement.GetCell(id);
-                GridPoint? target = FindNearbyPassableCell(currentCell, wanderRadius);
-                if (target != null && _mapMovement.TryMoveTo(id, target.Value))
-                {
-                    person.Activity = PersonActivity.Wandering;
-                    return;
-                }
+                return;
             }
 
             person.Activity = PersonActivity.Idle;
@@ -756,13 +769,48 @@ namespace TheEmptying.Modules.People
                 int dy = _random.NextInt(-radius, radius + 1);
                 var candidate = new GridPoint(center.X + dx, center.Y + dy);
 
-                if (grid.IsPassable(candidate))
+                // Never the starting cell itself - a "move" to the same spot is a no-op that would
+                // still (briefly) label the person Wandering while they stand completely still.
+                if (candidate != center && grid.IsPassable(candidate))
                 {
                     return candidate;
                 }
             }
 
             return null;
+        }
+
+        /// <summary>
+        /// 3.9h: idle people mill about instead of standing frozen. Only ever moves someone already
+        /// Idle, a few cells at a time, and only on the tick their entity id's bucket comes up this
+        /// cycle - with a chance roll on top, that staggers different people's moves across different
+        /// ticks instead of a flat per-hour chance that could fire for several people on the exact
+        /// same tick.
+        /// </summary>
+        private void UpdateIdleMilling(long tick)
+        {
+            float chance = (float)_settings.Get(IdleMillChancePerCheckSettingId);
+            int radius = (int)_settings.Get(IdleMillRadiusCellsSettingId);
+            long runNumber = tick / IdleMillCheckPeriodTicks;
+            int bucket = (int)(runNumber % IdleMillBucketCount);
+
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.Rows())
+            {
+                EntityId id = row.Key;
+                PersonState person = row.Value;
+
+                if (person.Activity != PersonActivity.Idle || _idleMillBuckets.GetBucket(id.Index) != bucket || !_random.Chance(chance))
+                {
+                    continue;
+                }
+
+                GridPoint currentCell = _mapMovement.GetCell(id);
+                GridPoint? target = FindNearbyPassableCell(currentCell, radius);
+                if (target != null && _mapMovement.TryMoveTo(id, target.Value))
+                {
+                    person.Activity = PersonActivity.Wandering;
+                }
+            }
         }
 
         /// <summary>
@@ -849,9 +897,29 @@ namespace TheEmptying.Modules.People
                 return true;
             }
 
-            _mapMovement.TryMoveTo(id, partnerCell);
+            // Head for a cell next to the partner, not their exact cell - otherwise two people
+            // walking toward each other would both end up standing on the same spot the moment one
+            // of them arrives (3.9h: "stand next to each other, not on the same cell").
+            GridPoint standNear = FindAdjacentPassableCell(partnerCell) ?? partnerCell;
+            _mapMovement.TryMoveTo(id, standNear);
             person.Activity = PersonActivity.Socializing;
             return true;
+        }
+
+        /// <summary>The first passable cell immediately next to target (checked north, east, south, west, in that fixed order) - null if all four are blocked.</summary>
+        private GridPoint? FindAdjacentPassableCell(GridPoint target)
+        {
+            MapGrid grid = _mapMovement.Grid;
+            GridPoint north = new GridPoint(target.X, target.Y - 1);
+            GridPoint east = new GridPoint(target.X + 1, target.Y);
+            GridPoint south = new GridPoint(target.X, target.Y + 1);
+            GridPoint west = new GridPoint(target.X - 1, target.Y);
+
+            if (grid.IsPassable(north)) return north;
+            if (grid.IsPassable(east)) return east;
+            if (grid.IsPassable(south)) return south;
+            if (grid.IsPassable(west)) return west;
+            return null;
         }
 
         /// <summary>
@@ -1001,6 +1069,21 @@ namespace TheEmptying.Modules.People
         #region Movement integration
 
         private void OnMoverArrived(PostedEvent posted)
+        {
+            EntityId id = posted.Data.GetEntity("mover");
+            if (_people.TryGet(id, out PersonState person) && (person.Activity == PersonActivity.Wandering || person.Activity == PersonActivity.GoingHome || person.Activity == PersonActivity.Commuting))
+            {
+                person.Activity = PersonActivity.Idle;
+            }
+        }
+
+        /// <summary>
+        /// 3.9h fix: a failed path (no route to the chosen cell) used to leave Activity stuck on
+        /// Wandering/GoingHome/Commuting forever - MapMovement posts MoverArrivedEventId only on a
+        /// successful arrival, never on failure, so without this the label would say "Wandering"
+        /// indefinitely while the person stood completely still. Mirrors OnMoverArrived.
+        /// </summary>
+        private void OnMoverNoPath(PostedEvent posted)
         {
             EntityId id = posted.Data.GetEntity("mover");
             if (_people.TryGet(id, out PersonState person) && (person.Activity == PersonActivity.Wandering || person.Activity == PersonActivity.GoingHome || person.Activity == PersonActivity.Commuting))

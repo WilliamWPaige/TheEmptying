@@ -207,7 +207,10 @@ namespace TheEmptying.Presentation.People
             JobSlotType jobSlotType = default;
             bool hasJob = _jobs != null && _jobs.TryGetEmployment(id, out jobBuilding, out jobSlotType);
             GatherTaskKind taskKind = _gathering?.GetTaskKind(id) ?? GatherTaskKind.None;
-            bool isIdle = !hasJob && taskKind == GatherTaskKind.None;
+            // 3.9h: "no job and no gather task" alone used to show "No task: ..." under a free-time
+            // activity too (Socializing, Strolling, Shopping, Sleeping...) - none of those need a
+            // job or a task either. Genuinely idle means the activity itself is Idle.
+            bool isIdle = !hasJob && taskKind == GatherTaskKind.None && person.Activity == PersonActivity.Idle;
 
             string role = DescribeRole(id, person);
             string taskOrJob = hasJob ? DescribeJob(jobBuilding, jobSlotType) : DescribeGatherTask(taskKind);

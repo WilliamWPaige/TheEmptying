@@ -5,6 +5,7 @@ using Newtonsoft.Json.Linq;
 using NUnit.Framework;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Rules;
+using TheEmptying.Core.Startup;
 using TheEmptying.Editor.Rules.Editing;
 using TheEmptying.Editor.Rules.Testing;
 using TheEmptying.Tests.EditMode.Content;
@@ -277,7 +278,7 @@ namespace TheEmptying.Tests.EditMode.EditorTools
             session.Clear();
 
             Assert.AreEqual(0, session.Segments.Count);
-            Assert.AreEqual(0, session.Simulation.Clock.CurrentTick, "a fresh throwaway simulation should start at tick 0 again.");
+            Assert.AreEqual(SimulationBuilder.NewGameStartingTick, session.Simulation.Clock.CurrentTick, "a fresh throwaway simulation should start at the same tick a new game does (3.9h: noon, not midnight).");
 
             session.FireEvent("go", null);
             Assert.AreEqual(1, session.Segments.Count);

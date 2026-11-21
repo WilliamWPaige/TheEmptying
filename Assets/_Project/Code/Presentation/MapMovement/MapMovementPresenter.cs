@@ -63,6 +63,12 @@ namespace TheEmptying.Presentation.MapMovement
 
         private float _lastAdvanceTime = -1f;
 
+        /// <summary>3.9h: movers within this many meters of each other (center to center) count as "stacked" and get fanned out visually - roughly within the same cell, not two people who merely happen to be nearby.</summary>
+        private const float StackedClusterRadiusMeters = 0.6f;
+
+        /// <summary>3.9h: how far apart a stacked cluster's fanned-out capsules are placed.</summary>
+        private const float StackedNudgeRadiusMeters = 0.5f;
+
         public void Initialize(MapMovementModule module, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onCapsuleSelected)
         {
             _module = module;
@@ -163,7 +169,7 @@ namespace TheEmptying.Presentation.MapMovement
                 _catchUpSpeeds.Remove(id);
             }
 
-            foreach (KeyValuePair<EntityId, Vector3> entry in _currentPositions)
+            foreach (KeyValuePair<EntityId, Vector3> entry in ComputeNudgedTargets())
             {
                 if (!_capsules.TryGetValue(entry.Key, out GameObject capsule))
                 {
@@ -186,6 +192,49 @@ namespace TheEmptying.Presentation.MapMovement
 
                 UpdatePersonAppearance(entry.Key, capsule);
             }
+        }
+
+        /// <summary>
+        /// 3.9h: two or more movers standing at (almost) the same simulated position would otherwise
+        /// render as overlapping capsules with nothing to tell them apart. Purely visual - reads
+        /// _currentPositions, never touches the simulation: any such cluster is fanned out a little
+        /// in a small circle around their shared spot, ordered by entity id so the fan-out is stable
+        /// frame to frame instead of jittering.
+        /// </summary>
+        private Dictionary<EntityId, Vector3> ComputeNudgedTargets()
+        {
+            var clusters = new Dictionary<(int, int), List<EntityId>>();
+            foreach (KeyValuePair<EntityId, Vector3> entry in _currentPositions)
+            {
+                var key = (Mathf.RoundToInt(entry.Value.x / StackedClusterRadiusMeters), Mathf.RoundToInt(entry.Value.z / StackedClusterRadiusMeters));
+                if (!clusters.TryGetValue(key, out List<EntityId> members))
+                {
+                    members = new List<EntityId>();
+                    clusters[key] = members;
+                }
+
+                members.Add(entry.Key);
+            }
+
+            var nudged = new Dictionary<EntityId, Vector3>(_currentPositions.Count);
+            foreach (List<EntityId> members in clusters.Values)
+            {
+                if (members.Count == 1)
+                {
+                    nudged[members[0]] = _currentPositions[members[0]];
+                    continue;
+                }
+
+                members.Sort((a, b) => a.Index.CompareTo(b.Index));
+                for (int i = 0; i < members.Count; i++)
+                {
+                    float angle = i * (360f / members.Count) * Mathf.Deg2Rad;
+                    var offset = new Vector3(Mathf.Cos(angle), 0f, Mathf.Sin(angle)) * StackedNudgeRadiusMeters;
+                    nudged[members[i]] = _currentPositions[members[i]] + offset;
+                }
+            }
+
+            return nudged;
         }
 
         /// <summary>Colors the capsule by activity and keeps its name label current, if (and only if) this mover is a person.</summary>

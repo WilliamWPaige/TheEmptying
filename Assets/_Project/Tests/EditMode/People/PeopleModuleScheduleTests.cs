@@ -56,6 +56,20 @@ namespace TheEmptying.Tests.EditMode.People
             }
         }
 
+        /// <summary>3.9h: a new game starts at noon, not midnight, so a test that needs a specific hour of day steps to it directly rather than assuming tick 0 is hour 0.</summary>
+        private static void StepUntilHour(Simulation sim, int hour)
+        {
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                if (GameDate.FromTick(sim.Clock.CurrentTick).Hour == hour)
+                {
+                    return;
+                }
+
+                sim.Step();
+            }
+        }
+
         [Test]
         public void Person_IsSleepingDuringTheConfiguredNightHours()
         {
@@ -68,8 +82,8 @@ namespace TheEmptying.Tests.EditMode.People
             {
             }
 
-            // Default night: 22:00-06:00. Step to tick 22*TicksPerHour, which lands on hour 22.
-            StepHours(sim, 22);
+            // Default night: 22:00-06:00.
+            StepUntilHour(sim, 22);
 
             Assert.AreEqual(PersonActivity.Sleeping, GetPerson(people, id).Activity);
         }
@@ -80,14 +94,16 @@ namespace TheEmptying.Tests.EditMode.People
             using var core = new TempCoreContentCopy();
             (Simulation sim, PeopleModule people, _) = Build(core);
 
-            sim.Settings.Set(PeopleModule.WanderChancePerHourSettingId, 0.0); // isolate the idle/sleep decision
+            sim.Settings.Set(PeopleModule.IdleMillChancePerCheckSettingId, 0.0); // isolate the idle/sleep decision
 
             EntityId id = people.SpawnPerson(30, 30);
 
-            // Hour 6: clear of the default 22:00-06:00 night window, and hunger
-            // (drains over 24h from 100, eats at 50%) is still comfortably above
-            // the eat threshold, so nothing but the idle/sleep decision is live.
-            StepHours(sim, 6);
+            // A daytime hour clear of the night window (22:00-06:00) and of the day shift (07:00-15:00)
+            // - a jobless adult can pick up a hand-gathering task from the world's own starting
+            // buildings, and being on shift would otherwise take priority over this check. Hunger
+            // (drains over 24h from 100, eats at 50%) is still comfortably above the eat threshold, so
+            // nothing but the idle/sleep decision is live.
+            StepUntilHour(sim, 16);
 
             Assert.AreEqual(PersonActivity.Idle, GetPerson(people, id).Activity);
         }

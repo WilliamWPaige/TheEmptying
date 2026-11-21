@@ -53,6 +53,20 @@ namespace TheEmptying.Tests.EditMode.Buildings
             }
         }
 
+        /// <summary>3.9h: a new game starts at noon, not midnight, so a test that needs a specific hour of day steps to it directly rather than assuming a round number of days lands outside work hours.</summary>
+        private static void StepUntilHour(Simulation sim, int hour)
+        {
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                if (GameDate.FromTick(sim.Clock.CurrentTick).Hour == hour)
+                {
+                    return;
+                }
+
+                sim.Step();
+            }
+        }
+
         private static void StepMonths(Simulation sim, int months)
         {
             for (long i = 0; i < CalendarConstants.TicksPerMonth * months; i++)
@@ -109,7 +123,11 @@ namespace TheEmptying.Tests.EditMode.Buildings
 
             people.TryGetPerson(person, out PersonState state);
             state.Needs["need.rest"].Meter = 0f; // give them an immediate reason to sleep
-            StepDays(sim, 1);
+            // Hour 4: inside the night window (22:00-06:00, so tiredness shows as Sleeping rather than
+            // the voluntary daytime RestingAtHome), but clear of both the day shift (7-15) and the
+            // night shift (19-3) - this person may well have picked up a hand-gathering task by now,
+            // and being on shift would otherwise take priority over being tired.
+            StepUntilHour(sim, 4);
 
             Assert.AreEqual(PersonActivity.Sleeping, state.Activity);
         }
