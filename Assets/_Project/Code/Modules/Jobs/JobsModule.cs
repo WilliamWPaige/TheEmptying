@@ -65,6 +65,9 @@ namespace TheEmptying.Modules.Jobs
         private EntityTable<JobsState> _jobs;
         private Dictionary<string, Recipe> _recipeByWorkplaceId;
 
+        /// <summary>3.10a: Gathering registers the actual recipe-execution step here (what a Worker slot's accumulated hours turn into) - this module only tracks hours and pay, never what a building makes.</summary>
+        private Action<EntityId, BuildingState, Recipe, JobSlotGroup> _productionProvider = (_, __, ___, ____) => { };
+
         /// <summary>Reverse index: a working person's building and slot type, for O(1) lookups from People's hourly schedule.</summary>
         private readonly Dictionary<EntityId, (EntityId Building, JobSlotType Type)> _employmentByPerson = new Dictionary<EntityId, (EntityId, JobSlotType)>();
 
@@ -282,6 +285,10 @@ namespace TheEmptying.Modules.Jobs
         /// <summary>Whether this person currently holds any job (builder, worker, manager or trainer) at any building.</summary>
         public bool IsEmployed(EntityId person) => _employmentByPerson.ContainsKey(person);
 
+        /// <summary>3.10a: Gathering calls this during its own Initialize to supply the generic recipe-execution step for every Worker slot. Never called directly by this module otherwise.</summary>
+        public void SetProductionProvider(Action<EntityId, BuildingState, Recipe, JobSlotGroup> provider) =>
+            _productionProvider = provider ?? ((_, __, ___, ____) => { });
+
         /// <summary>Null when the person holds no job - Gathering layers its own hand-gathering workplace underneath this one.</summary>
         public GridPoint? GetWorkplaceLocation(EntityId person) =>
             _employmentByPerson.TryGetValue(person, out (EntityId Building, JobSlotType Type) employment) ? _buildings.GetDoorstep(employment.Building) : null;
@@ -377,6 +384,11 @@ namespace TheEmptying.Modules.Jobs
                 {
                     PayOccupant(buildingId, building, group, i, tick);
                 }
+            }
+
+            if (type == JobSlotType.Worker && building != null && _recipeByWorkplaceId.TryGetValue(building.BuildingTypeId, out Recipe recipe))
+            {
+                _productionProvider(buildingId, building, recipe, group);
             }
         }
 

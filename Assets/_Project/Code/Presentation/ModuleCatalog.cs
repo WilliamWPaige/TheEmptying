@@ -5,6 +5,7 @@ using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.MapResources;
 using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
@@ -30,8 +31,9 @@ namespace TheEmptying.Presentation
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
-            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering };
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering };
         }
     }
 }

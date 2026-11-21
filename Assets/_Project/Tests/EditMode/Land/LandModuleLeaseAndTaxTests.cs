@@ -12,6 +12,7 @@ using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.MapResources;
 using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
@@ -31,8 +32,9 @@ namespace TheEmptying.Tests.EditMode.Land
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             // This file's tests are about leases and land tax, not the starting founders; with no
             // stockpile placed in this isolated world they'd have no food source at all and starve

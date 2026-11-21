@@ -17,18 +17,15 @@ MonoBehaviour:
   _footprintWidth: 3
   _footprintDepth: 3
   _constructionCost:
-  - _good: {fileID: 11400000, guid: a3c576ca20607a84a87ba353e34b0f70, type: 2}
-    _amount: 20
-  - _good: {fileID: 11400000, guid: 90e1c1c1f7f354848b44723939bf5004, type: 2}
+  - _good: {fileID: 11400000, guid: 1eae8aea0ef600f4b83268599195695e, type: 2}
     _amount: 10
   _workerSlots: 2
   _managerSlots: 0
   _trainerSlots: 0
   _isBasic: 0
-  _isGovernment: 0
-  _allowedZones:
-  - {fileID: 11400000, guid: 9aba617f6c351cb49a3ae169295336fa, type: 2}
+  _isGovernment: 1
+  _allowedZones: []
   _isHome: 0
   _householdsProvided: 0
   _homeClass: 0
-  _description: 'placeholder: footprint, slots and construction cost are not final.'
+  _description: 'placeholder: footprint, slots and construction cost are not final. 3.10a: recost to logs-only and made a crown building, so it can bootstrap a new game before the market/zoned economy exists.'

@@ -12,6 +12,7 @@
         "TheEmptying.Modules.Jobs",
         "TheEmptying.Modules.Market",
         "TheEmptying.Modules.Gathering",
+        "TheEmptying.Modules.MapResources",
         "TheEmptying.Presentation",
         "TheEmptying.Editor",
         "UnityEngine.TestRunner",

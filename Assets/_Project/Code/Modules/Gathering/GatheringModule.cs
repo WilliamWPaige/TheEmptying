@@ -14,6 +14,7 @@ using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.MapResources;
 using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 
@@ -71,6 +72,7 @@ namespace TheEmptying.Modules.Gathering
         private readonly InventoryModule _inventory;
         private readonly MarketModule _market;
         private readonly MapMovementModule _mapMovement;
+        private readonly MapResourcesModule _mapResources;
 
         private SettingsRegistry _settings;
         private SimRandom _random;
@@ -80,7 +82,7 @@ namespace TheEmptying.Modules.Gathering
         private EntityTable<GatherTaskState> _tasks;
         private Recipe _farmRecipe;
 
-        public GatheringModule(PeopleModule people, BuildingsModule buildings, JobsModule jobs, InventoryModule inventory, MarketModule market, MapMovementModule mapMovement)
+        public GatheringModule(PeopleModule people, BuildingsModule buildings, JobsModule jobs, InventoryModule inventory, MarketModule market, MapMovementModule mapMovement, MapResourcesModule mapResources)
         {
             _people = people ?? throw new ArgumentNullException(nameof(people));
             _buildings = buildings ?? throw new ArgumentNullException(nameof(buildings));
@@ -88,13 +90,14 @@ namespace TheEmptying.Modules.Gathering
             _inventory = inventory ?? throw new ArgumentNullException(nameof(inventory));
             _market = market ?? throw new ArgumentNullException(nameof(market));
             _mapMovement = mapMovement ?? throw new ArgumentNullException(nameof(mapMovement));
+            _mapResources = mapResources ?? throw new ArgumentNullException(nameof(mapResources));
         }
 
         public string Id => ModuleId;
         public int Version => 1;
 
         public IReadOnlyList<string> Dependencies { get; } =
-            new[] { PeopleModule.ModuleId, BuildingsModule.ModuleId, JobsModule.ModuleId, InventoryModule.ModuleId, MarketModule.ModuleId, MapMovementModule.ModuleId };
+            new[] { PeopleModule.ModuleId, BuildingsModule.ModuleId, JobsModule.ModuleId, InventoryModule.ModuleId, MarketModule.ModuleId, MapMovementModule.ModuleId, MapResourcesModule.ModuleId };
 
         public int SectionVersion => 1;
 
@@ -111,6 +114,13 @@ namespace TheEmptying.Modules.Gathering
             _people.SetWorkplaceProvider(
                 personId => _jobs.GetWorkplaceLocation(personId) ?? GetLocation(personId),
                 (personId, hour) => _jobs.IsOnShift(personId, hour) || IsWorkingHour(personId, hour));
+
+            // 3.10a: JobsModule credits a Worker slot's hours but has no idea what the building
+            // actually makes - this turns those hours into the recipe's output, the generic
+            // mechanism every real production building (saw pit, stone yard, and the pre-existing
+            // sawmill/mason/carpenter/mill/bakery, none of which ever produced anything before this)
+            // now runs on.
+            _jobs.SetProductionProvider(ProcessWorkerProductionHour);
 
             context.Subscribe<NewDayEvent>(evt => AssignTasks());
             // So builders start the same day a site goes up, not the next morning.
@@ -262,6 +272,31 @@ namespace TheEmptying.Modules.Gathering
 
         private void SetTask(EntityId personId, GatherTaskState task, GatherTaskKind newKind, GridPoint anchor, int radius, EntityId? targetSite, string reason)
         {
+            if (newKind == GatherTaskKind.Build)
+            {
+                bool buildKindChanged = task.Kind != newKind;
+                if (buildKindChanged)
+                {
+                    PostTaskChanged(personId, task.Kind, newKind, reason);
+                }
+
+                task.Kind = newKind;
+                task.TargetSite = targetSite;
+                task.ResourceNodeId = null;
+                task.NoResourceReason = null;
+                // Recomputed every call (not just when kindChanged), same as before - but spread
+                // around the site's edge instead of everyone sharing the single doorstep.
+                task.Spot = targetSite.HasValue ? FindFreeBuildSpot(personId, targetSite.Value, anchor) : anchor;
+                return;
+            }
+
+            if (newKind == GatherTaskKind.Woodcut || newKind == GatherTaskKind.Quarry)
+            {
+                AssignResourceTask(personId, task, newKind, anchor, reason, null);
+                return;
+            }
+
+            // Farm (and anything else not tied to a map resource).
             bool kindChanged = task.Kind != newKind;
             if (kindChanged)
             {
@@ -269,24 +304,66 @@ namespace TheEmptying.Modules.Gathering
             }
 
             task.Kind = newKind;
-            task.TargetSite = targetSite;
-
-            if (newKind == GatherTaskKind.Build)
-            {
-                // Recomputed every call (not just when kindChanged), same as before - but spread
-                // around the site's edge instead of everyone sharing the single doorstep.
-                task.Spot = targetSite.HasValue ? FindFreeBuildSpot(personId, targetSite.Value, anchor) : anchor;
-                return;
-            }
+            task.TargetSite = null;
+            task.ResourceNodeId = null;
+            task.NoResourceReason = null;
 
             if (!kindChanged)
             {
-                return; // keep the same spot (and, for woodcut/quarry, the accumulated hours)
+                return; // keep the same spot and the accumulated hours
             }
 
             task.WorkHoursAccumulated = 0;
             task.Planted = false;
             task.Spot = FindGatherSpot(anchor, radius, OtherGatherSpots(personId)) ?? anchor;
+        }
+
+        /// <summary>
+        /// 3.10a: Woodcut/Quarry are tied to a real, finite map resource now, not a random cell -
+        /// picks the nearest standing tree/outcrop not already claimed by another gatherer and not
+        /// excludeCell (the specific spot that was just found unreachable or ran out - distance
+        /// alone would otherwise just pick that exact same node again, since nothing else about it
+        /// changed). Falls back to no task at all, with a specific idle reason, if none are in reach
+        /// - exactly what the design asks for ("a woodcutter or quarrier reports that as their idle
+        /// reason"), rather than silently switching to the other material.
+        /// </summary>
+        private void AssignResourceTask(EntityId personId, GatherTaskState task, GatherTaskKind newKind, GridPoint anchor, string reason, GridPoint? excludeCell)
+        {
+            ResourceNodeKind nodeKind = newKind == GatherTaskKind.Woodcut ? ResourceNodeKind.Tree : ResourceNodeKind.Outcrop;
+            GridPoint from = _mapMovement.IsMover(personId) ? _mapMovement.GetCell(personId) : anchor;
+
+            HashSet<GridPoint> excluding = OtherGatherSpots(personId);
+            if (excludeCell.HasValue)
+            {
+                excluding.Add(excludeCell.Value);
+            }
+
+            if (!_mapResources.TryFindNearest(nodeKind, from, excluding, out EntityId nodeId, out GridPoint cell))
+            {
+                if (task.Kind != GatherTaskKind.None)
+                {
+                    PostTaskChanged(personId, task.Kind, GatherTaskKind.None, reason);
+                }
+
+                task.Kind = GatherTaskKind.None;
+                task.TargetSite = null;
+                task.ResourceNodeId = null;
+                task.NoResourceReason = nodeKind == ResourceNodeKind.Tree ? "No trees left in reach." : "No outcrops left in reach.";
+                return;
+            }
+
+            bool changed = task.Kind != newKind || task.ResourceNodeId != nodeId;
+            if (changed)
+            {
+                PostTaskChanged(personId, task.Kind, newKind, reason);
+                task.WorkHoursAccumulated = 0;
+            }
+
+            task.Kind = newKind;
+            task.TargetSite = null;
+            task.ResourceNodeId = nodeId;
+            task.Spot = cell;
+            task.NoResourceReason = null;
         }
 
         /// <summary>
@@ -341,6 +418,10 @@ namespace TheEmptying.Modules.Gathering
             if (task.Kind == GatherTaskKind.Build && task.TargetSite.HasValue)
             {
                 task.Spot = FindFreeBuildSpot(personId, task.TargetSite.Value, anchor);
+            }
+            else if (task.Kind == GatherTaskKind.Woodcut || task.Kind == GatherTaskKind.Quarry)
+            {
+                AssignResourceTask(personId, task, task.Kind, anchor, "the previous tree/outcrop turned out to be unreachable", task.Spot);
             }
             else
             {
@@ -516,6 +597,11 @@ namespace TheEmptying.Modules.Gathering
                 return "";
             }
 
+            if (_tasks.TryGet(personId, out GatherTaskState task) && !string.IsNullOrEmpty(task.NoResourceReason))
+            {
+                return task.NoResourceReason;
+            }
+
             if (_jobs.IsEmployed(personId))
             {
                 return "Has a real job instead.";
@@ -627,10 +713,10 @@ namespace TheEmptying.Modules.Gathering
                         ProcessBuild(personId, person, task, skillGainPerHour);
                         break;
                     case GatherTaskKind.Woodcut:
-                        ProcessHandGather(personId, person, task, Skill.Logging, logHoursPerUnit, LogGoodId, skillGainPerHour);
+                        ProcessHandGather(personId, person, task, Skill.Logging, logHoursPerUnit, GatherTaskKind.Woodcut, skillGainPerHour);
                         break;
                     case GatherTaskKind.Quarry:
-                        ProcessHandGather(personId, person, task, Skill.Mining, stoneHoursPerUnit, StoneGoodId, skillGainPerHour);
+                        ProcessHandGather(personId, person, task, Skill.Mining, stoneHoursPerUnit, GatherTaskKind.Quarry, skillGainPerHour);
                         break;
                     case GatherTaskKind.Farm:
                         ProcessFarm(personId, person, task, wheatPerHarvest, skillGainPerHour, tick);
@@ -662,13 +748,82 @@ namespace TheEmptying.Modules.Gathering
                 return;
             }
 
+            // 3.10a: a hand test found builders stalling at a few percent forever because nothing
+            // could make planks yet - the site's own labor races ahead to its cap while materials
+            // never arrive. Rather than grind uselessly (or sit idle) on a site that genuinely can't
+            // progress (the missing good is neither in the crown storehouse nor already on order),
+            // switch to gathering - preferring whichever raw material the site itself is waiting on,
+            // if that's something hand tools can get (logs or stone). The site's own panel keeps
+            // showing the real stuck reason regardless (BuildingPanelPresenter.DescribeWhatIsStuck
+            // already checks stock-or-on-order the same way, independent of whether anyone is
+            // building it right now). AssignTasks re-evaluates this site daily, so once the material
+            // arrives this builder (or another) goes back to building it.
+            string missingGoodId = GetStalledMissingGood(task.TargetSite.Value, site);
+            if (missingGoodId != null)
+            {
+                GatherTaskKind gatherKind = missingGoodId == LogGoodId ? GatherTaskKind.Woodcut
+                    : missingGoodId == StoneGoodId ? GatherTaskKind.Quarry
+                    : PickScarcerMaterial();
+
+                SetTask(personId, task, gatherKind, GetStockpileAnchor(), (int)_settings.Get(RadiusCellsSettingId), null,
+                    $"the site is stalled waiting for {missingGoodId} - gathering instead until it arrives");
+                return;
+            }
+
             double speed = WorkSpeed.ForSkillLevel(person.Skills[(int)Skill.Construction]);
             _people.AddSkillExperience(personId, Skill.Construction, skillGainPerHour);
             _buildings.TryAddLaborHours(task.TargetSite.Value, speed, out _);
         }
 
-        private void ProcessHandGather(EntityId personId, PersonState person, GatherTaskState task, Skill skill, double hoursPerUnit, string goodId, double skillGainPerHour)
+        /// <summary>The first construction-cost good this crown site still needs that's neither in the crown storehouse nor already on order; null if the site can still make progress.</summary>
+        private string GetStalledMissingGood(EntityId siteId, BuildingState site)
         {
+            BuildingType type = _buildings.GetBuildingType(site.BuildingTypeId);
+            if (type == null)
+            {
+                return null;
+            }
+
+            bool hasStorehouse = _buildings.TryFindCrownStorehouse(out EntityId storehouseId);
+
+            foreach (GoodAmount cost in type.ConstructionCost)
+            {
+                int delivered = site.Construction.DeliveredGoods.TryGetValue(cost.Good.Id, out int d) ? d : 0;
+                if (delivered >= cost.Amount)
+                {
+                    continue;
+                }
+
+                if (_market.GetOnOrder(siteId, cost.Good.Id) > 0)
+                {
+                    continue; // already on its way
+                }
+
+                int stock = hasStorehouse ? _inventory.GetCount(storehouseId, cost.Good.Id) : 0;
+                if (stock > 0)
+                {
+                    continue; // the daily bulk-order pass will draw it down to the site
+                }
+
+                return cost.Good.Id;
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 3.10a: Woodcut/Quarry now harvest a real, finite tree/outcrop instead of producing
+        /// forever from nowhere. Moves on to the next nearest node the moment this one turns out to
+        /// be gone or runs out, instead of grinding at an empty spot.
+        /// </summary>
+        private void ProcessHandGather(EntityId personId, PersonState person, GatherTaskState task, Skill skill, double hoursPerUnit, GatherTaskKind kind, double skillGainPerHour)
+        {
+            if (!task.ResourceNodeId.HasValue || !_mapResources.TryGetNode(task.ResourceNodeId.Value, out ResourceNodeState node) || node.RemainingStock <= 0)
+            {
+                AssignResourceTask(personId, task, kind, GetStockpileAnchor(), "the previous tree/outcrop ran out", task.Spot);
+                return;
+            }
+
             double speed = WorkSpeed.ForSkillLevel(person.Skills[(int)skill]);
             _people.AddSkillExperience(personId, skill, skillGainPerHour);
             task.WorkHoursAccumulated += speed;
@@ -679,7 +834,22 @@ namespace TheEmptying.Modules.Gathering
             }
 
             task.WorkHoursAccumulated -= hoursPerUnit;
-            DepositGathered(personId, goodId, 1);
+            string goodId = kind == GatherTaskKind.Woodcut ? LogGoodId : StoneGoodId;
+            int harvested = _mapResources.Harvest(task.ResourceNodeId.Value, 1);
+
+            if (harvested <= 0)
+            {
+                AssignResourceTask(personId, task, kind, GetStockpileAnchor(), "the tree/outcrop ran out while working it", task.Spot);
+                return;
+            }
+
+            DepositGathered(personId, goodId, harvested);
+
+            if (!_mapResources.TryGetNode(task.ResourceNodeId.Value, out _))
+            {
+                // Just emptied it - line up the next one now so next hour's commute starts right away.
+                AssignResourceTask(personId, task, kind, GetStockpileAnchor(), "the tree/outcrop just ran out", task.Spot);
+            }
         }
 
         private void ProcessFarm(EntityId personId, PersonState person, GatherTaskState task, int wheatPerHarvest, double skillGainPerHour, long tick)
@@ -713,6 +883,118 @@ namespace TheEmptying.Modules.Gathering
 
             task.Planted = false;
             DepositGathered(personId, WheatGoodId, wheatPerHarvest);
+        }
+
+        /// <summary>
+        /// 3.10a: JobsModule credits a Worker slot's skill-adjusted hours but has no notion of what
+        /// the building actually makes - this is the generic recipe-execution step that turns those
+        /// hours into output, the same per-batch-threshold pattern hand-gathering already uses. A
+        /// camp recipe (no inputs, raw log/stone output) harvests the nearest standing tree/outcrop
+        /// instead of transacting inventory, exactly like a hand gatherer; an ordinary workshop
+        /// recipe consumes its inputs and deposits its outputs against the building owner's
+        /// inventory (the crown storehouse for a crown building). A crop-style recipe
+        /// (GrowthTimeMonths > 0, e.g. Farm Field) is left alone - that building's own real-building
+        /// production isn't part of this prompt's scope.
+        /// </summary>
+        private void ProcessWorkerProductionHour(EntityId buildingId, BuildingState building, Recipe recipe, JobSlotGroup group)
+        {
+            if (recipe.Outputs.Count == 0 || recipe.DurationHours <= 0 || recipe.GrowthTimeMonths > 0)
+            {
+                return;
+            }
+
+            bool isResourceCamp = recipe.Inputs.Count == 0 && recipe.Outputs.Count == 1 &&
+                                   (recipe.Outputs[0].Good.Id == LogGoodId || recipe.Outputs[0].Good.Id == StoneGoodId);
+
+            if (isResourceCamp)
+            {
+                ProcessResourceCampHour(building, recipe, group);
+                return;
+            }
+
+            if (!TryResolveProductionStorage(building, out EntityId storageId))
+            {
+                return;
+            }
+
+            while (group.WorkHoursAccumulated >= recipe.DurationHours)
+            {
+                if (!HasAllInputs(storageId, recipe.Inputs))
+                {
+                    // Not enough input stock yet - leave the accumulated hours exactly as they are
+                    // (JobSlotGroup.WorkHoursAccumulated is also read as a plain cumulative
+                    // skill-speed measure elsewhere, so this never resets or caps it) and try again
+                    // next hour. A long wait does mean a catch-up flood of output the moment the
+                    // input finally arrives - acceptable for a placeholder production system.
+                    return;
+                }
+
+                foreach (GoodAmount input in recipe.Inputs)
+                {
+                    _inventory.TryRemove(storageId, input.Good.Id, input.Amount);
+                }
+
+                foreach (GoodAmount output in recipe.Outputs)
+                {
+                    _inventory.Add(storageId, output.Good.Id, output.Amount);
+                }
+
+                group.WorkHoursAccumulated -= recipe.DurationHours;
+            }
+        }
+
+        /// <summary>A camp building's worker(s) harvest the nearest standing tree/outcrop as one unit, the same per-batch pattern as a hand gatherer but scaled by the recipe's own output amount.</summary>
+        private void ProcessResourceCampHour(BuildingState building, Recipe recipe, JobSlotGroup group)
+        {
+            GoodAmount output = recipe.Outputs[0];
+            ResourceNodeKind nodeKind = output.Good.Id == LogGoodId ? ResourceNodeKind.Tree : ResourceNodeKind.Outcrop;
+            GridPoint from = building.Rect.Center;
+
+            while (group.WorkHoursAccumulated >= recipe.DurationHours)
+            {
+                if (!_mapResources.TryFindNearest(nodeKind, from, null, out EntityId nodeId, out _))
+                {
+                    return; // nothing left in reach - the camp simply waits, hours left as they are
+                }
+
+                int harvested = _mapResources.Harvest(nodeId, output.Amount);
+                if (harvested <= 0)
+                {
+                    return;
+                }
+
+                if (TryResolveProductionStorage(building, out EntityId storageId))
+                {
+                    _inventory.Add(storageId, output.Good.Id, harvested);
+                }
+
+                group.WorkHoursAccumulated -= recipe.DurationHours;
+            }
+        }
+
+        private bool HasAllInputs(EntityId storageId, IReadOnlyList<GoodAmount> inputs)
+        {
+            foreach (GoodAmount input in inputs)
+            {
+                if (_inventory.GetCount(storageId, input.Good.Id) < input.Amount)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
+        /// <summary>A privately-owned building transacts with its owner's own inventory, the same as construction materials already do; a crown building transacts with the crown storehouse.</summary>
+        private bool TryResolveProductionStorage(BuildingState building, out EntityId storageId)
+        {
+            if (building.Owner.HasValue)
+            {
+                storageId = building.Owner.Value;
+                return true;
+            }
+
+            return _buildings.TryFindCrownStorehouse(out storageId);
         }
 
         /// <summary>A founder's output belongs to the crown (straight into the storehouse, if one exists yet); everyone else keeps it and the crown immediately offers to buy it at market price.</summary>
@@ -751,11 +1033,18 @@ namespace TheEmptying.Modules.Gathering
                     writer.WriteEntityId(task.TargetSite.Value);
                 }
 
+                writer.WriteBool(task.ResourceNodeId.HasValue);
+                if (task.ResourceNodeId.HasValue)
+                {
+                    writer.WriteEntityId(task.ResourceNodeId.Value);
+                }
+
                 writer.WriteInt(task.Spot.X);
                 writer.WriteInt(task.Spot.Y);
                 writer.WriteDouble(task.WorkHoursAccumulated);
                 writer.WriteBool(task.Planted);
                 writer.WriteLong(task.ReadyAtTick);
+                writer.WriteString(task.NoResourceReason ?? "");
             }
         }
 
@@ -772,10 +1061,17 @@ namespace TheEmptying.Modules.Gathering
                     task.TargetSite = reader.ReadEntityId();
                 }
 
+                if (reader.ReadBool())
+                {
+                    task.ResourceNodeId = reader.ReadEntityId();
+                }
+
                 task.Spot = new GridPoint(reader.ReadInt(), reader.ReadInt());
                 task.WorkHoursAccumulated = reader.ReadDouble();
                 task.Planted = reader.ReadBool();
                 task.ReadyAtTick = reader.ReadLong();
+                string noResourceReason = reader.ReadString();
+                task.NoResourceReason = string.IsNullOrEmpty(noResourceReason) ? null : noResourceReason;
 
                 _tasks.Add(id, task);
             }

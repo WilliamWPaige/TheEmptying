@@ -14,6 +14,7 @@ using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.MapResources;
 using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
@@ -34,8 +35,9 @@ namespace TheEmptying.Tests.EditMode.Market
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
-            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             // This file's tests track the storehouse's exact leftover stock after each construction
             // draw; start it empty so TryPlaceInitialStockpile's own placeholder stock doesn't skew that.
@@ -189,8 +191,9 @@ namespace TheEmptying.Tests.EditMode.Market
             var buildings2 = new BuildingsModule(mapMovement2, land2, wealth2, inventory2, people2);
             var jobs2 = new JobsModule(buildings2, wealth2, people2, mapMovement2);
             var market2 = new MarketModule(buildings2, wealth2, inventory2, people2, mapMovement2);
-            var gathering2 = new GatheringModule(people2, buildings2, jobs2, inventory2, market2, mapMovement2);
-            (Simulation loaded, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { mapMovement2, inventory2, people2, wealth2, land2, buildings2, jobs2, market2, gathering2 }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var mapResources2 = new MapResourcesModule(mapMovement2, land2);
+            var gathering2 = new GatheringModule(people2, buildings2, jobs2, inventory2, market2, mapMovement2, mapResources2);
+            (Simulation loaded, _) = GameSave.Load(stream, new[] { core.FolderPath }, new IModule[] { mapMovement2, inventory2, people2, wealth2, land2, buildings2, jobs2, market2, mapResources2, gathering2 }, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             StepDays(uninterrupted, 3);
             StepDays(loaded, 3);

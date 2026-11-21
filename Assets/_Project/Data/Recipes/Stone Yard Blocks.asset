@@ -1,0 +1,29 @@
+%YAML 1.1
+%TAG !u! tag:unity3d.com,2011:
+--- !u!114 &11400000
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 0}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 27a2682ddd343d942bdacfcd610389b9, type: 3}
+  m_Name: Stone Yard Blocks
+  m_EditorClassIdentifier: TheEmptying.Presentation::TheEmptying.Presentation.Content.RecipeAsset
+  _id: recipe.stone_yard
+  _workplace: {fileID: 11400000, guid: e57cb0cfad3acf5838c9c2e1ee032f61, type: 2}
+  _inputs:
+  - _good: {fileID: 11400000, guid: 90e1c1c1f7f354848b44723939bf5004, type: 2}
+    _amount: 2
+  _outputs:
+  - _good: {fileID: 11400000, guid: c2e50b5954e2c2840ad2b841b44c6870, type: 2}
+    _amount: 1
+  _durationHours: 2
+  _workerTier: 1
+  _skill: 7
+  _isHardLabor: 0
+  _seasonsAllowed:
+  _growthTimeMonths: 0
+  _description: '3.10a placeholder: half a mason''s speed.'

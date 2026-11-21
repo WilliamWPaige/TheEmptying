@@ -1,0 +1,12 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.map_resources.node_depleted",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "A tree or outcrop's stock reached zero and it disappeared. Not player-facing - the presentation layer uses it to despawn the gray-box object."
+        }
+    ]
+}

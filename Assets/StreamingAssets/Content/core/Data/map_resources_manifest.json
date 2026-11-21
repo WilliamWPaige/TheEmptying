@@ -1,0 +1,11 @@
+{
+    "type": "module_manifest",
+    "items": [
+        {
+            "id": "module.map_resources",
+            "version": 1,
+            "dependencies": ["module.map_movement", "module.land"],
+            "enabled": true
+        }
+    ]
+}

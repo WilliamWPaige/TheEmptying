@@ -25,8 +25,8 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(8, catalog.Goods.Count);
             Assert.AreEqual(12, catalog.Needs.Count);
             Assert.AreEqual(6, catalog.Zones.Count);
-            Assert.AreEqual(15, catalog.BuildingTypes.Count);
-            Assert.AreEqual(8, catalog.Recipes.Count);
+            Assert.AreEqual(18, catalog.BuildingTypes.Count);
+            Assert.AreEqual(10, catalog.Recipes.Count);
         }
 
         [Test]

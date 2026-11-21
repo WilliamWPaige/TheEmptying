@@ -4,7 +4,7 @@
         {
             "id": "module.gathering",
             "version": 1,
-            "dependencies": ["module.people", "module.buildings", "module.jobs", "module.inventory", "module.market", "module.map_movement"],
+            "dependencies": ["module.people", "module.buildings", "module.jobs", "module.inventory", "module.market", "module.map_movement", "module.map_resources"],
             "enabled": true
         }
     ]

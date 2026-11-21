@@ -1,0 +1,12 @@
+{
+    "type": "setting_definition",
+    "items": [
+        { "id": "setting.map_resources.forest_count", "valueType": "Integer", "default": 3, "minimum": 0, "maximum": 100, "category": "Map Resources", "description": "Placeholder test layout. How many forests appear at the start of a new game." },
+        { "id": "setting.map_resources.trees_per_forest", "valueType": "Integer", "default": 20, "minimum": 0, "maximum": 1000, "category": "Map Resources", "description": "Placeholder test layout. About how many trees make up one forest." },
+        { "id": "setting.map_resources.outcrop_count", "valueType": "Integer", "default": 2, "minimum": 0, "maximum": 100, "category": "Map Resources", "description": "Placeholder test layout. How many rock outcrops appear at the start of a new game." },
+        { "id": "setting.map_resources.logs_per_tree", "valueType": "Integer", "default": 5, "minimum": 1, "maximum": 1000, "category": "Map Resources", "description": "Placeholder, not yet tuned. Logs a single tree yields before it's gone." },
+        { "id": "setting.map_resources.stone_per_outcrop", "valueType": "Integer", "default": 300, "minimum": 1, "maximum": 100000, "category": "Map Resources", "description": "Placeholder, not yet tuned. Stone a single outcrop holds before it's gone." },
+        { "id": "setting.map_resources.placement_radius_cells", "valueType": "Integer", "default": 30, "minimum": 1, "maximum": 500, "category": "Map Resources", "description": "Placeholder test layout. How far from the keep forests and outcrops are placed, in cells." },
+        { "id": "setting.map_resources.forest_cluster_radius_cells", "valueType": "Integer", "default": 6, "minimum": 1, "maximum": 100, "category": "Map Resources", "description": "Placeholder test layout. How tightly a forest's trees cluster around its own center, in cells." }
+    ]
+}

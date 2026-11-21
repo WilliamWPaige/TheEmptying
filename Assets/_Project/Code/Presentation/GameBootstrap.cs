@@ -16,6 +16,7 @@ using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.MapResources;
 using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
@@ -116,11 +117,13 @@ namespace TheEmptying.Presentation
         private WealthModule _wealthModule;
         private LandModule _landModule;
         private BuildingsModule _buildingsModule;
+        private MapResourcesModule _mapResourcesModule;
         private JobsModule _jobsModule;
         private MarketModule _marketModule;
         private GatheringModule _gatheringModule;
         private MapMovementPresenter _mapPresenter;
         private LandPresenter _landPresenter;
+        private TheEmptying.Presentation.MapResources.MapResourcesPresenter _mapResourcesPresenter;
         private BuildingsPresenter _buildingsPresenter;
         private BuildingPanelPresenter _buildingPanelPresenter;
         private PeoplePanelPresenter _peoplePanelPresenter;
@@ -346,6 +349,7 @@ namespace TheEmptying.Presentation
             WireInput();
             BuildMapMovementPresentation();
             BuildLandPresentation();
+            BuildMapResourcesPresentation();
             BuildBuildingsPresentation();
             BuildPeoplePresentation();
 
@@ -487,6 +491,7 @@ namespace TheEmptying.Presentation
             _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
             _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
             _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
+            _mapResourcesModule = modules.OfType<MapResourcesModule>().FirstOrDefault();
             _gatheringModule = modules.OfType<GatheringModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
@@ -548,6 +553,18 @@ namespace TheEmptying.Presentation
             _landPresenter = presenterObject.AddComponent<LandPresenter>();
             _landPresenter.Initialize(_landModule, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
             _landPresenter.SetPeopleModule(_peopleModule);
+        }
+
+        private void BuildMapResourcesPresentation()
+        {
+            if (_mapResourcesModule == null || _mapMovementModule == null)
+            {
+                return;
+            }
+
+            var presenterObject = new GameObject("MapResourcesPresenter");
+            _mapResourcesPresenter = presenterObject.AddComponent<TheEmptying.Presentation.MapResources.MapResourcesPresenter>();
+            _mapResourcesPresenter.Initialize(_mapResourcesModule, _mapMovementModule.Grid, Camera.main, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
         }
 
         private void BuildBuildingsPresentation()
@@ -1208,6 +1225,7 @@ namespace TheEmptying.Presentation
                 _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
                 _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
                 _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
+                _mapResourcesModule = modules.OfType<MapResourcesModule>().FirstOrDefault();
                 _gatheringModule = modules.OfType<GatheringModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);

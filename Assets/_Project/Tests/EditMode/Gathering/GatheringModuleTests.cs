@@ -16,6 +16,7 @@ using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
+using TheEmptying.Modules.MapResources;
 using TheEmptying.Modules.Market;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
@@ -36,9 +37,10 @@ namespace TheEmptying.Tests.EditMode.Gathering
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
             (Simulation simulation, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
-                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
                 contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             return (simulation, gathering, buildings, inventory, wealth, market, people, jobs);
         }
@@ -85,9 +87,10 @@ namespace TheEmptying.Tests.EditMode.Gathering
             var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
             (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
-                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
                 contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out _, out string error), error);
@@ -115,6 +118,184 @@ namespace TheEmptying.Tests.EditMode.Gathering
             }
 
             Assert.AreNotEqual(spot, gathering.GetLocation(someFounder), "Expected a fresh spot to be picked after the commute to the walled-off one failed.");
+        }
+
+        /// <summary>3.10a: the user's hand test - the bootstrap chain from raw logs alone, no console help, no seeded stock.</summary>
+        [Test]
+        public void TrueDefaultNewGame_SawPitAndWoodcuttersCamp_MakeTheCrownLodgingComplete_FromHandCutLogs()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+
+            // The true default stockpile already holds more planks than the lodging alone needs -
+            // spend them down first, so the saw pit is genuinely load-bearing here, matching the
+            // user's actual hand test ("nothing in the game can make planks yet").
+            Assert.IsTrue(inventory.TryRemove(storehouseId, "good.plank", inventory.GetCount(storehouseId, "good.plank")));
+
+            int initialTreeCount = mapResources.Nodes.Count(n => n.Value.Kind == ResourceNodeKind.Tree);
+            Assert.Greater(initialTreeCount, 0, "Setup: expected trees to exist.");
+
+            // No console help at all: every good here comes only from hand-cutting trees and the
+            // two bootstrap buildings processing them - never seeded directly.
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.woodcutters_camp", new GridPoint(20, 10), out _, out string campError), campError);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.saw_pit", new GridPoint(30, 10), out _, out string pitError), pitError);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId lodgingId, out string lodgingError), lodgingError);
+
+            int planksNeeded = buildings.GetBuildingType("building.crown_lodging").ConstructionCost.First(c => c.Good.Id == "good.plank").Amount;
+            Assert.Greater(planksNeeded, 0, "Setup: expected the crown lodging to need planks.");
+            Assert.AreEqual(0, inventory.GetCount(storehouseId, "good.plank"), "Setup: expected zero planks in stock at this point.");
+
+            const long maxTicks = CalendarConstants.TicksPerDay * 90;
+            long completedAtTick = -1;
+
+            for (long i = 0; i < maxTicks; i++)
+            {
+                sim.Step();
+
+                if (buildings.TryGetBuilding(lodgingId, out BuildingState lodging) && lodging.Construction == null)
+                {
+                    completedAtTick = i;
+                    break;
+                }
+            }
+
+            Assert.IsTrue(completedAtTick >= 0, $"Expected the crown lodging to complete within {maxTicks / CalendarConstants.TicksPerDay} days, from hand-cut logs alone.");
+
+            int remainingTrees = mapResources.Nodes.Count(n => n.Value.Kind == ResourceNodeKind.Tree);
+            Assert.Less(remainingTrees, initialTreeCount, "Expected at least one tree to have visibly depleted (disappeared) along the way.");
+
+            TestContext.WriteLine($"Bootstrap completed in {completedAtTick / (double)CalendarConstants.TicksPerDay:F1} in-game days ({completedAtTick} ticks).");
+        }
+
+        /// <summary>3.10a: a depleted tree is never revisited - workers move to the next one, and report a specific idle reason once none are left.</summary>
+        [Test]
+        public void TreesRunOut_WorkersMoveToTheNextOne_AndReportASpecificIdleReason_WhenNoneAreLeft()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            // Plenty of bread, so food never goes short over this test's span - isolating the
+            // resource-depletion behavior from the separate "up to 2 founders farm wheat" mechanic.
+            inventory.Add(storehouseId, "good.loaf", 10000);
+            sim.Step(); // let the first task assignment happen
+
+            EntityId someFounder = people.People.First(row => people.IsFounder(row.Key) && gathering.GetTaskKind(row.Key) == GatherTaskKind.Woodcut).Key;
+            GridPoint assignedSpot = gathering.GetLocation(someFounder).Value;
+            EntityId assignedTreeId = mapResources.Nodes.First(n => n.Value.Kind == ResourceNodeKind.Tree && n.Value.Cell == assignedSpot).Key;
+
+            int yieldPerTree = (int)sim.Settings.Get(MapResourcesModule.LogsPerTreeSettingId);
+            mapResources.Harvest(assignedTreeId, yieldPerTree); // fully deplete it directly, bypassing real time
+
+            // ProcessHandGather only notices the tree is gone once this founder has actually arrived
+            // there - give them a full day to walk the distance and get at least one hourly check in.
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.AreNotEqual(GatherTaskKind.None, gathering.GetTaskKind(someFounder), "Expected them to have moved to a different tree, not gone idle - others remain standing.");
+            Assert.AreNotEqual(assignedSpot, gathering.GetLocation(someFounder), "Expected a different tree after the first one ran out.");
+
+            // Now drain every remaining tree too, so none are left anywhere.
+            foreach (KeyValuePair<EntityId, ResourceNodeState> row in mapResources.Nodes.Where(n => n.Value.Kind == ResourceNodeKind.Tree).ToList())
+            {
+                mapResources.Harvest(row.Key, row.Value.RemainingStock);
+            }
+
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.AreEqual(GatherTaskKind.None, gathering.GetTaskKind(someFounder), "Expected no task at all once no trees are left anywhere.");
+            Assert.AreEqual("No trees left in reach.", gathering.DescribeIdleReason(someFounder));
+        }
+
+        /// <summary>3.10a: a builder whose site is missing something that can't be hand-gathered (planks) switches to gathering raw material instead of idling, and returns once it arrives.</summary>
+        [Test]
+        public void BuilderAtASiteMissingPlanks_SwitchesToGathering_AndReturnsOncePlanksArrive()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            // Spend the default starting planks down to zero (the true default stockpile already
+            // holds more planks than the lodging alone needs, so this test forces the "missing"
+            // condition directly instead of relying on exact numbers happening to fall short).
+            // Plenty of stone (not the point here) but zero planks - the one thing the lodging is
+            // missing, and planks can't be gathered by hand, so the fallback is "whichever raw
+            // material is scarcer" (logs, since there's no stock of either and ties favor woodcutting).
+            Assert.IsTrue(inventory.TryRemove(storehouseId, "good.plank", inventory.GetCount(storehouseId, "good.plank")));
+            inventory.Add(storehouseId, "good.stone", 1000);
+            // Plenty of bread too, so food never goes short over this test's two-day span - isolating
+            // the stalled-site behavior from the separate "up to 2 founders farm wheat" mechanic.
+            inventory.Add(storehouseId, "good.loaf", 10000);
+
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+            sim.Step(); // deliver ConstructionSiteStartedEventId and assign builders
+
+            EntityId someBuilder = people.People.First(row => people.IsFounder(row.Key) && gathering.GetTaskKind(row.Key) == GatherTaskKind.Build).Key;
+
+            // Give them time to actually reach the site, not just be assigned to it - ProcessBuild
+            // (where the stall check lives) only runs once a builder has physically arrived.
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.AreEqual(GatherTaskKind.Woodcut, gathering.GetTaskKind(someBuilder),
+                "Expected the builder to switch to gathering logs once the site's own panel-equivalent check found planks neither in stock nor on order.");
+
+            int planksNeeded = buildings.GetBuildingType("building.crown_lodging").ConstructionCost.First(c => c.Good.Id == "good.plank").Amount;
+            inventory.Add(storehouseId, "good.plank", planksNeeded);
+
+            // AssignTasks re-evaluates a stalled site at the next trigger (a new day, here) - step a
+            // full day to cross that boundary.
+            for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.AreEqual(GatherTaskKind.Build, gathering.GetTaskKind(someBuilder), "Expected the builder to return to building once planks were available again.");
         }
 
         /// <summary>The user's actual case: the stockpile plus one building placed, from a true default start.</summary>
@@ -649,8 +830,9 @@ namespace TheEmptying.Tests.EditMode.Gathering
             buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
             var jobs = new JobsModule(buildings, wealth, people, mapMovement);
             market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
-            gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement);
-            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, gathering };
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            return new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering };
         }
 
         private static (Simulation Simulation, GatheringModule Gathering, BuildingsModule Buildings, InventoryModule Inventory, WealthModule Wealth, MarketModule Market, PeopleModule People) BuildWithSeed(TempCoreContentCopy core, ulong seed)

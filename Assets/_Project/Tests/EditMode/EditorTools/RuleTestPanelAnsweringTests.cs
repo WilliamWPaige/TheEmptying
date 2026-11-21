@@ -44,7 +44,8 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                     { ""id"": ""module.buildings"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.land"", ""module.wealth"", ""module.inventory"", ""module.people""], ""enabled"": false },
                     { ""id"": ""module.jobs"", ""version"": 1, ""dependencies"": [""module.buildings"", ""module.wealth"", ""module.people"", ""module.map_movement""], ""enabled"": false },
                     { ""id"": ""module.market"", ""version"": 1, ""dependencies"": [""module.buildings"", ""module.wealth"", ""module.inventory"", ""module.people"", ""module.map_movement""], ""enabled"": false },
-                    { ""id"": ""module.gathering"", ""version"": 1, ""dependencies"": [""module.people"", ""module.buildings"", ""module.jobs"", ""module.inventory"", ""module.market"", ""module.map_movement""], ""enabled"": false }
+                    { ""id"": ""module.map_resources"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.land""], ""enabled"": false },
+                    { ""id"": ""module.gathering"", ""version"": 1, ""dependencies"": [""module.people"", ""module.buildings"", ""module.jobs"", ""module.inventory"", ""module.market"", ""module.map_movement"", ""module.map_resources""], ""enabled"": false }
                 ]
             }");
             source.WriteDataFile("events.json", @"{
