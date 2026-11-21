@@ -204,6 +204,12 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: a building type's button inside the (opened) build menu, by panel position (see BuildingsPresenter.MenuTypeButtonPositionForTesting).</summary>
         public Vector2? MenuTypeButtonPositionForTesting(string typeId) => _buildingsPresenter?.MenuTypeButtonPositionForTesting(typeId);
 
+        /// <summary>For tests: whether the build menu panel is currently showing (see BuildingsPresenter.IsBuildMenuOpenForTesting).</summary>
+        public bool IsBuildMenuOpenForTesting => _buildingsPresenter != null && _buildingsPresenter.IsBuildMenuOpenForTesting;
+
+        /// <summary>For tests: the currently selected building type, if any (see BuildingsPresenter.SelectedBuildTypeIdForTesting).</summary>
+        public string SelectedBuildTypeIdForTesting => _buildingsPresenter?.SelectedBuildTypeIdForTesting;
+
         /// <summary>For tests: runs the exact guarded placement decision a real left-click at screenPosition would. Returns the placed building's id, if any.</summary>
         public EntityId? SimulatePlacementClickForTesting(string typeId, GridPoint cell, Vector2 screenPosition) => _buildingsPresenter?.SimulatePlacementClickForTesting(typeId, cell, screenPosition);
 
@@ -243,6 +249,13 @@ namespace TheEmptying.Presentation
 
         /// <summary>For tests: the grid's cell size, to convert a cell coordinate into a world position for CameraForTesting.WorldToScreenPoint.</summary>
         public double CellSizeMetersForTesting => _mapMovementModule?.Grid.CellSizeMeters ?? 1.0;
+
+        /// <summary>For tests: a mover's current simulated world position, if it has one.</summary>
+        public (double X, double Y)? MoverPositionForTesting(EntityId id) =>
+            _mapMovementModule != null && _mapMovementModule.TryGetPosition(id, out double x, out double y) ? (x, y) : ((double, double)?)null;
+
+        /// <summary>For tests: a construction site's overall progress percent (see BuildingsModule.GetConstructionProgressPercent).</summary>
+        public double ConstructionProgressPercentForTesting(EntityId siteId) => _buildingsModule?.GetConstructionProgressPercent(siteId) ?? 100.0;
 
         /// <summary>For tests: the simulation's current state hash.</summary>
         public ulong StateHashForTesting => _simulation.ComputeStateHash();
@@ -413,7 +426,7 @@ namespace TheEmptying.Presentation
             if (camera != null)
             {
                 var cameraController = camera.gameObject.AddComponent<StrategyCameraController>();
-                cameraController.Initialize(gameplayMap);
+                cameraController.Initialize(gameplayMap, _simulation.Settings);
 
                 MapGrid grid = _mapMovementModule.Grid;
                 var mapCenter = new Vector3(
@@ -674,7 +687,8 @@ namespace TheEmptying.Presentation
                 return;
             }
 
-            _dateLabel.text = _simulation.Clock.CurrentDate.ToString();
+            GameDate date = _simulation.Clock.CurrentDate;
+            _dateLabel.text = $"{date}, {date.Hour:D2}:{date.Minute:D2}";
             _speedLabel.text = _paused ? "Paused" : $"{(int)_speed}x";
             _treasuryLabel.text = _wealthModule != null ? $"Treasury: {_wealthModule.GetBalance(AccountId.Crown)}" : "";
         }

@@ -8,6 +8,9 @@ namespace TheEmptying.Modules.People
         Wandering,
         GoingHome,
         Commuting,
-        Working
+        Working,
+
+        /// <summary>Self-foraging: no bread available, so digging grubs on the spot instead of whatever else they'd be doing.</summary>
+        ForagingFood
     }
 }

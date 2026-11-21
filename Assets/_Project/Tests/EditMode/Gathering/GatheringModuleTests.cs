@@ -64,7 +64,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
         }
 
         [Test]
-        public void Founders_DigGrubs_IntoTheStockpile_WhenFoodIsShortAndOutOfSeason()
+        public void Founders_GatherMaterial_WhenFoodIsShortButOutOfSeason()
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, _, _, _) = Build(core);
@@ -72,8 +72,9 @@ namespace TheEmptying.Tests.EditMode.Gathering
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
 
             // Keep everyone well fed while skipping forward to Frost (month 10) - out of season for
-            // wheat (Waking, Bloom and Reaping are the only seasons wheat farming allows) - so grub
-            // digging will be the only food task on offer once bread runs short below.
+            // wheat (Waking, Bloom and Reaping are the only seasons wheat farming allows) - so even
+            // once bread runs short below, nothing can be farmed, and material gathering is all that's
+            // left (grubs are self-foraged now, never a task or a stockpiled good).
             const int wellFed = 10000;
             for (long i = 0; i < CalendarConstants.TicksPerMonth * 9; i++)
             {
@@ -97,8 +98,9 @@ namespace TheEmptying.Tests.EditMode.Gathering
                 sim.Step();
             }
 
-            Assert.Greater(inventory.GetCount(storehouseId, "good.ground_grub"), 0,
-                "Founders should have dug ground grubs into the stockpile within 10 days once bread ran short.");
+            Assert.Greater(inventory.GetCount(storehouseId, "good.log"), 0,
+                "With wheat out of season, founders should gather material even while bread is short.");
+            Assert.AreEqual(0, inventory.GetCount(storehouseId, "good.ground_grub"), "Grubs are never stockpiled.");
         }
 
         [Test]
@@ -157,7 +159,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
         }
 
         [Test]
-        public void WithASiteWaiting_ExactlyTwoFoundersGatherFood_AndTheRestBuild()
+        public void WithASiteWaiting_AndFoodShortInSeason_UpToTwoFoundersFarm_AndTheRestBuild()
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people) = Build(core);
@@ -166,16 +168,41 @@ namespace TheEmptying.Tests.EditMode.Gathering
             inventory.Add(storehouseId, "good.plank", 1000);
             inventory.Add(storehouseId, "good.stone", 1000);
 
+            // Below the "short" threshold (9 people * 56), and the game starts in Waking (in season for wheat).
+            int loavesNow = inventory.GetCount(storehouseId, "good.loaf");
+            Assert.IsTrue(inventory.TryRemove(storehouseId, "good.loaf", loavesNow));
+
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
 
             sim.Step(); // deliver the construction-site-started event so AssignTasks runs immediately
 
             EntityId[] founderIds = people.People.Where(row => people.IsFounder(row.Key)).Select(row => row.Key).ToArray();
-            int foodCount = founderIds.Count(id => gathering.GetTaskKind(id) == GatherTaskKind.Grub || gathering.GetTaskKind(id) == GatherTaskKind.Farm);
+            int farmCount = founderIds.Count(id => gathering.GetTaskKind(id) == GatherTaskKind.Farm);
             int buildCount = founderIds.Count(id => gathering.GetTaskKind(id) == GatherTaskKind.Build);
 
-            Assert.AreEqual(2, foodCount, "Exactly 2 founders should be gathering food while a crown site waits for labor.");
+            Assert.AreEqual(2, farmCount, "Exactly 2 founders should be farming wheat while a crown site waits for labor and food is short.");
             Assert.AreEqual(founderIds.Length - 2, buildCount, "Every other founder should be building the waiting site.");
+        }
+
+        [Test]
+        public void WithASiteWaiting_AndFoodNotShort_AllFoundersBuild()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            inventory.Add(storehouseId, "good.plank", 1000);
+            inventory.Add(storehouseId, "good.stone", 1000);
+            inventory.Add(storehouseId, "good.loaf", 10000); // plenty of bread: food isn't short
+
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+
+            sim.Step();
+
+            EntityId[] founderIds = people.People.Where(row => people.IsFounder(row.Key)).Select(row => row.Key).ToArray();
+            int buildCount = founderIds.Count(id => gathering.GetTaskKind(id) == GatherTaskKind.Build);
+
+            Assert.AreEqual(founderIds.Length, buildCount, "With food not short, there's no farming carve-out: every founder should build.");
         }
 
         [Test]
@@ -233,6 +260,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
             Assert.AreEqual(startingPopulation, people.People.Count(), "Nobody should have starved to death over 3 months with no console help.");
             Assert.IsTrue(buildings.TryGetBuilding(siteId, out BuildingState site));
             Assert.IsNull(site.Construction, "The placed crown lodging should have completed within 3 months.");
+            Assert.AreEqual(0, inventory.GetCount(storehouseId, "good.ground_grub"), "Grubs are self-foraged, never stockpiled.");
         }
 
         [Test]
@@ -259,53 +287,6 @@ namespace TheEmptying.Tests.EditMode.Gathering
                 "The crown should have bought at least one log from the jobless gatherer, landing it in the storehouse.");
             Assert.Greater(wealth.GetBalance(AccountId.Person(gatherer)).HundredthsOfShil, 0,
                 "The gatherer should have been paid at the market price for what the crown bought.");
-        }
-
-        [Test]
-        public void JoblessNonFounder_DigsAndSellsGrubs_ToTheCrownAtMarketPrice()
-        {
-            using var core = new TempCoreContentCopy();
-            (Simulation sim, _, BuildingsModule buildings, InventoryModule inventory, WealthModule wealth, MarketModule market, PeopleModule people) = Build(core);
-
-            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
-
-            // Keep the crown well fed while skipping forward to Frost (month 10) - out of season for
-            // wheat - so once bread runs out, grub digging (not wheat farming) is the food task on
-            // offer. Only founders eat from this stockpile, so this alone doesn't risk anyone starving.
-            const int wellFed = 10000;
-            for (long i = 0; i < CalendarConstants.TicksPerMonth * 9; i++)
-            {
-                sim.Step();
-                if (i % CalendarConstants.TicksPerDay == 0)
-                {
-                    int currentLoaves = inventory.GetCount(storehouseId, "good.loaf");
-                    if (currentLoaves < wellFed)
-                    {
-                        inventory.Add(storehouseId, "good.loaf", wellFed - currentLoaves);
-                    }
-                }
-            }
-
-            // Spawn the gatherer only now (not 9 months ago): they eat from their own personal
-            // inventory, not the crown's, and this test isn't about how long a lone jobless person's
-            // own starting provisions can stretch.
-            EntityId gatherer = people.SpawnPerson(30, 30);
-            Assert.IsFalse(people.IsFounder(gatherer));
-
-            // Drain all the bread, so food gathering (grubs) is the priority for everyone, including
-            // the new non-founder gatherer.
-            int loavesNow = inventory.GetCount(storehouseId, "good.loaf");
-            Assert.IsTrue(inventory.TryRemove(storehouseId, "good.loaf", loavesNow));
-
-            for (long i = 0; i < CalendarConstants.TicksPerDay * 10; i++)
-            {
-                sim.Step();
-            }
-
-            Assert.Greater(inventory.GetCount(storehouseId, "good.ground_grub"), 0,
-                "The crown should have bought at least one grub from the jobless gatherer, landing it in the storehouse.");
-            Assert.Greater(wealth.GetBalance(AccountId.Person(gatherer)).HundredthsOfShil, 0,
-                "The gatherer should have been paid at the market price for the grubs the crown bought.");
         }
 
         [Test]

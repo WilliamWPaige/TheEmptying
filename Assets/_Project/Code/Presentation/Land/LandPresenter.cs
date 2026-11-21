@@ -388,6 +388,23 @@ namespace TheEmptying.Presentation.Land
                 Destroy(_plotOutlines[id]);
                 _plotOutlines.Remove(id);
             }
+
+            if (_camera == null)
+            {
+                return;
+            }
+
+            // The label was painted flat on the ground at creation and never updated since, so from
+            // the strategy camera's actual angle it read as a severely foreshortened sliver - face it
+            // at the camera every frame instead, the same as person and building labels.
+            foreach (GameObject marker in _plotOutlines.Values)
+            {
+                TextMesh label = marker.GetComponentInChildren<TextMesh>(true);
+                if (label != null)
+                {
+                    BillboardUtility.FaceCameraFlat(label.transform, _camera);
+                }
+            }
         }
 
         private string DescribeOccupant(PlotState plot)
@@ -436,7 +453,7 @@ namespace TheEmptying.Presentation.Land
             var labelObject = new GameObject("Label");
             labelObject.transform.SetParent(marker.transform, false);
             labelObject.transform.localPosition = new Vector3(0f, 0f, -0.05f);
-            labelObject.transform.localRotation = Quaternion.Euler(-90f, 0f, 0f);
+            // Rotation is set every frame in SyncPlotOutlines (BillboardUtility.FaceCameraFlat).
             var textMesh = labelObject.AddComponent<TextMesh>();
             textMesh.text = label;
             textMesh.anchor = TextAnchor.MiddleCenter;

@@ -14,6 +14,13 @@
             "reportingScore": 1,
             "notabilityScore": 1,
             "description": "A construction site was placed and is waiting for materials or labor."
+        },
+        {
+            "id": "event.buildings.initial_stockpile_placed",
+            "visibility": "Public",
+            "reportingScore": 1,
+            "notabilityScore": 1,
+            "description": "The player placed the crown's first stockpile - the new game's first action."
         }
     ]
 }

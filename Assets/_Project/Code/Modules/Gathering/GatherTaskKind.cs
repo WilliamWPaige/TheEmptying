@@ -11,9 +11,6 @@ namespace TheEmptying.Modules.Gathering
 
         Farm,
         Woodcut,
-        Quarry,
-
-        /// <summary>Digging ground grubs by hand: the base-level food that never runs out and needs no building.</summary>
-        Grub
+        Quarry
     }
 }

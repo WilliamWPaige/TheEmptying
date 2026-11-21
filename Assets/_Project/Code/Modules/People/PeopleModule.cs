@@ -46,6 +46,7 @@ namespace TheEmptying.Modules.People
         public const string HungerRestoredPerGrubSettingId = "setting.people.hunger_restored_per_grub";
         public const string GrubMoodPenaltyAmountSettingId = "setting.people.grub_mood_penalty_amount";
         public const string GrubMoodPenaltyHoursSettingId = "setting.people.grub_mood_penalty_hours";
+        public const string GrubDigHoursPerMealSettingId = "setting.people.grub_dig_hours_per_meal";
         public const string SleepRestRestorePerHourSettingId = "setting.people.sleep_rest_restore_per_hour";
         public const string WanderRadiusCellsSettingId = "setting.people.wander_radius_cells";
         public const string WanderChancePerHourSettingId = "setting.people.wander_chance_per_hour";
@@ -75,7 +76,6 @@ namespace TheEmptying.Modules.People
         private const string ClassChangedEventId = "event.wealth.class_changed";
 
         private const string FoodGoodId = "good.loaf";
-        private const string GrubGoodId = "good.ground_grub";
 
         private sealed class HourlySystem : ISimSystem
         {
@@ -457,6 +457,7 @@ namespace TheEmptying.Modules.People
             float hungerRestorePerGrub = (float)_settings.Get(HungerRestoredPerGrubSettingId);
             float grubMoodPenalty = (float)_settings.Get(GrubMoodPenaltyAmountSettingId);
             int grubMoodPenaltyHours = (int)_settings.Get(GrubMoodPenaltyHoursSettingId);
+            double grubDigHours = _settings.Get(GrubDigHoursPerMealSettingId);
             float sleepRestorePerHour = (float)_settings.Get(SleepRestRestorePerHourSettingId);
             double starvationHoursBeforeDeath = _settings.Get(StarvationHoursBeforeDeathSettingId);
             double homelessHealthDamage = _settings.Get(HomelessHealthDamagePerNightSettingId);
@@ -505,7 +506,7 @@ namespace TheEmptying.Modules.People
                     person.GrubMoodPenaltyHoursRemaining--;
                 }
 
-                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, hungerRestorePerGrub, grubMoodPenaltyHours, sleepRestorePerHour, wanderChance, wanderRadius);
+                ChooseActivity(id, person, date.Hour, isNight, lowThreshold, eatAtPercent, hungerRestorePerLoaf, hungerRestorePerGrub, grubMoodPenaltyHours, grubDigHours, sleepRestorePerHour, wanderChance, wanderRadius);
 
                 person.Mood = ComputeMood(person, homeless, homelessPenalty, grubMoodPenalty);
 
@@ -593,7 +594,7 @@ namespace TheEmptying.Modules.People
             return Math.Clamp(average, 0.0, 100.0);
         }
 
-        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float hungerRestorePerGrub, int grubMoodPenaltyHours, float sleepRestorePerHour, float wanderChance, int wanderRadius)
+        private void ChooseActivity(EntityId id, PersonState person, int hour, bool isNight, float lowThreshold, float eatAtPercent, float hungerRestorePerLoaf, float hungerRestorePerGrub, int grubMoodPenaltyHours, double grubDigHours, float sleepRestorePerHour, float wanderChance, int wanderRadius)
         {
             bool isHungry = person.Needs.TryGetValue("need.hunger", out PersonNeedState hunger) && hunger.Meter <= eatAtPercent;
             EntityId foodSource = _foodSourceProvider(id) ?? id;
@@ -601,15 +602,30 @@ namespace TheEmptying.Modules.People
             {
                 hunger.Meter = Math.Min(100f, hunger.Meter + hungerRestorePerLoaf);
                 person.Activity = PersonActivity.Eating;
+                person.GrubDiggingHoursAccumulated = 0.0; // bread's available again; drop any partial digging progress
                 return;
             }
 
-            // People prefer bread; a ground grub is the fallback once there's no bread left.
-            if (isHungry && _inventory.TryRemove(foodSource, GrubGoodId, 1))
+            // People prefer bread; self-foraging (which costs real work time) is the fallback once
+            // there's no bread left. Digging happens on the spot, over several hours, instead of
+            // whatever else this person would otherwise be doing.
+            if (isHungry)
             {
-                hunger.Meter = Math.Min(100f, hunger.Meter + hungerRestorePerGrub);
-                person.GrubMoodPenaltyHoursRemaining = grubMoodPenaltyHours;
-                person.Activity = PersonActivity.Eating;
+                if (person.Activity != PersonActivity.ForagingFood)
+                {
+                    _mapMovement.Stop(id);
+                }
+
+                person.Activity = PersonActivity.ForagingFood;
+                person.GrubDiggingHoursAccumulated += 1.0;
+
+                if (person.GrubDiggingHoursAccumulated >= grubDigHours)
+                {
+                    person.GrubDiggingHoursAccumulated = 0.0;
+                    hunger.Meter = Math.Min(100f, hunger.Meter + hungerRestorePerGrub);
+                    person.GrubMoodPenaltyHoursRemaining = grubMoodPenaltyHours;
+                }
+
                 return;
             }
 
@@ -834,6 +850,7 @@ namespace TheEmptying.Modules.People
                 writer.WriteInt((int)person.Activity);
                 writer.WriteDouble(person.HoursHungerEmpty);
                 writer.WriteInt(person.GrubMoodPenaltyHoursRemaining);
+                writer.WriteDouble(person.GrubDiggingHoursAccumulated);
 
                 writer.WriteBool(person.IsFounder);
                 writer.WriteBool(person.IsMonarch);
@@ -898,7 +915,8 @@ namespace TheEmptying.Modules.People
                     Mood = reader.ReadDouble(),
                     Activity = (PersonActivity)reader.ReadInt(),
                     HoursHungerEmpty = reader.ReadDouble(),
-                    GrubMoodPenaltyHoursRemaining = reader.ReadInt()
+                    GrubMoodPenaltyHoursRemaining = reader.ReadInt(),
+                    GrubDiggingHoursAccumulated = reader.ReadDouble()
                 };
 
                 person.IsFounder = reader.ReadBool();

@@ -42,6 +42,7 @@ namespace TheEmptying.Modules.Buildings
 
         public const string BuildingCompletedEventId = "event.buildings.building_completed";
         public const string ConstructionSiteStartedEventId = "event.buildings.construction_site_started";
+        public const string InitialStockpilePlacedEventId = "event.buildings.initial_stockpile_placed";
 
         public const string KeepTypeId = "building.keep";
         public const string CrownLodgingTypeId = "building.crown_lodging";
@@ -234,6 +235,12 @@ namespace TheEmptying.Modules.Buildings
             _initialStockpilePlaced = true;
             buildingId = id;
             error = null;
+
+            // So founders start their first task the same morning the player places the stockpile,
+            // rather than sitting idle until the first natural day boundary (up to a full in-game day
+            // after unpausing, since NewDayEvent doesn't fire retroactively for the day already under way).
+            _events.Post(InitialStockpilePlacedEventId, _currentTick(), new EventData().SetEntity("building", id));
+
             return true;
         }
 
@@ -529,6 +536,22 @@ namespace TheEmptying.Modules.Buildings
         /// <summary>Total labor hours a construction site needs to finish, for the building panel's progress display; 0 for a finished building or an unknown site.</summary>
         public double GetLaborHoursNeeded(EntityId siteId) =>
             _buildings.TryGet(siteId, out BuildingState site) && site.Construction != null ? TotalLaborNeeded(_buildingTypesById[site.BuildingTypeId]) : 0.0;
+
+        /// <summary>Overall construction progress (materials delivered and labor done, blended) as a percent; 100 for a finished building or an unknown site.</summary>
+        public double GetConstructionProgressPercent(EntityId siteId)
+        {
+            if (!_buildings.TryGet(siteId, out BuildingState site) || site.Construction == null)
+            {
+                return 100.0;
+            }
+
+            BuildingType type = _buildingTypesById[site.BuildingTypeId];
+            double totalGoods = type.ConstructionCost.Sum(c => c.Amount);
+            double deliveredGoods = type.ConstructionCost.Sum(c => Math.Min(c.Amount, site.Construction.DeliveredGoods.TryGetValue(c.Good.Id, out int d) ? d : 0));
+            double laborNeeded = TotalLaborNeeded(type);
+            double totalWork = totalGoods + laborNeeded;
+            return totalWork > 0 ? (deliveredGoods + site.Construction.LaborHoursDone) / totalWork * 100.0 : 100.0;
+        }
 
         private void CheckCompletion(EntityId id, BuildingState building, BuildingType type, long tick)
         {
@@ -1241,7 +1264,7 @@ namespace TheEmptying.Modules.Buildings
                 double totalGoods = type.ConstructionCost.Sum(c => c.Amount);
                 double deliveredGoods = type.ConstructionCost.Sum(c => Math.Min(c.Amount, building.Construction.DeliveredGoods.TryGetValue(c.Good.Id, out int d) ? d : 0));
                 double laborNeeded = TotalLaborNeeded(type);
-                double progress = totalGoods + laborNeeded > 0 ? (deliveredGoods + building.Construction.LaborHoursDone) / (totalGoods + laborNeeded) * 100.0 : 100.0;
+                double progress = GetConstructionProgressPercent(entity);
                 yield return $"Under construction: {progress:F0}% (goods {deliveredGoods:F0}/{totalGoods:F0}, labor {building.Construction.LaborHoursDone:F0}/{laborNeeded:F0} hours)";
             }
             else

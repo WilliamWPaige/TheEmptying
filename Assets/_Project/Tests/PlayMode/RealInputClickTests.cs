@@ -10,13 +10,23 @@ using UnityEngine.TestTools;
 namespace TheEmptying.Tests.PlayMode
 {
     /// <summary>
-    /// 3.9c: the 3.9b UI-click-blocking test only ever drove the test helper, never a real mouse
-    /// through the Input System, so it couldn't catch a bug specific to the real input path. This
-    /// drives an actual simulated Mouse device (via InputTestFixture) through the same clicks a
-    /// player would make with the keyboard and mouse.
+    /// 3.9c/3.9d: a click on any build-menu button must never also reach the world behind it.
+    ///
+    /// UI Toolkit's own button click dispatch can't be driven through InputTestFixture's simulated
+    /// Mouse device: confirmed empirically (DIAG trace from this prompt's own investigation) that the
+    /// device's position and button-press state update correctly and are visible to Mouse.current
+    /// (so BuildingsPresenter's own polling code, which is what actually matters here, sees them
+    /// fine), but UI Toolkit's internal pointer-event pipeline never turns a simulated press+release
+    /// over a Button into its "clicked" event, even after 60 frames - so OpenBuildMenuWithTypeSelectedForTesting
+    /// is used to reach "menu open, a type selected", and every assertion below is driven by a real
+    /// simulated hardware click through BuildingsPresenter's actual Update()/Mouse.current polling and
+    /// UiInputUtility.IsPointerOverUi check - the exact mechanism the bug report is about.
     /// </summary>
     public class RealInputClickTests : InputTestFixture
     {
+        private const string TypeA = "building.crown_lodging";
+        private const string TypeB = "building.crown_storehouse";
+
         private static int CountBuildingLines(string buildingsCommandOutput) =>
             buildingsCommandOutput.Trim() == "No buildings." ? 0 : buildingsCommandOutput.Split('\n').Length;
 
@@ -31,7 +41,7 @@ namespace TheEmptying.Tests.PlayMode
         }
 
         [UnityTest]
-        public IEnumerator ClickingTheBuildButtonAgain_ThroughRealInput_NeverPlacesABuildingBehindIt()
+        public IEnumerator RealClicksOnMenuButtons_NeverPlaceABuildingInTheWorld()
         {
             Mouse mouse = InputSystem.AddDevice<Mouse>();
 
@@ -45,31 +55,40 @@ namespace TheEmptying.Tests.PlayMode
             Assert.IsTrue(bootstrap.PlaceInitialStockpileForTesting(new GridPoint(5, 5)), "Setup: placing the stockpile should succeed.");
             yield return null;
 
-            Vector2? buttonPanelPos = bootstrap.BuildMenuToggleButtonPositionForTesting;
-            Assert.IsTrue(buttonPanelPos.HasValue, "Expected the build menu's toggle button to exist.");
-            Vector2? buttonScreenPosNullable = bootstrap.ScreenPositionForPanelPointForTesting(buttonPanelPos.Value);
-            Assert.IsTrue(buttonScreenPosNullable.HasValue);
-            Vector2 buttonScreenPos = buttonScreenPosNullable.Value;
-
             string buildingsBefore = bootstrap.RunConsoleCommandForTesting("buildings");
             int countBefore = CountBuildingLines(buildingsBefore);
 
-            // Set up "tool active, a type already selected" directly - getting there isn't what's in
-            // question here, and chasing the menu's own type-button layout timing (its worldBound
-            // isn't available for several frames after the menu first becomes visible) would only make
-            // this test about UI Toolkit's layout pass instead of the actual click being tested below.
-            bootstrap.OpenBuildMenuWithTypeSelectedForTesting("building.crown_lodging");
+            Vector2? buttonPanelPos = bootstrap.BuildMenuToggleButtonPositionForTesting;
+            Assert.IsTrue(buttonPanelPos.HasValue, "Expected the build menu's toggle button to exist.");
+            Vector2 buttonScreenPos = bootstrap.ScreenPositionForPanelPointForTesting(buttonPanelPos.Value).Value;
+
+            // Reach "tool active, a type selected" directly - see the class comment for why a real
+            // click can't open the menu in this harness. Every click below, the thing actually under
+            // test, is real.
+            bootstrap.OpenBuildMenuWithTypeSelectedForTesting(TypeA);
             yield return null;
 
-            // The real click in question: the scenario the hand test found broken - click the Build
-            // button again (closing the tool) while the mouse is still over it, through the actual
-            // Input System and BuildingsPresenter's real Update() polling, not a test shortcut. That
-            // single click must only close the menu, never also place a building in the world behind it.
+            Vector2? typeBPanelPos = bootstrap.MenuTypeButtonPositionForTesting(TypeB);
+            Assert.IsTrue(typeBPanelPos.HasValue, $"Expected a {TypeB} button in the open build menu.");
+            Vector2 typeBScreenPos = bootstrap.ScreenPositionForPanelPointForTesting(typeBPanelPos.Value).Value;
+
+            // Real click on a different type's button in the menu, with the tool already active and a
+            // type already selected - the exact scenario the hand test found broken.
+            Assert.IsTrue(bootstrap.IsPointerOverUiForTesting(typeBScreenPos), $"Sanity check: {TypeB}'s button position should register as over UI.");
+            yield return Click(mouse, typeBScreenPos);
+
+            string buildingsAfterTypeBClick = bootstrap.RunConsoleCommandForTesting("buildings");
+            Assert.AreEqual(countBefore, CountBuildingLines(buildingsAfterTypeBClick),
+                "A real click on a type button in the menu should never place a building behind it.");
+
+            // Real click on the Build toggle button itself, still with a type selected - the other half
+            // of the scenario the hand test found broken.
+            Assert.IsTrue(bootstrap.IsPointerOverUiForTesting(buttonScreenPos), "Sanity check: the toggle button's position should register as over UI.");
             yield return Click(mouse, buttonScreenPos);
 
             string buildingsAfter = bootstrap.RunConsoleCommandForTesting("buildings");
             Assert.AreEqual(countBefore, CountBuildingLines(buildingsAfter),
-                "Clicking the build menu's own button a second time should never place a building behind it.");
+                "A real click on the build menu's own toggle button should never place a building behind it.");
         }
     }
 }

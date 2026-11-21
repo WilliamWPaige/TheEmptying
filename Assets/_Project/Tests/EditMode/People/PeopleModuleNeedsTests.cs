@@ -110,6 +110,10 @@ namespace TheEmptying.Tests.EditMode.People
 
             EntityId id = people.SpawnPerson(30, 30);
             StripFood(inventory, id);
+            // Self-foraging would otherwise restore hunger partway through this drain (it's a
+            // deliberate safety net) - make digging take far longer than this test's window, so hunger
+            // drains all the way to 0 unimpeded, as the test intends.
+            sim.Settings.Set(PeopleModule.GrubDigHoursPerMealSettingId, 1000);
 
             int lowCount = 0, criticalCount = 0, recoveredCount = 0;
             sim.Events.Subscribe(PeopleModule.NeedLowEventId, e => { if (e.Data.GetEntity("person") == id && e.Data.GetString("need") == "need.hunger") lowCount++; });

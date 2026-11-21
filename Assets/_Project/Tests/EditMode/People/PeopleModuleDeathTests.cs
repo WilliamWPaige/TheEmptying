@@ -95,6 +95,10 @@ namespace TheEmptying.Tests.EditMode.People
             sim.Settings.Set(PeopleModule.StarvationHoursBeforeDeathSettingId, 4);
             // Keep health damage from the (also homeless) nights from being the actual cause of death.
             sim.Settings.Set(PeopleModule.HomelessHealthDamagePerNightSettingId, 0);
+            // Self-foraging is a deliberate safety net against starvation (see the design's "keeps
+            // people alive" principle) - make digging take far longer than this test's window, so it
+            // isolates the starvation-death trigger itself from that (otherwise-rescuing) mechanic.
+            sim.Settings.Set(PeopleModule.GrubDigHoursPerMealSettingId, 1000);
 
             EntityId id = people.SpawnPerson(30, 30);
             while (inventory.TryRemove(id, "good.loaf", 1))

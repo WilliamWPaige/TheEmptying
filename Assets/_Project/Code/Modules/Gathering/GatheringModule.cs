@@ -20,20 +20,23 @@ using TheEmptying.Modules.People;
 namespace TheEmptying.Modules.Gathering
 {
     /// <summary>
-    /// Hand gathering: digging ground grubs (never runs out, no building),
-    /// and woodcutting, quarrying and farming done with no building, at a
-    /// quarter of the real building's rate. When a crown site is waiting for
-    /// labor, exactly a handful of founders gather food and the rest build it
-    /// unpaid; otherwise founders (and anyone else jobless) gather food if
-    /// the stockpile is short of it, or whichever raw material is scarcer.
-    /// Non-founders keep and sell their own output to the crown storehouse at
-    /// market price. A gatherer's task is decided each morning (and
-    /// immediately when a new site goes up) and worked each hour, underneath
-    /// whatever job Jobs already gives a person. Depends on People (who's
-    /// jobless, skills), Buildings (the crown storehouse and sites waiting
-    /// for labor), Jobs (who already has a real job), Inventory (where
-    /// output lands), Market (the crown's purchase from a non-founder) and
-    /// map/movement (travel to the gather spot).
+    /// Hand gathering: woodcutting, quarrying and farming done with no
+    /// building, at a quarter of the real building's rate. When a crown site
+    /// is waiting for labor, up to a handful of founders farm wheat (only
+    /// when stored food is short and it's in season) and the rest build it
+    /// unpaid; otherwise founders (and anyone else jobless) farm wheat under
+    /// the same cap and conditions, or gather whichever raw material is
+    /// scarcer. Self-foraging ground grubs (PeopleModule's own eating logic,
+    /// not a task here) is the separate, immediate fallback once a person is
+    /// hungry with no bread at all. Non-founders keep and sell their own
+    /// output to the crown storehouse at market price. A gatherer's task is
+    /// decided each morning (and immediately when the stockpile is placed or
+    /// a new site goes up) and worked each hour, underneath whatever job Jobs
+    /// already gives a person. Depends on People (who's jobless, skills),
+    /// Buildings (the crown storehouse and sites waiting for labor), Jobs
+    /// (who already has a real job), Inventory (where output lands), Market
+    /// (the crown's purchase from a non-founder) and map/movement (travel to
+    /// the gather spot).
     /// </summary>
     public sealed class GatheringModule : IModule, ISaveableModule, IInspectableModule
     {
@@ -42,16 +45,14 @@ namespace TheEmptying.Modules.Gathering
         public const string HandLogHoursPerUnitSettingId = "setting.gathering.hand_log_hours_per_unit";
         public const string HandStoneHoursPerUnitSettingId = "setting.gathering.hand_stone_hours_per_unit";
         public const string HandWheatPerHarvestSettingId = "setting.gathering.hand_wheat_per_harvest";
-        public const string HandGrubHoursPerUnitSettingId = "setting.gathering.hand_grub_hours_per_unit";
         public const string RadiusCellsSettingId = "setting.gathering.radius_cells";
         public const string FoodNeededPerPersonPerMonthSettingId = "setting.gathering.food_needed_per_person_per_month";
-        public const string FoodGatherersCountSettingId = "setting.gathering.food_gatherers_count";
+        public const string WheatFarmerCapSettingId = "setting.gathering.wheat_farmer_cap";
 
         private const string LogGoodId = "good.log";
         private const string StoneGoodId = "good.stone";
         private const string WheatGoodId = "good.wheat";
         private const string LoafGoodId = "good.loaf";
-        private const string GrubGoodId = "good.ground_grub";
 
         private sealed class HourlySystem : ISimSystem
         {
@@ -109,6 +110,9 @@ namespace TheEmptying.Modules.Gathering
             context.Subscribe<NewDayEvent>(evt => AssignTasks());
             // So builders start the same day a site goes up, not the next morning.
             context.Subscribe(BuildingsModule.ConstructionSiteStartedEventId, _ => AssignTasks());
+            // So founders start their very first task the moment the stockpile goes up, not whenever
+            // the first natural day boundary happens to fall.
+            context.Subscribe(BuildingsModule.InitialStockpilePlacedEventId, _ => AssignTasks());
             context.RegisterSystem(new HourlySystem(this), CalendarConstants.TicksPerHour, 0, 0);
 
             RegisterCommands(context);
@@ -137,40 +141,27 @@ namespace TheEmptying.Modules.Gathering
         {
             int radius = (int)_settings.Get(RadiusCellsSettingId);
             int adultAge = (int)_settings.Get(PeopleModule.AdultAgeYearsSettingId);
-            int foodGatherersWanted = (int)_settings.Get(FoodGatherersCountSettingId);
+            int wheatFarmerCap = (int)_settings.Get(WheatFarmerCapSettingId);
             GridPoint anchor = GetStockpileAnchor();
 
             bool anySiteWaiting = AnyCrownSiteNeedsLabor();
-            bool foodIsShort = IsFoodSupplyShort();
-            bool canFarmNow = CanFarmNow(foodIsShort);
+            bool canFarmNow = CanFarmNow();
 
-            // Deterministic (so a save/load round trip picks the same two) - ordered by each
-            // founder's entity index, which never changes once assigned.
-            HashSet<EntityId> foodFounderIds = anySiteWaiting
-                ? new HashSet<EntityId>(_people.People
-                    .Where(row => _people.IsFounder(row.Key) && row.Value.AgeLifeYears >= adultAge && !_jobs.IsEmployed(row.Key))
-                    .OrderBy(row => row.Key.Index)
-                    .Take(foodGatherersWanted)
-                    .Select(row => row.Key))
-                : null;
-
-            // Everyone who isn't a site's builder but will still end up on "food" this round, if
-            // nothing is waiting and food is short.
-            HashSet<EntityId> generalFoodIds = !anySiteWaiting && foodIsShort
-                ? new HashSet<EntityId>(_people.People
-                    .Where(row => row.Value.AgeLifeYears >= adultAge && !_people.IsMonarch(row.Key) && !_jobs.IsEmployed(row.Key))
-                    .Select(row => row.Key))
-                : null;
-
-            // Wheat takes about a month to grow and yields nothing in the meantime, so at most a
-            // handful of the food-tasked people ever farm at once (the same cap as the "site waiting"
-            // case uses) - whoever doesn't get a farming slot digs grubs instead, so the colony is
-            // never left with its entire workforce waiting a month for its first harvest.
+            // Deterministic (so a save/load round trip picks the same ones) - ordered by each
+            // person's entity index, which never changes once assigned. Up to the cap farm wheat;
+            // while a site is waiting, only founders are eligible for this (everyone else just
+            // gathers material), matching the "founders farm, the rest build" framing.
             HashSet<EntityId> farmerIds = null;
             if (canFarmNow)
             {
-                IEnumerable<EntityId> candidates = foodFounderIds ?? generalFoodIds ?? Enumerable.Empty<EntityId>();
-                farmerIds = new HashSet<EntityId>(candidates.OrderBy(id => id.Index).Take(foodGatherersWanted));
+                IEnumerable<KeyValuePair<EntityId, PersonState>> candidates = _people.People
+                    .Where(row => row.Value.AgeLifeYears >= adultAge && !_people.IsMonarch(row.Key) && !_jobs.IsEmployed(row.Key));
+                if (anySiteWaiting)
+                {
+                    candidates = candidates.Where(row => _people.IsFounder(row.Key));
+                }
+
+                farmerIds = new HashSet<EntityId>(candidates.OrderBy(row => row.Key.Index).Take(wheatFarmerCap).Select(row => row.Key));
             }
 
             foreach (KeyValuePair<EntityId, PersonState> row in _people.People.ToList())
@@ -196,13 +187,14 @@ namespace TheEmptying.Modules.Gathering
                     continue; // don't abandon a crop already in the ground
                 }
 
+                bool isFarmer = farmerIds != null && farmerIds.Contains(personId);
                 bool isFounder = _people.IsFounder(personId);
 
                 if (isFounder && anySiteWaiting)
                 {
-                    if (foodFounderIds.Contains(personId))
+                    if (isFarmer)
                     {
-                        SetTask(task, ChooseFoodTask(personId, farmerIds), anchor, radius, null);
+                        SetTask(task, GatherTaskKind.Farm, anchor, radius, null);
                     }
                     else if (TryFindCrownSiteNeedingLabor(personId, out EntityId siteId))
                     {
@@ -211,19 +203,13 @@ namespace TheEmptying.Modules.Gathering
                     else
                     {
                         // Shouldn't happen (a site exists somewhere, by anySiteWaiting) but fall back safely.
-                        SetTask(task, ChooseFoodTask(personId, farmerIds), anchor, radius, null);
+                        SetTask(task, PickScarcerMaterial(), anchor, radius, null);
                     }
 
                     continue;
                 }
 
-                if (foodIsShort)
-                {
-                    SetTask(task, ChooseFoodTask(personId, farmerIds), anchor, radius, null);
-                    continue;
-                }
-
-                SetTask(task, PickScarcerMaterial(), anchor, radius, null);
+                SetTask(task, isFarmer ? GatherTaskKind.Farm : PickScarcerMaterial(), anchor, radius, null);
             }
         }
 
@@ -300,37 +286,29 @@ namespace TheEmptying.Modules.Gathering
             return false;
         }
 
-        /// <summary>Below a month's placeholder supply of food (loaves and grubs together), for every living person.</summary>
+        /// <summary>Below a month's placeholder supply of stored food (loaves, later other real foods) - self-foraged grubs never count, since nobody stockpiles them.</summary>
         private bool IsFoodSupplyShort()
         {
             int livingPopulation = _people.People.Count();
             double foodNeededPerMonth = livingPopulation * _settings.Get(FoodNeededPerPersonPerMonthSettingId);
 
-            int foodInStockpile = 0;
-            if (_buildings.TryFindCrownStorehouse(out EntityId storehouseId))
-            {
-                foodInStockpile = _inventory.GetCount(storehouseId, LoafGoodId) + _inventory.GetCount(storehouseId, GrubGoodId);
-            }
+            int foodInStockpile = _buildings.TryFindCrownStorehouse(out EntityId storehouseId)
+                ? _inventory.GetCount(storehouseId, LoafGoodId)
+                : 0;
 
             return foodInStockpile < foodNeededPerMonth;
         }
 
         /// <summary>Whether wheat farming can start right now at all: food is short and the farm recipe's season allows it.</summary>
-        private bool CanFarmNow(bool foodIsShort)
+        private bool CanFarmNow()
         {
-            if (_farmRecipe == null || !foodIsShort)
+            if (_farmRecipe == null || !IsFoodSupplyShort())
             {
                 return false;
             }
 
             Season currentSeason = GameDate.FromTick(_currentTick()).Season;
             return _farmRecipe.SeasonsAllowed.Count == 0 || _farmRecipe.SeasonsAllowed.Contains(currentSeason);
-        }
-
-        /// <summary>Farm for whoever holds one of this round's capped farming slots; grubs (immediate, never runs out) for everyone else assigned to food.</summary>
-        private static GatherTaskKind ChooseFoodTask(EntityId personId, HashSet<EntityId> farmerIds)
-        {
-            return farmerIds != null && farmerIds.Contains(personId) ? GatherTaskKind.Farm : GatherTaskKind.Grub;
         }
 
         /// <summary>Whichever raw material the crown stockpile has less of; ties favor woodcutting.</summary>
@@ -421,7 +399,6 @@ namespace TheEmptying.Modules.Gathering
             double logHoursPerUnit = _settings.Get(HandLogHoursPerUnitSettingId);
             double stoneHoursPerUnit = _settings.Get(HandStoneHoursPerUnitSettingId);
             int wheatPerHarvest = (int)_settings.Get(HandWheatPerHarvestSettingId);
-            double grubHoursPerUnit = _settings.Get(HandGrubHoursPerUnitSettingId);
             double skillGainPerHour = _settings.Get(JobsModule.SkillGainPerWorkHourSettingId);
 
             foreach (KeyValuePair<EntityId, GatherTaskState> row in _tasks.Rows().ToList())
@@ -458,9 +435,6 @@ namespace TheEmptying.Modules.Gathering
                         break;
                     case GatherTaskKind.Farm:
                         ProcessFarm(personId, person, task, wheatPerHarvest, skillGainPerHour, tick);
-                        break;
-                    case GatherTaskKind.Grub:
-                        ProcessHandGather(personId, person, task, Skill.Farming, grubHoursPerUnit, GrubGoodId, skillGainPerHour);
                         break;
                 }
             }

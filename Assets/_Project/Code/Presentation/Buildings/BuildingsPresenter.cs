@@ -347,7 +347,7 @@ namespace TheEmptying.Presentation.Buildings
                     _buildingCubes[row.Key] = cube;
                 }
 
-                UpdateBuildingCube(cube, row.Value);
+                UpdateBuildingCube(row.Key, cube, row.Value);
             }
 
             foreach (EntityId id in stale)
@@ -376,7 +376,7 @@ namespace TheEmptying.Presentation.Buildings
             return cube;
         }
 
-        private void UpdateBuildingCube(GameObject cube, BuildingState building)
+        private void UpdateBuildingCube(EntityId id, GameObject cube, BuildingState building)
         {
             double cellSize = _grid.CellSizeMeters;
             BuildingType type = FindType(building.BuildingTypeId);
@@ -396,7 +396,7 @@ namespace TheEmptying.Presentation.Buildings
             if (label != null)
             {
                 label.transform.localPosition = new Vector3(0f, 0.55f, 0f);
-                label.text = isSite ? $"{ConstructionProgressPercent(building, type):F0}%" : "";
+                label.text = isSite ? $"{_buildings.GetConstructionProgressPercent(id):F0}%" : "";
                 label.gameObject.SetActive(isSite);
 
                 if (isSite && _camera != null)
@@ -404,24 +404,6 @@ namespace TheEmptying.Presentation.Buildings
                     BillboardUtility.FaceCameraFlat(label.transform, _camera);
                 }
             }
-        }
-
-        private static float ConstructionProgressPercent(BuildingState building, BuildingType type)
-        {
-            if (type == null || building.Construction == null)
-            {
-                return 100f;
-            }
-
-            double totalGoods = 0;
-            double deliveredGoods = 0;
-            foreach (GoodAmount cost in type.ConstructionCost)
-            {
-                totalGoods += cost.Amount;
-                deliveredGoods += Mathf.Min(cost.Amount, building.Construction.DeliveredGoods.TryGetValue(cost.Good.Id, out int d) ? d : 0);
-            }
-
-            return totalGoods > 0 ? (float)(deliveredGoods / totalGoods * 100.0) : 100f;
         }
 
         private static float HeightFor(int width, int depth) => Mathf.Clamp(Mathf.Max(width, depth) * 0.5f, 2f, 8f);
@@ -487,6 +469,12 @@ namespace TheEmptying.Presentation.Buildings
         /// <summary>For tests: a building type's button inside the (opened) build menu, by panel position - null if that type has no button (menu closed, or not a government type).</summary>
         public Vector2? MenuTypeButtonPositionForTesting(string typeId) =>
             _menuTypeButtons.TryGetValue(typeId, out Button button) ? button.worldBound.center : (Vector2?)null;
+
+        /// <summary>For tests: whether the build menu panel is currently showing (a real click on the toggle button takes a frame or two for UI Toolkit to actually dispatch, so a test should poll this rather than assume a fixed frame count).</summary>
+        public bool IsBuildMenuOpenForTesting => _menuPanel.style.display == DisplayStyle.Flex;
+
+        /// <summary>For tests: the currently selected building type, if any (null if the tool isn't active or no type is picked yet).</summary>
+        public string SelectedBuildTypeIdForTesting => _toolActive ? _selectedTypeId : null;
 
         /// <summary>For tests: whether a click at this screen position would currently be swallowed by UI instead of reaching the 3D world.</summary>
         public bool IsPointerOverUiForTesting(Vector2 screenPosition) => UiInputUtility.IsPointerOverUi(_uiRoot, screenPosition);

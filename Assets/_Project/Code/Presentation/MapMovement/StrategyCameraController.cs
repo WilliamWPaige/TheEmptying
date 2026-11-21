@@ -1,15 +1,19 @@
+using TheEmptying.Core.Content;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
 namespace TheEmptying.Presentation.MapMovement
 {
     /// <summary>
-    /// A gray-box strategy camera: pan with WASD and screen edges, zoom with
-    /// the wheel (dollying along its own forward direction), rotate around
-    /// its ground focus point with Q and E. No unit selection or click-to-move.
+    /// A gray-box strategy camera: pan with WASD (and, if the edge-scrolling
+    /// setting is on, screen edges), zoom with the wheel (dollying along its
+    /// own forward direction), rotate around its ground focus point with Q
+    /// and E. No unit selection or click-to-move.
     /// </summary>
     public sealed class StrategyCameraController : MonoBehaviour
     {
+        public const string EdgeScrollingSettingId = "setting.camera.edge_scrolling";
+
         private const float PanMetersPerSecond = 30f;
         private const float EdgePanBorderPixels = 14f;
         private const float ZoomMetersPerSecond = 40f;
@@ -20,12 +24,14 @@ namespace TheEmptying.Presentation.MapMovement
         private InputAction _panAction;
         private InputAction _rotateAction;
         private InputAction _zoomAction;
+        private SettingsRegistry _settings;
 
-        public void Initialize(InputActionMap gameplayMap)
+        public void Initialize(InputActionMap gameplayMap, SettingsRegistry settings)
         {
             _panAction = gameplayMap.FindAction("Pan");
             _rotateAction = gameplayMap.FindAction("Rotate");
             _zoomAction = gameplayMap.FindAction("Zoom");
+            _settings = settings;
         }
 
         public void PlaceAbove(Vector3 lookAtGroundPoint, float height)
@@ -44,7 +50,11 @@ namespace TheEmptying.Presentation.MapMovement
             float dt = Time.unscaledDeltaTime;
 
             Vector2 pan = _panAction.ReadValue<Vector2>();
-            pan += EdgePan();
+            if (_settings != null && _settings.Get(EdgeScrollingSettingId) != 0)
+            {
+                pan += EdgePan();
+            }
+
             pan = Vector2.ClampMagnitude(pan, 1f);
 
             Vector3 forward = transform.forward;

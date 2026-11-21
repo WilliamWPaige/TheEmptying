@@ -43,6 +43,9 @@ namespace TheEmptying.Modules.People
         /// <summary>Hours left of the mood penalty from eating a ground grub (people prefer bread); 0 means no penalty is active.</summary>
         public int GrubMoodPenaltyHoursRemaining;
 
+        /// <summary>Hours of self-foraging already spent toward the next grub, while hungry with no bread; resets once a grub is dug up.</summary>
+        public double GrubDiggingHoursAccumulated;
+
         // Monthly lifestyle-shift accumulators, reset after each shift is applied.
         public int HoursTrackedThisMonth;
         public int HoursHungerCriticalThisMonth;

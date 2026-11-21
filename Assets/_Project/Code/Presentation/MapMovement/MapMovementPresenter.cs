@@ -22,7 +22,6 @@ namespace TheEmptying.Presentation.MapMovement
     public sealed class MapMovementPresenter : MonoBehaviour
     {
         private const float CapsuleHeight = 2f;
-        private const float NameLabelVisibleDistance = 40f;
 
         private MapMovementModule _module;
         private PeopleModule _peopleModule;
@@ -164,10 +163,14 @@ namespace TheEmptying.Presentation.MapMovement
             }
 
             label.text = person.FullName + ClassMarker(id);
-            bool closeEnoughToRead = _camera != null && Vector3.Distance(_camera.transform.position, capsule.transform.position) <= NameLabelVisibleDistance;
-            label.gameObject.SetActive(closeEnoughToRead);
 
-            if (closeEnoughToRead)
+            // No distance gating, same as a building's construction-progress label - the old
+            // threshold (40) was always smaller than the strategy camera's own height-plus-setback
+            // (see StrategyCameraController.PlaceAbove), so at the default camera it never passed.
+            bool canShow = _camera != null;
+            label.gameObject.SetActive(canShow);
+
+            if (canShow)
             {
                 BillboardUtility.FaceCameraFlat(label.transform, _camera);
             }
@@ -198,6 +201,7 @@ namespace TheEmptying.Presentation.MapMovement
                 case PersonActivity.Wandering: return new Color(0.3f, 0.75f, 0.35f);
                 case PersonActivity.Commuting: return new Color(0.85f, 0.85f, 0.2f);
                 case PersonActivity.Working: return new Color(0.75f, 0.35f, 0.15f);
+                case PersonActivity.ForagingFood: return new Color(0.55f, 0.4f, 0.2f);
                 default: return new Color(0.7f, 0.7f, 0.7f);
             }
         }
