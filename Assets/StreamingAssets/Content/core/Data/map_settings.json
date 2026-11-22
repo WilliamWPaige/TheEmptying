@@ -4,7 +4,7 @@
         {
             "id": "setting.map.world_width_meters",
             "valueType": "Number",
-            "default": 15000,
+            "default": 10240,
             "minimum": 256,
             "maximum": 100000,
             "category": "Map",
@@ -13,7 +13,7 @@
         {
             "id": "setting.map.world_depth_meters",
             "valueType": "Number",
-            "default": 15000,
+            "default": 10240,
             "minimum": 256,
             "maximum": 100000,
             "category": "Map",

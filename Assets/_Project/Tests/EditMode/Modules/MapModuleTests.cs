@@ -27,8 +27,8 @@ namespace TheEmptying.Tests.EditMode.Modules
             return (MapModule)modules.First(m => m is MapModule);
         }
 
-        [TestCase(MapModule.WorldWidthSettingId, SettingValueType.Number, 15000.0, 256.0, 100000.0, "Map")]
-        [TestCase(MapModule.WorldDepthSettingId, SettingValueType.Number, 15000.0, 256.0, 100000.0, "Map")]
+        [TestCase(MapModule.WorldWidthSettingId, SettingValueType.Number, 10240.0, 256.0, 100000.0, "Map")]
+        [TestCase(MapModule.WorldDepthSettingId, SettingValueType.Number, 10240.0, 256.0, 100000.0, "Map")]
         [TestCase(MapModule.CellSizeSettingId, SettingValueType.Number, 1.0, 0.1, 100.0, "Map")]
         [TestCase(MapModule.ChunkSizeSettingId, SettingValueType.Number, 256.0, 8.0, 4096.0, "Map")]
         [TestCase(WorldMapView.ViewDistanceChunksSettingId, SettingValueType.Integer, 3.0, 1.0, 20.0, "Map")]
@@ -52,12 +52,12 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void WorldDimensions_DefaultTo15KmSquareAtOneMeterCellsAnd256MeterChunks()
+        public void WorldDimensions_DefaultTo10240MeterSquareAtOneMeterCellsAnd256MeterChunks()
         {
             MapModule map = BuildFromRealContent();
 
-            Assert.AreEqual(15000.0, map.WorldWidthMeters);
-            Assert.AreEqual(15000.0, map.WorldDepthMeters);
+            Assert.AreEqual(10240.0, map.WorldWidthMeters);
+            Assert.AreEqual(10240.0, map.WorldDepthMeters);
             Assert.AreEqual(1.0, map.CellSizeMeters);
             Assert.AreEqual(256.0, map.ChunkSizeMeters);
         }
@@ -66,7 +66,7 @@ namespace TheEmptying.Tests.EditMode.Modules
         public void WorldToCell_AtTheWorldCenter_IsCorrect()
         {
             MapModule map = BuildFromRealContent();
-            Assert.AreEqual(new CellCoord(7500, 7500), map.WorldToCell(7500, 7500));
+            Assert.AreEqual(new CellCoord(5120, 5120), map.WorldToCell(5120, 5120));
         }
 
         [Test]
@@ -80,7 +80,7 @@ namespace TheEmptying.Tests.EditMode.Modules
         public void WorldToCell_JustInsideTheFarEdge_IsTheLastCell()
         {
             MapModule map = BuildFromRealContent();
-            Assert.AreEqual(new CellCoord(14999, 14999), map.WorldToCell(14999.5, 14999.5));
+            Assert.AreEqual(new CellCoord(10239, 10239), map.WorldToCell(10239.5, 10239.5));
         }
 
         [Test]
@@ -89,9 +89,9 @@ namespace TheEmptying.Tests.EditMode.Modules
             MapModule map = BuildFromRealContent();
 
             Assert.AreEqual(new ChunkCoord(0, 0), map.WorldToChunk(0, 0));
-            Assert.AreEqual(new ChunkCoord(map.ChunkCountX - 1, 0), map.WorldToChunk(14999, 0));
-            Assert.AreEqual(new ChunkCoord(0, map.ChunkCountZ - 1), map.WorldToChunk(0, 14999));
-            Assert.AreEqual(new ChunkCoord(map.ChunkCountX - 1, map.ChunkCountZ - 1), map.WorldToChunk(14999, 14999));
+            Assert.AreEqual(new ChunkCoord(map.ChunkCountX - 1, 0), map.WorldToChunk(10239, 0));
+            Assert.AreEqual(new ChunkCoord(0, map.ChunkCountZ - 1), map.WorldToChunk(0, 10239));
+            Assert.AreEqual(new ChunkCoord(map.ChunkCountX - 1, map.ChunkCountZ - 1), map.WorldToChunk(10239, 10239));
         }
 
         [Test]
@@ -109,7 +109,7 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             (double x, double z) = map.ClampToWorld(-500, 20000);
             Assert.AreEqual(0.0, x);
-            Assert.AreEqual(15000.0, z);
+            Assert.AreEqual(10240.0, z);
         }
 
         [Test]
