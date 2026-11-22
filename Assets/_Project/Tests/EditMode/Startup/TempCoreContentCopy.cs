@@ -16,10 +16,10 @@ namespace TheEmptying.Tests.EditMode.Startup
     internal sealed class TempCoreContentCopy : IDisposable
     {
         /// <summary>
-        /// The real shipped ScriptableObject content (needs, name lists and so
-        /// on), converted the same way GameBootstrap does. Any test that spawns
-        /// people needs this passed as SimulationBuilder.Build's contentAssets,
-        /// since that content never exists as plain JSON in StreamingAssets.
+        /// The real shipped ScriptableObject content, converted the same way
+        /// GameBootstrap does, for passing as SimulationBuilder.Build's
+        /// contentAssets - that content never exists as plain JSON in
+        /// StreamingAssets.
         /// </summary>
         public static IEnumerable<ContentAssetDefinition> LoadRealContentAssets()
         {

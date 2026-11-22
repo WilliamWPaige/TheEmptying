@@ -1,6 +1,0 @@
-{
-    "type": "module_manifest",
-    "items": [
-        { "id": "module.map_movement", "version": 1, "dependencies": [], "enabled": true }
-    ]
-}

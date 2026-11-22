@@ -30,24 +30,9 @@ namespace TheEmptying.Tests.EditMode.EditorTools
         {
             // Every module ModuleCatalog.CreateModules() returns needs a manifest
             // entry for RuleTestSession.Build's real SimulationBuilder.Build call
-            // to succeed; disabled, so neither needs anything beyond the entry
-            // itself. The same manifest also feeds EditorContext.Build below, so
-            // both calls agree.
-            source.WriteDataFile("manifest.json", @"{
-                ""type"": ""module_manifest"",
-                ""items"": [
-                    { ""id"": ""module.map_movement"", ""version"": 1, ""dependencies"": [], ""enabled"": false },
-                    { ""id"": ""module.inventory"", ""version"": 1, ""dependencies"": [], ""enabled"": false },
-                    { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.inventory""], ""enabled"": false },
-                    { ""id"": ""module.wealth"", ""version"": 1, ""dependencies"": [""module.people""], ""enabled"": false },
-                    { ""id"": ""module.land"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.wealth""], ""enabled"": false },
-                    { ""id"": ""module.buildings"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.land"", ""module.wealth"", ""module.inventory"", ""module.people""], ""enabled"": false },
-                    { ""id"": ""module.jobs"", ""version"": 1, ""dependencies"": [""module.buildings"", ""module.wealth"", ""module.people"", ""module.map_movement""], ""enabled"": false },
-                    { ""id"": ""module.market"", ""version"": 1, ""dependencies"": [""module.buildings"", ""module.wealth"", ""module.inventory"", ""module.people"", ""module.map_movement""], ""enabled"": false },
-                    { ""id"": ""module.map_resources"", ""version"": 1, ""dependencies"": [""module.map_movement"", ""module.land""], ""enabled"": false },
-                    { ""id"": ""module.gathering"", ""version"": 1, ""dependencies"": [""module.people"", ""module.buildings"", ""module.jobs"", ""module.inventory"", ""module.market"", ""module.map_movement"", ""module.map_resources""], ""enabled"": false }
-                ]
-            }");
+            // to succeed; ModuleCatalog returns none since R0, so there's nothing
+            // to declare here. The same manifest also feeds EditorContext.Build
+            // below, so both calls agree.
             source.WriteDataFile("events.json", @"{
                 ""type"": ""event_definition"",
                 ""items"": [ { ""id"": ""go"", ""visibility"": ""Public"", ""reportingScore"": 0, ""notabilityScore"": 0, ""description"": ""test event"" } ]

@@ -1,6 +1,0 @@
-{
-    "type": "setting_definition",
-    "items": [
-        { "id": "setting.ui.clock_24h", "valueType": "Boolean", "default": 0, "minimum": 0, "maximum": 1, "category": "UI", "description": "Show the clock in 24-hour time instead of 12-hour time with AM/PM." }
-    ]
-}

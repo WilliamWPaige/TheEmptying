@@ -32,6 +32,7 @@ namespace TheEmptying.Editor.Content
                    && path.EndsWith(".asset", StringComparison.Ordinal);
         }
 
+        /// <summary>Empty since R0 removed the Milestone 3 content types; syncs come back here as each type is rebuilt.</summary>
         public static void Refresh()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<ContentCatalog>(CatalogPath);
@@ -39,14 +40,6 @@ namespace TheEmptying.Editor.Content
             {
                 return;
             }
-
-            catalog.SetContentsForEditor(
-                ContentAssetDuplicateCheck.FindAllOfSameType<GoodAsset>(),
-                ContentAssetDuplicateCheck.FindAllOfSameType<NeedAsset>(),
-                ContentAssetDuplicateCheck.FindAllOfSameType<ZoneAsset>(),
-                ContentAssetDuplicateCheck.FindAllOfSameType<BuildingTypeAsset>(),
-                ContentAssetDuplicateCheck.FindAllOfSameType<RecipeAsset>(),
-                ContentAssetDuplicateCheck.FindAllOfSameType<NameListAsset>());
 
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();

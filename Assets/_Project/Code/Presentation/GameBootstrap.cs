@@ -11,51 +11,24 @@ using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
-using TheEmptying.Modules.Buildings;
-using TheEmptying.Modules.Gathering;
-using TheEmptying.Modules.Inventory;
-using TheEmptying.Modules.Jobs;
-using TheEmptying.Modules.Land;
-using TheEmptying.Modules.MapMovement;
-using TheEmptying.Modules.MapResources;
-using TheEmptying.Modules.Market;
-using TheEmptying.Modules.People;
-using TheEmptying.Modules.Wealth;
-using TheEmptying.Presentation.Buildings;
 using TheEmptying.Presentation.Content;
-using TheEmptying.Presentation.DevTools;
-using TheEmptying.Presentation.Land;
-using TheEmptying.Presentation.MapMovement;
-using TheEmptying.Presentation.People;
 using UnityEngine;
-using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
-using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation
 {
     /// <summary>
     /// Milestone-1 bootstrap object: builds the Simulation through
     /// SimulationBuilder, drives the clock each frame against real time, and
-    /// hosts a minimal HUD and developer console. Everything lives on one
-    /// component for now; it splits into separate pieces once there's a
-    /// gray-box town to justify it.
+    /// hosts a minimal HUD and the rule system's question popup. Everything
+    /// lives on one component for now; it splits into separate pieces once
+    /// there's a gray-box town to justify it.
     /// </summary>
     public sealed class GameBootstrap : MonoBehaviour, IPresentationCommands, ILogSink
     {
         private const ulong FixedWorldSeed = 1;
         private const double RealSecondsPerDay = 720; // 12 real minutes per in-game day at 1x.
         private const int MaxTicksPerFrame = 200;
-        private const int MaxLogLines = 500;
-        private const float ConsoleGapBelowHud = 8f;
-        private static readonly Color ConsoleBackgroundColorValue = new Color(0.05f, 0.05f, 0.06f, 1f);
-
-        private enum LogFilterMode
-        {
-            Off,
-            ErrorsAndWarnings,
-            All
-        }
 
         private Simulation _simulation;
         private double _accumulatedRealSeconds;
@@ -65,22 +38,14 @@ namespace TheEmptying.Presentation
         /// <summary>
         /// For tests only: multiplies the real time fed into the tick accumulator, so a long
         /// real-time PlayMode test can cover the same in-game days in far less wall-clock time while
-        /// still playing the real Game scene at a real game speed. 1 (no change) outside tests. The
-        /// presenter's own smoothing reads real elapsed time independently (Time.unscaledTime), so it
-        /// adapts its catch-up speed to however much ground a batch of ticks actually covered -
-        /// nothing else needs to know about this multiplier.
+        /// still playing the real Game scene at a real game speed. 1 (no change) outside tests.
         /// </summary>
         private double _testTimeMultiplier = 1.0;
 
-        private InputActionAsset _actions;
-
         private UIDocument _uiDocument;
         private VisualElement _hudPanel;
-        private Label _toastLabel;
-        private float _toastHideAtTime;
         private Label _dateLabel;
         private Label _speedLabel;
-        private Label _treasuryLabel;
 
         private VisualElement _questionPopupRoot;
         private Label _questionPopupCounter;
@@ -98,43 +63,9 @@ namespace TheEmptying.Presentation
         /// </summary>
         private readonly HashSet<long> _answeredQuestionIds = new HashSet<long>();
 
-        private VisualElement _consoleRoot;
-        private ScrollView _consoleLog;
-        private TextField _consoleInput;
-        private VisualElement _consoleInputTextBox;
-        private readonly List<string> _commandHistory = new List<string>();
-        private int _historyIndex;
-        private bool _consoleOpen;
-
-        // Sticky-bottom state: on by default, stays on while the log follows new
-        // output, and turns off only when the player scrolls away on their own.
-        private bool _stickToBottom = true;
-
-        private LogFilterMode _logFilterMode = Application.isEditor ? LogFilterMode.All : LogFilterMode.Off;
-
         private string _coreContentFolder;
         private string _modsFolder;
         private string _savesFolder;
-
-        private MapMovementModule _mapMovementModule;
-        private PeopleModule _peopleModule;
-        private WealthModule _wealthModule;
-        private LandModule _landModule;
-        private BuildingsModule _buildingsModule;
-        private MapResourcesModule _mapResourcesModule;
-        private JobsModule _jobsModule;
-        private MarketModule _marketModule;
-        private GatheringModule _gatheringModule;
-        private InventoryModule _inventoryModule;
-        private MapMovementPresenter _mapPresenter;
-        private LandPresenter _landPresenter;
-        private TheEmptying.Presentation.MapResources.MapResourcesPresenter _mapResourcesPresenter;
-        private BuildingsPresenter _buildingsPresenter;
-        private BuildingPanelPresenter _buildingPanelPresenter;
-        private PeoplePanelPresenter _peoplePanelPresenter;
-        private DebugReadoutPresenter _debugReadoutPresenter;
-        private StockpilePanelPresenter _stockpilePanelPresenter;
-        private StrategyCameraController _cameraController;
 
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
@@ -151,192 +82,11 @@ namespace TheEmptying.Presentation
         public Simulation SimulationForEditorTools => _simulation;
 #endif
 
-        /// <summary>For tests: whether the console is currently open.</summary>
-        public bool IsConsoleOpen => _consoleOpen;
-
-        /// <summary>For tests: the resolved layout (post-layout-pass) of the HUD, the console root, the output log, and the input line.</summary>
-        public Rect HudLayout => _hudPanel.layout;
-        public Rect ConsoleRootLayout => _consoleRoot.layout;
-        public Rect ConsoleLogLayout => _consoleLog.layout;
-        public Rect ConsoleInputLayout => _consoleInput.layout;
-
-        /// <summary>For tests: the console root's resolved background color.</summary>
-        public Color ConsoleBackgroundColor => _consoleRoot.resolvedStyle.backgroundColor;
-
-        /// <summary>For tests: the log's full scrollable content height versus its visible viewport height.</summary>
-        public float ConsoleLogContentHeight => _consoleLog.contentContainer.layout.height;
-        public float ConsoleLogViewportHeight => _consoleLog.contentViewport.layout.height;
-
-        /// <summary>For tests: the input line's current text.</summary>
-        public string ConsoleInputValue => _consoleInput.value;
-
-        /// <summary>For tests: the resolved colors of the input's inner text box, to check they contrast.</summary>
-        public Color ConsoleInputTextColor => _consoleInputTextBox.resolvedStyle.color;
-        public Color ConsoleInputBackgroundColor => _consoleInputTextBox.resolvedStyle.backgroundColor;
-
-        /// <summary>For tests: every line currently in the console log, with its resolved color.</summary>
-        public IEnumerable<(string Text, Color Color)> ConsoleLogEntries =>
-            _consoleLog.contentContainer.Children().OfType<Label>().Select(l => (l.text, l.resolvedStyle.color));
-
-        /// <summary>For tests: the log's current and maximum vertical scroll offset.</summary>
-        public float ConsoleLogScrollOffsetY => _consoleLog.scrollOffset.y;
-        public float ConsoleLogMaxScrollOffsetY => Mathf.Max(0f, _consoleLog.contentContainer.layout.height - _consoleLog.contentViewport.layout.height);
-
-        /// <summary>For tests: the scrollbar thumb's own value and range, to check it's in sync with the real content.</summary>
-        public float ConsoleLogScrollerValue => _consoleLog.verticalScroller.value;
-        public float ConsoleLogScrollerHighValue => _consoleLog.verticalScroller.highValue;
-
-        /// <summary>For tests: whether the console input (or its inner text box) currently has focus.</summary>
-        public bool IsConsoleInputFocused =>
-            _consoleInput.panel != null &&
-            _consoleInput.panel.focusController.focusedElement != null &&
-            (_consoleInput.panel.focusController.focusedElement == _consoleInput ||
-             _consoleInput.panel.focusController.focusedElement == _consoleInputTextBox);
-
-        /// <summary>For tests: runs a command exactly as typing it and pressing Enter would, returning its result text.</summary>
-        public string RunConsoleCommandForTesting(string input)
-        {
-            _consoleInput.SetValueWithoutNotify(input);
-            return RunConsoleInput();
-        }
-
-        /// <summary>For tests: submits the input through a real KeyDownEvent dispatched at the input field, the same path the Enter key uses in real play, not a direct method call.</summary>
-        public void SubmitConsoleInputViaEnterKeyForTesting(string text)
-        {
-            _consoleInput.SetValueWithoutNotify(text);
-            using (KeyDownEvent evt = KeyDownEvent.GetPooled('\n', KeyCode.Return, EventModifiers.None))
-            {
-                _consoleInput.SendEvent(evt);
-            }
-        }
-
-        /// <summary>For tests: moves the view away from the bottom, then runs the exact same "did the player just scroll" check a real wheel or scrollbar pointer event would trigger - not a backdoor flag flip, but faking a precise low-level input event (exact position, pointer id, etc.) to merely reach that same check is far more fragile than this is useful.</summary>
-        public void ScrollConsoleLogUpForTesting()
-        {
-            _consoleLog.verticalScroller.value = Mathf.Max(_consoleLog.verticalScroller.lowValue, _consoleLog.verticalScroller.value - 300f);
-            ScheduleUserScrollCheck();
-        }
-
         /// <summary>For tests: the simulation's current living entity count.</summary>
         public int EntityCountForTesting => _simulation.Entities.Count;
 
-        /// <summary>For tests: places the stockpile directly, with the same side effects a successful click would have, so a test that isn't about the player's first action doesn't have to simulate that click too.</summary>
-        public bool PlaceInitialStockpileForTesting(GridPoint cell) => _buildingsPresenter != null && _buildingsPresenter.PlaceInitialStockpileForTesting(cell);
-
-        /// <summary>For tests: the build menu's own toggle button screen position (see BuildingsPresenter.BuildMenuToggleButtonPositionForTesting).</summary>
-        public Vector2? BuildMenuToggleButtonPositionForTesting => _buildingsPresenter?.BuildMenuToggleButtonPositionForTesting;
-
-        /// <summary>For tests: a building type's button inside the (opened) build menu, by panel position (see BuildingsPresenter.MenuTypeButtonPositionForTesting).</summary>
-        public Vector2? MenuTypeButtonPositionForTesting(string typeId) => _buildingsPresenter?.MenuTypeButtonPositionForTesting(typeId);
-
-        /// <summary>For tests: a building type's cost label text, as currently shown in the build menu (see BuildingsPresenter.MenuTypeCostTextForTesting).</summary>
-        public string MenuTypeCostTextForTesting(string typeId) => _buildingsPresenter?.MenuTypeCostTextForTesting(typeId);
-
-        /// <summary>For tests: whether the build menu panel is currently showing (see BuildingsPresenter.IsBuildMenuOpenForTesting).</summary>
-        public bool IsBuildMenuOpenForTesting => _buildingsPresenter != null && _buildingsPresenter.IsBuildMenuOpenForTesting;
-
-        /// <summary>For tests: the currently selected building type, if any (see BuildingsPresenter.SelectedBuildTypeIdForTesting).</summary>
-        public string SelectedBuildTypeIdForTesting => _buildingsPresenter?.SelectedBuildTypeIdForTesting;
-
-        /// <summary>For tests: runs the exact guarded placement decision a real left-click at screenPosition would. Returns the placed building's id, if any.</summary>
-        public EntityId? SimulatePlacementClickForTesting(string typeId, GridPoint cell, Vector2 screenPosition) => _buildingsPresenter?.SimulatePlacementClickForTesting(typeId, cell, screenPosition);
-
-        /// <summary>For tests: the same guarded placement decision, using whatever type is (or isn't) currently selected (see BuildingsPresenter.SimulateWorldClickWithCurrentSelectionForTesting).</summary>
-        public EntityId? SimulateWorldClickWithCurrentSelectionForTesting(GridPoint cell, Vector2 screenPosition) => _buildingsPresenter?.SimulateWorldClickWithCurrentSelectionForTesting(cell, screenPosition);
-
-        /// <summary>For tests: runs the exact guarded click-to-inspect decision a real left-click at screenPosition would.</summary>
-        public void ClickAtForTesting(Vector2 screenPosition) => _buildingsPresenter?.ClickAtForTesting(screenPosition);
-
-        /// <summary>For tests: runs the exact guarded click-to-select decision a real left-click on a person's capsule at screenPosition would.</summary>
-        public void ClickOnPersonCapsuleForTesting(Vector2 screenPosition) => _mapPresenter?.ClickAtForTesting(screenPosition);
-
-        /// <summary>For tests: opens the tool with a type already selected, without simulating the clicks that would normally get there (see BuildingsPresenter.OpenBuildMenuWithTypeSelectedForTesting).</summary>
-        public void OpenBuildMenuWithTypeSelectedForTesting(string typeId) => _buildingsPresenter?.OpenBuildMenuWithTypeSelectedForTesting(typeId);
-
-        /// <summary>For tests: closes the build menu/tool, exactly as clicking its toggle button a second time would.</summary>
-        public void CloseBuildMenuForTesting() => _buildingsPresenter?.CloseBuildMenuForTesting();
-
-        /// <summary>For tests: describes whatever a raycast from screenPosition would hit, for debugging.</summary>
-        public string DescribeRaycastForTesting(Vector2 screenPosition) => _buildingsPresenter?.DescribeRaycastForTesting(screenPosition) ?? "no presenter";
-
-        /// <summary>For tests: lists every tracked building cube's id, position, scale and active state, for debugging.</summary>
-        public string DescribeAllBuildingCubesForTesting() => _buildingsPresenter?.DescribeAllBuildingCubesForTesting() ?? "no presenter";
-
-        /// <summary>For tests: raycasts straight down through a world XZ position, bypassing the camera entirely, for debugging.</summary>
-        public string DescribeStraightDownRaycastForTesting(float worldX, float worldZ) => _buildingsPresenter?.DescribeStraightDownRaycastForTesting(worldX, worldZ) ?? "no presenter";
-
-        /// <summary>For tests: whether a click at this screen position would currently be swallowed by UI.</summary>
-        public bool IsPointerOverUiForTesting(Vector2 screenPosition) => _buildingsPresenter != null && _buildingsPresenter.IsPointerOverUiForTesting(screenPosition);
-
-        /// <summary>For tests: the build menu's own toggle button's resolved world-space (panel-space) rect, for debugging coordinate conversions.</summary>
-        public Rect? BuildMenuToggleButtonWorldBoundForTesting => _buildingsPresenter?.BuildMenuToggleButtonWorldBoundForTesting;
-
-        /// <summary>For tests: the screen position that maps to this panel-space position (see BuildingsPresenter.ScreenPositionForPanelPointForTesting).</summary>
-        public Vector2? ScreenPositionForPanelPointForTesting(Vector2 panelPosition) => _buildingsPresenter?.ScreenPositionForPanelPointForTesting(panelPosition);
-
-        /// <summary>For tests: whether the building panel is currently shown, and which building.</summary>
-        public bool IsBuildingPanelOpenForTesting => _buildingPanelPresenter?.IsShowingForTesting ?? false;
-        public EntityId BuildingPanelShownIdForTesting => _buildingPanelPresenter?.ShownBuildingIdForTesting ?? EntityId.None;
-        public int BuildingPanelSlotsChildCountForTesting => _buildingPanelPresenter?.SlotsChildCountForTesting ?? 0;
-        public IEnumerable<string> BuildingPanelSlotLabelTextsForTesting => _buildingPanelPresenter?.SlotLabelTextsForTesting ?? Enumerable.Empty<string>();
-
-        /// <summary>For tests: whether the people panel is currently shown, and how many rows it lists.</summary>
-        public bool IsPeoplePanelOpenForTesting => _peoplePanelPresenter?.IsShowingForTesting ?? false;
-        public int PeoplePanelRowCountForTesting => _peoplePanelPresenter?.RowCountForTesting ?? 0;
-        public EntityId? PeoplePanelSelectedPersonIdForTesting => _peoplePanelPresenter?.SelectedPersonIdForTesting;
-        public bool IsPeoplePanelSelectionLineVisibleForTesting => _peoplePanelPresenter?.IsSelectionLineVisibleForTesting ?? false;
-        public float PeoplePanelRootWidthForTesting => _peoplePanelPresenter?.RootWidthForTesting ?? 0f;
-        public bool PeoplePanelRowsWrapForTesting => _peoplePanelPresenter?.RowsWrapForTesting ?? false;
-
-        /// <summary>For tests: opens the people panel (see PeoplePanelPresenter.Show).</summary>
-        public void ShowPeoplePanelForTesting() => _peoplePanelPresenter?.Show();
-
-        /// <summary>For tests: runs the exact row-click decision a real click on this person's row would (see PeoplePanelPresenter.SelectPersonForTesting).</summary>
-        public void SelectPersonInPeoplePanelForTesting(EntityId id) => _peoplePanelPresenter?.SelectPersonForTesting(id);
-
-        /// <summary>For tests: whether the stockpile panel is currently shown, and how many goods it lists.</summary>
-        public bool IsStockpilePanelOpenForTesting => _stockpilePanelPresenter?.IsShowingForTesting ?? false;
-        public int StockpilePanelGoodRowCountForTesting => _stockpilePanelPresenter?.GoodRowCountForTesting ?? 0;
-
-        /// <summary>For tests: opens the stockpile panel (see StockpilePanelPresenter.Show).</summary>
-        public void ShowStockpilePanelForTesting() => _stockpilePanelPresenter?.Show();
-
-        /// <summary>For tests: the main camera presenting the world, for projecting a known world position to a screen position.</summary>
-        public Camera CameraForTesting => Camera.main;
-
-        /// <summary>For tests: the grid's cell size, to convert a cell coordinate into a world position for CameraForTesting.WorldToScreenPoint.</summary>
-        public double CellSizeMetersForTesting => _mapMovementModule?.Grid.CellSizeMeters ?? 1.0;
-
-        /// <summary>For tests: a mover's current simulated world position, if it has one.</summary>
-        public (double X, double Y)? MoverPositionForTesting(EntityId id) =>
-            _mapMovementModule != null && _mapMovementModule.TryGetPosition(id, out double x, out double y) ? (x, y) : ((double, double)?)null;
-
-        /// <summary>For tests: a mover's actual drawn (smoothed) position, as distinct from the simulation's raw position (see MapMovementPresenter.RenderedPositionForTesting).</summary>
-        public Vector3? MoverRenderedPositionForTesting(EntityId id) => _mapPresenter?.RenderedPositionForTesting(id);
-
-        /// <summary>For tests: a construction site's overall progress percent (see BuildingsModule.GetConstructionProgressPercent).</summary>
-        public double ConstructionProgressPercentForTesting(EntityId siteId) => _buildingsModule?.GetConstructionProgressPercent(siteId) ?? 100.0;
-
-        /// <summary>For tests: a person's current hand-gathering task (see GatheringModule.GetTaskKind). None if they have no active task.</summary>
-        public GatherTaskKind GatheringTaskKindForTesting(EntityId personId) => _gatheringModule?.GetTaskKind(personId) ?? GatherTaskKind.None;
-
-        /// <summary>For tests: whether this person holds a real job (see JobsModule.IsEmployed) - a founder hired into a new building's job slot correctly has no gathering task, not an idle one.</summary>
-        public bool IsEmployedForTesting(EntityId personId) => _jobsModule?.IsEmployed(personId) ?? false;
-
-        /// <summary>For tests: whether this person is a founder (see PeopleModule.IsFounder) - "people" lists everyone, including the monarch, who never has a gathering task.</summary>
-        public bool IsFounderForTesting(EntityId personId) => _peopleModule?.IsFounder(personId) ?? false;
-
         /// <summary>For tests: the simulation's current state hash.</summary>
         public ulong StateHashForTesting => _simulation.ComputeStateHash();
-
-        /// <summary>For tests: appends throwaway lines to the log without going through a real command.</summary>
-        public void AppendLogLinesForTesting(int count)
-        {
-            for (int i = 0; i < count; i++)
-            {
-                AppendLog($"test line {i}");
-            }
-        }
 
         /// <summary>For tests: whether the question popup is currently shown.</summary>
         public bool IsQuestionPopupOpen => _questionPopupRoot.style.display == DisplayStyle.Flex;
@@ -370,29 +120,11 @@ namespace TheEmptying.Presentation
             ResolveFolders();
             StartupReport report = BuildSimulation();
             BuildUi();
-            WireInput();
-            BuildMapMovementPresentation();
-            BuildLandPresentation();
-            BuildMapResourcesPresentation();
-            BuildBuildingsPresentation();
-            BuildPeoplePresentation();
-
-            Application.logMessageReceived += OnUnityLogMessage;
-            AppendLog($"Startup report:\n{report}");
+            Debug.Log($"[TheEmptying] Startup report:\n{report}");
         }
 
         private void Update()
         {
-            if (Keyboard.current != null && Keyboard.current.f9Key.wasPressedThisFrame)
-            {
-                ShowToast(WriteStateDump());
-            }
-
-            if (_toastLabel != null && _toastLabel.style.display == DisplayStyle.Flex && Time.unscaledTime >= _toastHideAtTime)
-            {
-                _toastLabel.style.display = DisplayStyle.None;
-            }
-
             RefreshQuestionPopup();
 
             if (_paused || IsBlockedByPendingQuestion())
@@ -412,11 +144,6 @@ namespace TheEmptying.Presentation
 
             if (ticksToRun > 0)
             {
-                // Once per frame, after every tick this frame has run, not once per tick: a single
-                // frame can step many ticks at once (a higher game speed, or catching up after a slow
-                // frame), and the presenter needs the real time this whole batch took to smoothly
-                // interpolate movers across it, not just whatever the very last tick alone covered.
-                _mapPresenter?.OnTickAdvanced();
                 RefreshHud();
             }
         }
@@ -437,12 +164,6 @@ namespace TheEmptying.Presentation
             }
 
             return _simulation.RuleRunner.PendingQuestions.Any(q => !_answeredQuestionIds.Contains(q.QuestionId));
-        }
-
-        private void OnDestroy()
-        {
-            Application.logMessageReceived -= OnUnityLogMessage;
-            _actions?.Disable();
         }
 
         #region Startup
@@ -469,209 +190,19 @@ namespace TheEmptying.Presentation
             return sources;
         }
 
-        /// <summary>3.9f: behind setting.debug.log_task_changes, logs every hand-gathering task change - who, old task, new task, why.</summary>
-        public const string TaskChangeLogSettingId = "setting.debug.log_task_changes";
-
-        /// <summary>3.9i: off (12-hour, AM/PM) by default; a later settings panel will let the player flip it.</summary>
-        public const string Clock24hSettingId = "setting.ui.clock_24h";
-
-        /// <summary>
-        /// 3.9e/3.9f: these debug settings default off (even in a loaded save, since settings
-        /// round-trip with the save), but the interactive Editor always forces them on so a hand
-        /// test can watch the logs without remembering to flip them. Application.isBatchMode is
-        /// also true for batch-mode test runs (EditMode and PlayMode), which must NOT get this
-        /// forced on - a long real-time PlayMode test driving many founders generates a large
-        /// volume of these logs every tick otherwise, which grows Unity's own log/console buffers
-        /// and was a real contributor to batch-mode test runs being killed for low memory.
-        /// </summary>
-        private void ForceDebugLoggingDefaultInEditor()
-        {
-#if UNITY_EDITOR
-            if (!Application.isBatchMode)
-            {
-                _simulation.Settings.Set(WorldClickDebugLogger.EnabledSettingId, 1);
-                _simulation.Settings.Set(TaskChangeLogSettingId, 1);
-                _simulation.Settings.Set(StrategyCameraController.LogCameraInputSettingId, 1);
-            }
-#endif
-        }
-
-        /// <summary>3.9f: logs every hand-gathering task change behind setting.debug.log_task_changes - re-subscribed whenever the simulation (and its EventBus) is rebuilt, by a new game or a load.</summary>
-        private void SubscribeDebugEventLogging()
-        {
-            _simulation.Events.Subscribe(GatheringModule.TaskChangedEventId, e =>
-            {
-                if (_simulation.Settings.Get(TaskChangeLogSettingId) == 0)
-                {
-                    return;
-                }
-
-                EntityId person = e.Data.GetEntity("person");
-                string oldTask = e.Data.GetString("oldTask");
-                string newTask = e.Data.GetString("newTask");
-                string reason = e.Data.GetString("reason");
-                Debug.Log($"[TaskChange] {person}: {oldTask} -> {newTask} ({reason})");
-            });
-        }
-
         private StartupReport BuildSimulation()
         {
             List<string> sources = ResolveSourceFolders();
             List<ContentAssetDefinition> contentAssets = LoadContentAssetDefinitions();
             IModule[] modules = ModuleCatalog.CreateModules();
-            _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
-            _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
-            _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
-            _landModule = modules.OfType<LandModule>().FirstOrDefault();
-            _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
-            _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
-            _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
-            _mapResourcesModule = modules.OfType<MapResourcesModule>().FirstOrDefault();
-            _gatheringModule = modules.OfType<GatheringModule>().FirstOrDefault();
-            _inventoryModule = modules.OfType<InventoryModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
-            ForceDebugLoggingDefaultInEditor();
-            SubscribeDebugEventLogging();
 
             BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
 
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
             return report;
-        }
-
-        /// <summary>
-        /// A flat ground plane, a mover capsule per entity the map/movement
-        /// module is tracking, and a simple strategy camera, all built in
-        /// code to match the map's actual size (no scene authoring needed).
-        /// </summary>
-        private void BuildMapMovementPresentation()
-        {
-            if (_mapMovementModule == null)
-            {
-                return;
-            }
-
-            InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
-
-            Camera camera = Camera.main;
-            if (camera != null)
-            {
-                _cameraController = camera.gameObject.AddComponent<StrategyCameraController>();
-                _cameraController.Initialize(gameplayMap, _simulation.Settings);
-
-                MapGrid grid = _mapMovementModule.Grid;
-                var mapCenter = new Vector3(
-                    (float)(grid.Width * grid.CellSizeMeters) * 0.5f,
-                    0f,
-                    (float)(grid.Depth * grid.CellSizeMeters) * 0.5f);
-                _cameraController.PlaceAbove(mapCenter, 80f);
-            }
-
-            var presenterObject = new GameObject("MapMovementPresenter");
-            _mapPresenter = presenterObject.AddComponent<MapMovementPresenter>();
-            _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, _uiDocument.rootVisualElement, OnPersonSelected);
-            _mapPresenter.SetPeopleModule(_peopleModule);
-            _mapPresenter.SetWealthModule(_wealthModule);
-            _mapPresenter.SetGatheringModule(_gatheringModule);
-        }
-
-        private void BuildLandPresentation()
-        {
-            if (_landModule == null || _mapMovementModule == null)
-            {
-                return;
-            }
-
-            InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
-            var presenterObject = new GameObject("LandPresenter");
-            _landPresenter = presenterObject.AddComponent<LandPresenter>();
-            _landPresenter.Initialize(_landModule, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnWorldEntitySelected);
-            _landPresenter.SetPeopleModule(_peopleModule);
-        }
-
-        private void BuildMapResourcesPresentation()
-        {
-            if (_mapResourcesModule == null || _mapMovementModule == null)
-            {
-                return;
-            }
-
-            var presenterObject = new GameObject("MapResourcesPresenter");
-            _mapResourcesPresenter = presenterObject.AddComponent<TheEmptying.Presentation.MapResources.MapResourcesPresenter>();
-            _mapResourcesPresenter.Initialize(_mapResourcesModule, _mapMovementModule.Grid, Camera.main, _uiDocument.rootVisualElement, OnWorldEntitySelected);
-        }
-
-        private void BuildBuildingsPresentation()
-        {
-            if (_buildingsModule == null || _mapMovementModule == null)
-            {
-                return;
-            }
-
-            InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
-            var presenterObject = new GameObject("BuildingsPresenter");
-            _buildingsPresenter = presenterObject.AddComponent<BuildingsPresenter>();
-            _buildingsPresenter.Initialize(_buildingsModule, _inventoryModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnBuildingSelected, OnInitialStockpilePlaced, _simulation.Settings);
-
-            var panelObject = new GameObject("BuildingPanelPresenter");
-            _buildingPanelPresenter = panelObject.AddComponent<BuildingPanelPresenter>();
-            _buildingPanelPresenter.Initialize(_buildingsModule, _jobsModule, _marketModule, _inventoryModule, _gatheringModule, _uiDocument.rootVisualElement, command => _simulation.Commands.Execute(command));
-
-            var stockpilePanelObject = new GameObject("StockpilePanelPresenter");
-            _stockpilePanelPresenter = stockpilePanelObject.AddComponent<StockpilePanelPresenter>();
-            _stockpilePanelPresenter.Initialize(_buildingsModule, _inventoryModule, _uiDocument.rootVisualElement);
-
-            if (_buildingsModule.NeedsInitialStockpilePlacement)
-            {
-                SetPaused(true);
-            }
-        }
-
-        private void BuildPeoplePresentation()
-        {
-            if (_peopleModule == null)
-            {
-                return;
-            }
-
-            var panelObject = new GameObject("PeoplePanelPresenter");
-            _peoplePanelPresenter = panelObject.AddComponent<PeoplePanelPresenter>();
-            _peoplePanelPresenter.Initialize(_peopleModule, _gatheringModule, _jobsModule, _buildingsModule, _mapMovementModule, _cameraController, _uiDocument.rootVisualElement);
-
-            var debugReadoutObject = new GameObject("DebugReadoutPresenter");
-            _debugReadoutPresenter = debugReadoutObject.AddComponent<DebugReadoutPresenter>();
-            _debugReadoutPresenter.Initialize(_peopleModule, _gatheringModule, _mapMovementModule, _peoplePanelPresenter, _uiDocument.rootVisualElement);
-        }
-
-        /// <summary>The player just placed the starting stockpile: nothing else to gate on, so resume play automatically.</summary>
-        private void OnInitialStockpilePlaced()
-        {
-            SetPaused(false);
-        }
-
-        /// <summary>
-        /// 3.10b2: a land plot or resource node clicked in the world - neither has its own panel yet,
-        /// so this just records the inspection to the console's log for later, without popping the
-        /// console open (world clicks must never do that - see OnPersonSelected and OnBuildingSelected).
-        /// </summary>
-        private void OnWorldEntitySelected(EntityId id)
-        {
-            AppendLog($"> inspect {id}");
-            AppendLog(_simulation.Commands.Execute($"inspect {id}"));
-        }
-
-        /// <summary>3.10b2: clicking a person in the world opens the People panel with them selected and the camera moved to them, exactly like a row click - never the debug console.</summary>
-        private void OnPersonSelected(EntityId id)
-        {
-            _peoplePanelPresenter?.ShowWithPersonSelected(id);
-        }
-
-        /// <summary>3.10b2: clicking a building opens only the building panel - never the debug console.</summary>
-        private void OnBuildingSelected(EntityId id)
-        {
-            _buildingPanelPresenter?.Show(id);
         }
 
         /// <summary>Converts every ScriptableObject content asset in the shipped catalog into the plain records the simulation reads.</summary>
@@ -680,7 +211,7 @@ namespace TheEmptying.Presentation
             var catalog = Resources.Load<ContentCatalog>("ContentCatalog");
             if (catalog == null)
             {
-                Debug.LogError("[TheEmptying] Could not load ContentCatalog from Resources. Player-facing content (goods, needs, zones, building types, recipes) will be missing.");
+                Debug.LogError("[TheEmptying] Could not load ContentCatalog from Resources.");
                 return new List<ContentAssetDefinition>();
             }
 
@@ -691,12 +222,7 @@ namespace TheEmptying.Presentation
 
         #region UI
 
-        /// <summary>
-        /// One UIDocument hosts both the HUD and the console, so draw order
-        /// between them is just child order (the console is added after the
-        /// HUD, so it draws above it) instead of relying on separate panels'
-        /// sort order.
-        /// </summary>
+        /// <summary>One UIDocument hosts both the HUD and the question popup.</summary>
         private void BuildUi()
         {
             var panelSettings = Resources.Load<PanelSettings>("GamePanelSettings");
@@ -720,13 +246,9 @@ namespace TheEmptying.Presentation
             root.style.right = 0;
             root.style.top = 0;
             root.style.bottom = 0;
-            // Column flow, rather than absolute positioning for every child, means
-            // the console is placed after wherever the HUD actually ends up, so
-            // the two can never overlap regardless of the HUD's real height.
             root.style.flexDirection = FlexDirection.Column;
 
             BuildHud(root);
-            BuildConsole(root);
             BuildQuestionPopup(root);
         }
 
@@ -806,7 +328,7 @@ namespace TheEmptying.Presentation
             string rejection = _simulation.AnswerQuestion(questionId, choiceNumber);
             if (rejection != null)
             {
-                AppendLog(rejection, Color.yellow);
+                Debug.LogWarning($"[TheEmptying] {rejection}");
                 return;
             }
 
@@ -839,157 +361,13 @@ namespace TheEmptying.Presentation
             };
 
             _dateLabel = new Label { style = { color = Color.white, marginRight = 16 } };
-            _speedLabel = new Label { style = { color = Color.white, marginRight = 16 } };
-            _treasuryLabel = new Label { style = { color = Color.white } };
+            _speedLabel = new Label { style = { color = Color.white } };
 
             _hudPanel.Add(_dateLabel);
             _hudPanel.Add(_speedLabel);
-            _hudPanel.Add(_treasuryLabel);
             root.Add(_hudPanel);
 
-            _toastLabel = new Label
-            {
-                style =
-                {
-                    position = Position.Absolute,
-                    left = 8,
-                    top = 40,
-                    paddingLeft = 6,
-                    paddingRight = 6,
-                    paddingTop = 4,
-                    paddingBottom = 4,
-                    color = Color.white,
-                    backgroundColor = new Color(0f, 0f, 0f, 0.6f),
-                    display = DisplayStyle.None
-                }
-            };
-            root.Add(_toastLabel);
-
             RefreshHud();
-        }
-
-        /// <summary>3.10b4: a brief on-screen message (3 seconds), for things like "state dump written" that the console log alone might not be open to show.</summary>
-        private void ShowToast(string message)
-        {
-            if (_toastLabel == null)
-            {
-                return;
-            }
-
-            _toastLabel.text = message;
-            _toastLabel.style.display = DisplayStyle.Flex;
-            _toastHideAtTime = Time.unscaledTime + 3f;
-        }
-
-        /// <summary>
-        /// 3.10b4: F9 writes a plain-text snapshot of the whole game to Logs/ - the in-game time, the
-        /// stockpile, every construction site (materials, labor, workers), and every person (the same
-        /// fields as the debug readout, plus their location) - for the user to attach when reporting a
-        /// hand-tested bug. Returns the message to show on screen.
-        /// </summary>
-        private string WriteStateDump()
-        {
-            try
-            {
-                var sb = new StringBuilder();
-                GameDate date = _simulation.Clock.CurrentDate;
-                bool use24h = _simulation.Settings.Get(Clock24hSettingId) != 0;
-                sb.AppendLine($"The Emptying state dump - {date}, {date.ToClockString(use24h)}");
-                sb.AppendLine();
-
-                sb.AppendLine("== Stockpile ==");
-                if (_buildingsModule != null && _inventoryModule != null && _buildingsModule.TryFindCrownStorehouse(out EntityId storehouseId))
-                {
-                    List<KeyValuePair<string, int>> goods = _inventoryModule.GetAll(storehouseId).OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList();
-                    if (goods.Count == 0)
-                    {
-                        sb.AppendLine("  Empty.");
-                    }
-                    else
-                    {
-                        foreach (KeyValuePair<string, int> good in goods)
-                        {
-                            sb.AppendLine($"  {good.Key}: {good.Value}");
-                        }
-                    }
-                }
-                else
-                {
-                    sb.AppendLine("  No stockpile yet.");
-                }
-
-                sb.AppendLine();
-                sb.AppendLine("== Construction sites ==");
-                if (_buildingsModule != null)
-                {
-                    foreach (KeyValuePair<EntityId, BuildingState> row in _buildingsModule.Buildings)
-                    {
-                        BuildingState site = row.Value;
-                        if (site.Construction == null)
-                        {
-                            continue;
-                        }
-
-                        BuildingType type = _buildingsModule.GetBuildingType(site.BuildingTypeId);
-                        double laborNeeded = _buildingsModule.GetLaborHoursNeeded(row.Key);
-                        sb.AppendLine($"  {type?.Name ?? site.BuildingTypeId} {row.Key} at ({site.Rect.X},{site.Rect.Y}):");
-                        sb.AppendLine($"    Labor: {site.Construction.LaborHoursDone:F1}/{laborNeeded:F1} hours");
-
-                        if (type != null)
-                        {
-                            foreach (GoodAmount cost in type.ConstructionCost)
-                            {
-                                int delivered = site.Construction.DeliveredGoods.TryGetValue(cost.Good.Id, out int d) ? d : 0;
-                                int carried = _gatheringModule?.GetCarriedTowardSite(row.Key, cost.Good.Id) ?? 0;
-                                sb.AppendLine($"    {cost.Good.Id}: {delivered}/{cost.Amount} delivered, {carried} carried");
-                            }
-                        }
-
-                        if (_gatheringModule != null)
-                        {
-                            foreach ((EntityId person, string description) in _gatheringModule.GetWorkersAtSite(row.Key))
-                            {
-                                sb.AppendLine($"    {person}: {description}");
-                            }
-                        }
-                    }
-                }
-
-                sb.AppendLine();
-                sb.AppendLine("== People ==");
-                if (_peopleModule != null)
-                {
-                    foreach (KeyValuePair<EntityId, PersonState> row in _peopleModule.People)
-                    {
-                        EntityId id = row.Key;
-                        PersonState person = row.Value;
-                        GridPoint? position = _mapMovementModule != null && _mapMovementModule.IsMover(id) ? _mapMovementModule.GetCell(id) : (GridPoint?)null;
-                        GatherTaskKind kind = _gatheringModule?.GetTaskKind(id) ?? GatherTaskKind.None;
-
-                        sb.AppendLine($"  {person.FullName} ({id}) at {(position.HasValue ? position.Value.ToString() : "unknown")}:");
-                        sb.AppendLine($"    Task: {GatheringModule.DescribeTaskKind(kind)}");
-                        sb.AppendLine($"    Phase: {_gatheringModule?.DescribeTaskPhase(id) ?? "idle"}");
-                        sb.AppendLine($"    Carrying: {_gatheringModule?.DescribeCarrying(id) ?? "nothing"}");
-                        sb.AppendLine($"    On shift: {((_gatheringModule?.IsOnShift() ?? false) ? "yes" : "no")}");
-                        sb.AppendLine($"    Reason: {_gatheringModule?.GetTaskReason(id) ?? ""}");
-                    }
-                }
-
-                string fileName = $"state_dump_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt";
-                string logsFolder = Path.Combine(Application.dataPath, "..", "Logs");
-                Directory.CreateDirectory(logsFolder);
-                string path = Path.Combine(logsFolder, fileName);
-                File.WriteAllText(path, sb.ToString());
-
-                AppendLog($"State dump written to {fileName}.");
-                return $"State dump written to {fileName}";
-            }
-            catch (Exception ex)
-            {
-                string message = $"State dump failed: {ex.Message}";
-                AppendLog(message, Color.yellow);
-                return message;
-            }
         }
 
         private void RefreshHud()
@@ -1000,347 +378,9 @@ namespace TheEmptying.Presentation
             }
 
             GameDate date = _simulation.Clock.CurrentDate;
-            bool use24h = _simulation.Settings.Get(Clock24hSettingId) != 0;
-            _dateLabel.text = $"{date}, {date.ToClockString(use24h)}";
+            _dateLabel.text = $"{date}, {date.ToClockString(false)}";
             _speedLabel.text = _paused ? "Paused" : $"{(int)_speed}x";
-            _treasuryLabel.text = _wealthModule != null ? $"Treasury: {_wealthModule.GetBalance(AccountId.Crown)}" : "";
         }
-
-        #region Console
-
-        private void BuildConsole(VisualElement root)
-        {
-            _consoleRoot = new VisualElement
-            {
-                style =
-                {
-                    // Normal flow, placed right after the HUD in the column root,
-                    // plus a small gap, so the two never overlap.
-                    marginTop = ConsoleGapBelowHud,
-                    width = Length.Percent(100),
-                    height = Length.Percent(40),
-                    overflow = Overflow.Hidden,
-                    backgroundColor = ConsoleBackgroundColorValue,
-                    flexDirection = FlexDirection.Column,
-                    paddingLeft = 8,
-                    paddingRight = 8,
-                    paddingTop = 8,
-                    paddingBottom = 8
-                }
-            };
-
-            _consoleLog = new ScrollView
-            {
-                style =
-                {
-                    flexGrow = 1,
-                    minHeight = 80,
-                    overflow = Overflow.Hidden,
-                    color = Color.white,
-                    backgroundColor = new Color(1f, 1f, 1f, 0.05f)
-                }
-            };
-
-            // Without a theme style sheet, the viewport's own default clipping rule
-            // (normally supplied by the theme) doesn't apply; set it explicitly so
-            // log content can never draw outside the scroll view, theme or no theme.
-            _consoleLog.contentViewport.style.overflow = Overflow.Hidden;
-
-            // Either the content growing (new lines) or the viewport resizing can
-            // change how much there is to scroll; re-apply the sticky scroll on both.
-            _consoleLog.contentContainer.RegisterCallback<GeometryChangedEvent>(_ => OnConsoleLogGeometryChanged());
-            _consoleLog.contentViewport.RegisterCallback<GeometryChangedEvent>(_ => OnConsoleLogGeometryChanged());
-
-            // Detecting "the player scrolled" from the scrollbar's own value-changed
-            // notification doesn't work: that notification isn't synchronous with our
-            // own writes to it, so under rapid repeated scroll-to-bottom calls our own
-            // writes get misread as the player scrolling away. Instead, react to the
-            // actual input that only ever comes from the player - wheel, and any
-            // pointer interaction with the scrollbar itself (thumb drag, track click,
-            // arrow buttons) - never something our own code raises.
-            _consoleLog.RegisterCallback<WheelEvent>(_ => ScheduleUserScrollCheck(), TrickleDown.TrickleDown);
-            _consoleLog.verticalScroller.RegisterCallback<PointerDownEvent>(_ => ScheduleUserScrollCheck(), TrickleDown.TrickleDown);
-            _consoleLog.verticalScroller.RegisterCallback<PointerUpEvent>(_ => ScheduleUserScrollCheck(), TrickleDown.TrickleDown);
-
-            _consoleInput = new TextField
-            {
-                style =
-                {
-                    flexShrink = 0,
-                    height = 32,
-                    marginTop = 4
-                }
-            };
-
-            // The default theme styles the TextField's inner text box (the
-            // "unity-text-input" element), overriding colors set on the outer
-            // TextField itself; style that inner element directly so typed
-            // text is actually readable.
-            _consoleInputTextBox = _consoleInput.Q("unity-text-input");
-            if (_consoleInputTextBox != null)
-            {
-                _consoleInputTextBox.style.color = Color.white;
-                _consoleInputTextBox.style.backgroundColor = new Color(0f, 0f, 0f, 0.6f);
-                var borderColor = new Color(1f, 1f, 1f, 0.35f);
-                _consoleInputTextBox.style.borderTopWidth = 1;
-                _consoleInputTextBox.style.borderBottomWidth = 1;
-                _consoleInputTextBox.style.borderLeftWidth = 1;
-                _consoleInputTextBox.style.borderRightWidth = 1;
-                _consoleInputTextBox.style.borderTopColor = borderColor;
-                _consoleInputTextBox.style.borderBottomColor = borderColor;
-                _consoleInputTextBox.style.borderLeftColor = borderColor;
-                _consoleInputTextBox.style.borderRightColor = borderColor;
-            }
-            else
-            {
-                Debug.LogError("[TheEmptying] Could not find the console input's inner text box ('unity-text-input'); typed text may be unreadable.");
-            }
-
-            _consoleRoot.Add(_consoleLog);
-            _consoleRoot.Add(_consoleInput);
-            root.Add(_consoleRoot);
-
-            _consoleInput.RegisterCallback<KeyDownEvent>(OnConsoleKeyDown, TrickleDown.TrickleDown);
-
-            SetConsoleOpen(false);
-        }
-
-        private void OnConsoleKeyDown(KeyDownEvent evt)
-        {
-            switch (evt.keyCode)
-            {
-                case KeyCode.Return:
-                case KeyCode.KeypadEnter:
-                    RunConsoleInput();
-                    evt.StopPropagation();
-                    evt.PreventDefault();
-                    break;
-                case KeyCode.UpArrow:
-                    RecallHistory(-1);
-                    evt.StopPropagation();
-                    evt.PreventDefault();
-                    break;
-                case KeyCode.DownArrow:
-                    RecallHistory(1);
-                    evt.StopPropagation();
-                    evt.PreventDefault();
-                    break;
-                case KeyCode.BackQuote:
-                case KeyCode.F1:
-                    // These toggle the console itself (via the Input System action,
-                    // handled separately); never let them type into the field.
-                    evt.StopPropagation();
-                    evt.PreventDefault();
-                    break;
-            }
-        }
-
-        /// <summary>Runs whatever's currently typed, as if Enter had been pressed. Returns the command's result text (null if the input was blank).</summary>
-        private string RunConsoleInput()
-        {
-            string input = _consoleInput.value;
-            if (string.IsNullOrWhiteSpace(input))
-            {
-                return null;
-            }
-
-            _commandHistory.Add(input);
-            _historyIndex = _commandHistory.Count;
-
-            // Running a command always resumes following the log to the bottom,
-            // even if the player had scrolled up to read older lines.
-            _stickToBottom = true;
-
-            AppendLog($"> {input}");
-            string result = _simulation.Commands.Execute(input);
-            AppendLog(result);
-
-            _consoleInput.SetValueWithoutNotify(string.Empty);
-            RefocusConsoleInput();
-            return result;
-        }
-
-        private void RecallHistory(int direction)
-        {
-            if (_commandHistory.Count == 0)
-            {
-                return;
-            }
-
-            _historyIndex = Mathf.Clamp(_historyIndex + direction, 0, _commandHistory.Count - 1);
-            _consoleInput.SetValueWithoutNotify(_commandHistory[_historyIndex]);
-            RefocusConsoleInput();
-        }
-
-        /// <summary>Keeps the input ready to type into without clicking: deferred one step, since focusing the same frame the value changed isn't reliable.</summary>
-        private void RefocusConsoleInput()
-        {
-            _consoleInput.schedule.Execute(() => _consoleInput.Focus());
-        }
-
-        private void AppendLog(string text) => AppendLog(text, Color.white);
-
-        private void AppendLog(string text, Color color)
-        {
-            var label = new Label(text)
-            {
-                style =
-                {
-                    position = Position.Relative,
-                    color = color,
-                    whiteSpace = WhiteSpace.Normal
-                }
-            };
-            _consoleLog.Add(label);
-
-            // Cap the log so it can't grow without limit; drop the oldest lines first.
-            while (_consoleLog.contentContainer.childCount > MaxLogLines)
-            {
-                _consoleLog.contentContainer.RemoveAt(0);
-            }
-
-            // No scroll attempt here: the content container's size isn't real
-            // until a layout pass actually measures the line(s) just added, which
-            // is exactly what OnConsoleLogGeometryChanged below reacts to. Trying
-            // eagerly here would read stale (or, for a line added before any
-            // layout pass has ever run, uninitialized) sizes.
-        }
-
-        /// <summary>
-        /// Either the content growing or the viewport resizing changes how much
-        /// there is to scroll. While stuck to the bottom, follow every such
-        /// change - this persists across every call (not a one-shot flag), so it
-        /// keeps retrying for as long as new content keeps arriving in the same
-        /// frame, and is never left stale by an early attempt.
-        /// </summary>
-        private void OnConsoleLogGeometryChanged()
-        {
-            if (!_stickToBottom)
-            {
-                return;
-            }
-
-            // Defer one step so the ScrollView has had its own chance to
-            // recompute the scroller's range for the new size before we read it.
-            _consoleLog.schedule.Execute(ApplyStickyScrollToBottom);
-        }
-
-        private void ApplyStickyScrollToBottom()
-        {
-            if (!_stickToBottom)
-            {
-                return;
-            }
-
-            // Move the scroller itself (the ScrollView's own mechanism), not just
-            // the content offset, so the visible thumb always matches.
-            _consoleLog.verticalScroller.value = _consoleLog.verticalScroller.highValue;
-        }
-
-        /// <summary>
-        /// Wheel or a pointer interaction with the scrollbar just happened; check
-        /// where that leaves the view. Landing back at the bottom resumes
-        /// sticking; anything else turns it off so incoming lines don't yank the
-        /// player back down while they're reading history.
-        /// </summary>
-        private void ScheduleUserScrollCheck()
-        {
-            _consoleLog.schedule.Execute(() =>
-            {
-                float highValue = _consoleLog.verticalScroller.highValue;
-                _stickToBottom = _consoleLog.verticalScroller.value >= highValue - 1f;
-            });
-        }
-
-        /// <summary>Mirrors Unity's own log messages into the console, color-coded and prefixed with the in-game time, subject to the current log filter.</summary>
-        private void OnUnityLogMessage(string message, string stackTrace, LogType type)
-        {
-            if (_logFilterMode == LogFilterMode.Off)
-            {
-                return;
-            }
-
-            bool isProblem = type == LogType.Warning || type == LogType.Error || type == LogType.Exception || type == LogType.Assert;
-            if (_logFilterMode == LogFilterMode.ErrorsAndWarnings && !isProblem)
-            {
-                return;
-            }
-
-            Color color = Color.white;
-            string text = message;
-
-            if (type == LogType.Warning)
-            {
-                color = Color.yellow;
-            }
-            else if (isProblem)
-            {
-                color = new Color(1f, 0.35f, 0.35f);
-                string firstStackLine = string.IsNullOrEmpty(stackTrace) ? null : stackTrace.Split('\n')[0].TrimEnd('\r');
-                if (!string.IsNullOrEmpty(firstStackLine))
-                {
-                    text = $"{text}\n{firstStackLine}";
-                }
-            }
-
-            AppendLog($"[{_simulation.Clock.CurrentDate}] {text}", color);
-        }
-
-        /// <summary>The single entry point for opening/closing the console, so the input action and the PlayMode test both go through the same code.</summary>
-        public void ToggleConsole()
-        {
-            SetConsoleOpen(!_consoleOpen);
-        }
-
-        private void SetConsoleOpen(bool open)
-        {
-            _consoleOpen = open;
-            _consoleRoot.style.display = open ? DisplayStyle.Flex : DisplayStyle.None;
-
-            if (open)
-            {
-                // Safety net: if the key that opened the console (or anything else)
-                // left a stray character in the field, start clean every time.
-                _consoleInput.SetValueWithoutNotify(string.Empty);
-
-                // Focusing the same frame display flips to Flex can run before the
-                // panel has a laid-out element to focus; deferring one step is reliable.
-                _consoleInput.schedule.Execute(() => _consoleInput.Focus());
-            }
-            else
-            {
-                // Release focus so the hidden field can't go on receiving and
-                // inserting keystrokes meant for toggling the console back open.
-                _consoleInput.Blur();
-            }
-        }
-
-        #endregion
-
-        #region Input
-
-        private void WireInput()
-        {
-            var asset = Resources.Load<InputActionAsset>("TheEmptyingControls");
-            if (asset == null)
-            {
-                Debug.LogError("[TheEmptying] Could not load TheEmptyingControls input actions from Resources.");
-                return;
-            }
-
-            _actions = Instantiate(asset);
-            InputActionMap map = _actions.FindActionMap("Gameplay");
-
-            map.FindAction("TogglePause").performed += _ => { if (!_consoleOpen) SetPaused(!_paused); };
-            map.FindAction("SetSpeed1").performed += _ => { if (!_consoleOpen) SetSpeed(1); };
-            map.FindAction("SetSpeed2").performed += _ => { if (!_consoleOpen) SetSpeed(2); };
-            map.FindAction("SetSpeed3").performed += _ => { if (!_consoleOpen) SetSpeed(3); };
-            map.FindAction("ToggleConsole").performed += _ => ToggleConsole();
-
-            _actions.Enable();
-        }
-
-        #endregion
 
         #region IPresentationCommands
 
@@ -1408,39 +448,12 @@ namespace TheEmptying.Presentation
                 }
 
                 IModule[] modules = ModuleCatalog.CreateModules();
-                _mapMovementModule = modules.OfType<MapMovementModule>().FirstOrDefault();
-                _peopleModule = modules.OfType<PeopleModule>().FirstOrDefault();
-                _wealthModule = modules.OfType<WealthModule>().FirstOrDefault();
-                _landModule = modules.OfType<LandModule>().FirstOrDefault();
-                _buildingsModule = modules.OfType<BuildingsModule>().FirstOrDefault();
-                _jobsModule = modules.OfType<JobsModule>().FirstOrDefault();
-                _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
-                _mapResourcesModule = modules.OfType<MapResourcesModule>().FirstOrDefault();
-                _gatheringModule = modules.OfType<GatheringModule>().FirstOrDefault();
-                _inventoryModule = modules.OfType<InventoryModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
 
                 _simulation = loaded;
-                ForceDebugLoggingDefaultInEditor();
-                SubscribeDebugEventLogging();
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
-                _mapPresenter?.Rebind(_mapMovementModule);
-                _mapPresenter?.SetPeopleModule(_peopleModule);
-                _mapPresenter?.SetWealthModule(_wealthModule);
-                _mapPresenter?.SetGatheringModule(_gatheringModule);
-                _landPresenter?.Rebind(_landModule, _mapMovementModule.Grid);
-                _buildingsPresenter?.Rebind(_buildingsModule, _mapMovementModule.Grid);
-                _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule, _marketModule, _inventoryModule, _gatheringModule);
-                _peoplePanelPresenter?.Rebind(_peopleModule, _gatheringModule, _jobsModule, _buildingsModule, _mapMovementModule);
-                _debugReadoutPresenter?.Rebind(_peopleModule, _gatheringModule, _mapMovementModule, _peoplePanelPresenter);
-                _stockpilePanelPresenter?.Rebind(_buildingsModule, _inventoryModule);
-
-                if (_buildingsModule != null && _buildingsModule.NeedsInitialStockpilePlacement)
-                {
-                    SetPaused(true);
-                }
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");
@@ -1501,33 +514,27 @@ namespace TheEmptying.Presentation
             return string.Join("\n", lines);
         }
 
-        #endregion
-
-        #region ILogSink
-
-        public void Log(string message) => Debug.Log(message);
-
-        #endregion
-
-        #region IPresentationCommands (continued)
-
+        /// <summary>No console to filter yet (see R0); kept so the "logs" built-in command has somewhere to go.</summary>
         public string SetLogFilter(string mode)
         {
             switch (mode)
             {
                 case "on":
-                    _logFilterMode = LogFilterMode.All;
                     return "Logs on.";
                 case "off":
-                    _logFilterMode = LogFilterMode.Off;
                     return "Logs off.";
                 case "errors":
-                    _logFilterMode = LogFilterMode.ErrorsAndWarnings;
                     return "Logs limited to errors and warnings.";
                 default:
                     return "Usage: logs <on|off|errors>";
             }
         }
+
+        #endregion
+
+        #region ILogSink
+
+        public void Log(string message) => Debug.Log(message);
 
         #endregion
     }

@@ -3,13 +3,9 @@
     "rootNamespace": "TheEmptying.Tests.PlayMode",
     "references": [
         "TheEmptying.Core",
-        "TheEmptying.Modules.MapMovement",
-        "TheEmptying.Modules.Gathering",
         "TheEmptying.Presentation",
         "UnityEngine.TestRunner",
-        "UnityEditor.TestRunner",
-        "Unity.InputSystem",
-        "Unity.InputSystem.TestFramework"
+        "UnityEditor.TestRunner"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],
