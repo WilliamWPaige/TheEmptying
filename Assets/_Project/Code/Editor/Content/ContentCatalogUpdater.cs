@@ -9,7 +9,7 @@ namespace TheEmptying.Editor.Content
     internal sealed class ContentCatalogUpdater : AssetPostprocessor
     {
         private const string CatalogPath = "Assets/_Project/Data/Resources/ContentCatalog.asset";
-        private const string DataFolder = "Assets/_Project/Data/";
+        private static readonly string[] WatchedFolders = { "Assets/_Project/Data/", "Assets/_Project/Content/" };
 
         private static void OnPostprocessAllAssets(string[] importedAssets, string[] deletedAssets, string[] movedAssets, string[] movedFromAssetPaths)
         {
@@ -28,11 +28,10 @@ namespace TheEmptying.Editor.Content
         private static bool IsRelevantPath(string path)
         {
             return path != CatalogPath
-                   && path.StartsWith(DataFolder, StringComparison.Ordinal)
-                   && path.EndsWith(".asset", StringComparison.Ordinal);
+                   && path.EndsWith(".asset", StringComparison.Ordinal)
+                   && WatchedFolders.Any(folder => path.StartsWith(folder, StringComparison.Ordinal));
         }
 
-        /// <summary>Empty since R0 removed the Milestone 3 content types; syncs come back here as each type is rebuilt.</summary>
         public static void Refresh()
         {
             var catalog = AssetDatabase.LoadAssetAtPath<ContentCatalog>(CatalogPath);
@@ -40,6 +39,12 @@ namespace TheEmptying.Editor.Content
             {
                 return;
             }
+
+            catalog.SetContentsForEditor(
+                ContentAssetDuplicateCheck.FindAllOfSameType<UnitAsset>(),
+                ContentAssetDuplicateCheck.FindAllOfSameType<ResourceAsset>(),
+                ContentAssetDuplicateCheck.FindAllOfSameType<BuildingAsset>(),
+                ContentAssetDuplicateCheck.FindAllOfSameType<ItemAsset>());
 
             EditorUtility.SetDirty(catalog);
             AssetDatabase.SaveAssets();

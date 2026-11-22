@@ -43,6 +43,9 @@ namespace TheEmptying.Presentation.World
         /// <summary>Set by the Escape menu while it (or its Options/confirm sub-panels) is open: the camera stays completely still, same as while a text field is focused.</summary>
         public bool InputSuspended { get; set; }
 
+        /// <summary>The ground point the camera is centered on (always at y = 0; panning never changes height). Used by the Spawn cheat (R5) to place a model "at the camera's center".</summary>
+        public Vector3 FocusPoint => _focusPoint;
+
         public void Initialize(InputActionMap gameplayMap, SettingsRegistry settings, VisualElement uiRoot, float groundWidthMeters, float groundDepthMeters)
         {
             _panAction = gameplayMap.FindAction("Pan");

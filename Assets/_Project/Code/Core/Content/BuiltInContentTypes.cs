@@ -1,15 +1,20 @@
+using System;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Rules;
 
 namespace TheEmptying.Core.Content
 {
-    /// <summary>The core's own content types: event definitions, module manifests, setting definitions, and rules.</summary>
+    /// <summary>The core's own content types: event definitions, module manifests, setting definitions, rules, and the asset tool's unit, resource, building and item types (R5).</summary>
     public static class BuiltInContentTypes
     {
         public const string EventDefinitionTypeName = "event_definition";
         public const string ModuleManifestTypeName = "module_manifest";
         public const string SettingDefinitionTypeName = "setting_definition";
         public const string RuleTypeName = "rule";
+        public const string UnitTypeName = "unit";
+        public const string ResourceTypeName = "resource";
+        public const string BuildingTypeName = "building";
+        public const string ItemTypeName = "item";
 
         public static void RegisterAll(ContentTypeRegistry registry)
         {
@@ -17,6 +22,10 @@ namespace TheEmptying.Core.Content
             registry.Register(new ContentTypeDefinition(ModuleManifestTypeName, typeof(ModuleManifestContent), ValidateModuleManifest));
             registry.Register(new ContentTypeDefinition(SettingDefinitionTypeName, typeof(SettingDefinition), ValidateSettingDefinition));
             registry.Register(new ContentTypeDefinition(RuleTypeName, typeof(RuleDefinition)));
+            registry.Register(new ContentTypeDefinition(UnitTypeName, typeof(UnitContent), ValidateUnit));
+            registry.Register(new ContentTypeDefinition(ResourceTypeName, typeof(ResourceContent), ValidateResource));
+            registry.Register(new ContentTypeDefinition(BuildingTypeName, typeof(BuildingContent), ValidateBuilding));
+            registry.Register(new ContentTypeDefinition(ItemTypeName, typeof(ItemContent), ValidateItem));
         }
 
         /// <summary>Registers every loaded event_definition content item into the EventDefinitionRegistry. The four calendar definitions stay registered in code.</summary>
@@ -84,6 +93,77 @@ namespace TheEmptying.Core.Content
             else if (content.Default < content.Minimum || content.Default > content.Maximum)
             {
                 context.ReportProblem(content.Id, "default", "must be between minimum and maximum.");
+            }
+        }
+
+        /// <summary>
+        /// A missing Model can't be checked here (it's a UnityEngine prefab
+        /// reference, not something the plain record holds) - that's caught
+        /// by ContentAssetConverter instead. Everything else these four
+        /// types validate (a wrong Id prefix, an empty display name, a
+        /// footprint below 1) goes through here, same as every other
+        /// content type; a missing or duplicate Id is already caught
+        /// generically by ContentLoader itself.
+        /// </summary>
+        private static void CheckIdPrefix(string id, string prefix, ContentValidationContext context)
+        {
+            if (!string.IsNullOrEmpty(id) && !id.StartsWith(prefix, StringComparison.Ordinal))
+            {
+                context.ReportProblem(id, "id", $"must start with '{prefix}'.");
+            }
+        }
+
+        private static void ValidateUnit(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (UnitContent)definition;
+            CheckIdPrefix(content.Id, "unit.", context);
+
+            if (string.IsNullOrEmpty(content.DisplayName))
+            {
+                context.ReportProblem(content.Id, "displayName", "must not be empty.");
+            }
+        }
+
+        private static void ValidateItem(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (ItemContent)definition;
+            CheckIdPrefix(content.Id, "item.", context);
+
+            if (string.IsNullOrEmpty(content.DisplayName))
+            {
+                context.ReportProblem(content.Id, "displayName", "must not be empty.");
+            }
+        }
+
+        private static void ValidateResource(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (ResourceContent)definition;
+            CheckIdPrefix(content.Id, "resource.", context);
+            ValidateFootprint(content.Id, content.DisplayName, content.FootprintWidth, content.FootprintDepth, context);
+        }
+
+        private static void ValidateBuilding(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (BuildingContent)definition;
+            CheckIdPrefix(content.Id, "building.", context);
+            ValidateFootprint(content.Id, content.DisplayName, content.FootprintWidth, content.FootprintDepth, context);
+        }
+
+        private static void ValidateFootprint(string id, string displayName, int footprintWidth, int footprintDepth, ContentValidationContext context)
+        {
+            if (string.IsNullOrEmpty(displayName))
+            {
+                context.ReportProblem(id, "displayName", "must not be empty.");
+            }
+
+            if (footprintWidth < 1)
+            {
+                context.ReportProblem(id, "footprintWidth", "must be at least 1.");
+            }
+
+            if (footprintDepth < 1)
+            {
+                context.ReportProblem(id, "footprintDepth", "must be at least 1.");
             }
         }
     }

@@ -77,6 +77,7 @@ namespace TheEmptying.Presentation
         private readonly CheatMenuRegistry _cheatMenu = new CheatMenuRegistry();
         private DebugWindowPresenter _debugWindow;
         private EscapeMenuPresenter _escapeMenu;
+        private SpawnCheat _spawnCheat;
         private VisualElement _errorBadge;
         private Label _errorBadgeErrorsLabel;
         private Label _errorBadgeWarningsLabel;
@@ -334,6 +335,13 @@ namespace TheEmptying.Presentation
                     }
                 }
             }
+
+            if (_spawnCheat == null)
+            {
+                _spawnCheat = new SpawnCheat(_cameraController);
+            }
+
+            _spawnCheat.BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()
