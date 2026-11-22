@@ -136,7 +136,21 @@ namespace TheEmptying.Presentation
             BuildWorld();
             BuildCheatMenu();
             BuildDebugWindow();
+            LogAndClearAnyStartupFocus();
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
+        }
+
+        /// <summary>
+        /// R2c: logs what (if anything) holds UI focus right after every
+        /// panel is built, so a stuck gameplay-key check can never fail
+        /// silently again, then clears it - nothing the player has not
+        /// clicked into should ever start focused.
+        /// </summary>
+        private void LogAndClearAnyStartupFocus()
+        {
+            Focusable focused = _uiDocument?.rootVisualElement?.panel?.focusController?.focusedElement;
+            Debug.Log($"[TheEmptying] Input: focused element at startup = {(focused == null ? "(none)" : focused.ToString())}");
+            (focused as VisualElement)?.Blur();
         }
 
         private void OnDestroy()
@@ -352,6 +366,9 @@ namespace TheEmptying.Presentation
             // field is actively focused for typing, never that the whole map gets disabled
             // (that is exactly what broke every gameplay key in the old debug console).
             _actions.Enable();
+
+            // R2c: so this can never fail silently again.
+            Debug.Log($"[TheEmptying] Input: controls loaded={_actions != null}, Gameplay map enabled={gameplayMap?.enabled ?? false}");
         }
 
         /// <summary>Space, and the matching HUD button, both funnel through here - and, like every cheat action, through the command system.</summary>
