@@ -60,7 +60,8 @@ namespace TheEmptying.Core.Saves
             IEnumerable<IModule> modules,
             ErrorMode errorMode = ErrorMode.Development,
             ILogSink logSink = null,
-            IEnumerable<ContentAssetDefinition> contentAssets = null)
+            IEnumerable<ContentAssetDefinition> contentAssets = null,
+            IEnumerable<ContentValidationProblem> contentAssetProblems = null)
         {
             (SaveHeader header, Dictionary<string, SaveSectionData> sections) = SaveFile.ReadAll(stream);
 
@@ -68,7 +69,7 @@ namespace TheEmptying.Core.Saves
             List<SaveSourceInfo> currentSources = SourceManifestReader.ReadAll(sourceFolders);
             CompareSources(header, currentSources, report);
 
-            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(header.WorldSeed, sourceFolders, modules, errorMode, isLoading: true, logSink: logSink, contentAssets: contentAssets);
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(header.WorldSeed, sourceFolders, modules, errorMode, isLoading: true, logSink: logSink, contentAssets: contentAssets, contentAssetProblems: contentAssetProblems);
 
             CoreSections.ReadAll(sections, simulation, simulation.Settings, simulation.EventSerializers);
 

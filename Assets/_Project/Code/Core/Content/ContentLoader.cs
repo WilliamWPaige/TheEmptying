@@ -38,10 +38,16 @@ namespace TheEmptying.Core.Content
         public (ContentDatabase Database, ContentLoadReport Report) Load(
             IEnumerable<string> sourceFolders,
             IEnumerable<string> requiredModuleIds = null,
-            IEnumerable<ContentAssetDefinition> assetDefinitions = null)
+            IEnumerable<ContentAssetDefinition> assetDefinitions = null,
+            IEnumerable<ContentValidationProblem> extraProblems = null)
         {
             var database = new ContentDatabase();
             var report = new ContentLoadReport();
+
+            if (extraProblems != null)
+            {
+                report.Problems.AddRange(extraProblems);
+            }
 
             foreach (string folder in sourceFolders ?? Enumerable.Empty<string>())
             {

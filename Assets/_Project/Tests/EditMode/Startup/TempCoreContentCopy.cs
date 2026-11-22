@@ -24,7 +24,7 @@ namespace TheEmptying.Tests.EditMode.Startup
         public static IEnumerable<ContentAssetDefinition> LoadRealContentAssets()
         {
             var catalog = Resources.Load<ContentCatalog>("ContentCatalog");
-            return catalog == null ? new List<ContentAssetDefinition>() : ContentAssetConverter.BuildDefinitions(catalog);
+            return catalog == null ? new List<ContentAssetDefinition>() : ContentAssetConverter.BuildDefinitions(catalog, new List<ContentValidationProblem>());
         }
 
         public string FolderPath { get; }

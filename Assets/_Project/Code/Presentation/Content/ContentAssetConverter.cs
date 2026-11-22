@@ -2,7 +2,6 @@ using System;
 using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
-using UnityEngine;
 
 namespace TheEmptying.Presentation.Content
 {
@@ -12,16 +11,16 @@ namespace TheEmptying.Presentation.Content
     /// alongside the JSON sources. The simulation only ever sees the
     /// records. A missing Model can't be checked there (it's a UnityEngine
     /// prefab reference, not something the plain record holds), so it's
-    /// caught and logged here instead, and that one asset is skipped;
-    /// every other problem (a missing or duplicate Id, a wrong prefix, an
-    /// empty display name, a footprint below 1) goes through ContentLoader's
-    /// own validation, same as every other content type.
+    /// reported here instead - into the same problem list ContentLoader's
+    /// own validation reports into (SimulationBuilder folds the two
+    /// together), so a missing model stops the game exactly like every
+    /// other content problem (R5b).
     /// </summary>
     public static class ContentAssetConverter
     {
         private const string SourceId = "content-assets";
 
-        public static List<ContentAssetDefinition> BuildDefinitions(ContentCatalog catalog)
+        public static List<ContentAssetDefinition> BuildDefinitions(ContentCatalog catalog, List<ContentValidationProblem> problems)
         {
             var definitions = new List<ContentAssetDefinition>();
             if (catalog == null)
@@ -29,16 +28,17 @@ namespace TheEmptying.Presentation.Content
                 return definitions;
             }
 
-            AddSorted(definitions, catalog.Units, BuiltInContentTypes.UnitTypeName, ToRecord);
-            AddSorted(definitions, catalog.ResourceNodes, BuiltInContentTypes.ResourceTypeName, ToRecord);
-            AddSorted(definitions, catalog.Buildings, BuiltInContentTypes.BuildingTypeName, ToRecord);
-            AddSorted(definitions, catalog.Items, BuiltInContentTypes.ItemTypeName, ToRecord);
+            AddSorted(definitions, problems, catalog.Units, BuiltInContentTypes.UnitTypeName, ToRecord);
+            AddSorted(definitions, problems, catalog.ResourceNodes, BuiltInContentTypes.ResourceTypeName, ToRecord);
+            AddSorted(definitions, problems, catalog.Buildings, BuiltInContentTypes.BuildingTypeName, ToRecord);
+            AddSorted(definitions, problems, catalog.Items, BuiltInContentTypes.ItemTypeName, ToRecord);
 
             return definitions;
         }
 
         private static void AddSorted<TAsset>(
             List<ContentAssetDefinition> definitions,
+            List<ContentValidationProblem> problems,
             IReadOnlyList<TAsset> assets,
             string typeName,
             Func<TAsset, ContentDefinition> toRecord)
@@ -48,7 +48,7 @@ namespace TheEmptying.Presentation.Content
             {
                 if (asset.Model == null)
                 {
-                    Debug.LogError($"[TheEmptying] Content: {asset.ContentTypeName} '{asset.name}' has no Model; it will not be loaded.", asset);
+                    problems.Add(new ContentValidationProblem(SourceId, asset.name, asset.Id, "model", "Model is missing."));
                     continue;
                 }
 

@@ -14,6 +14,7 @@ using TheEmptying.Core.Timekeeping;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.DevTools;
 using TheEmptying.Presentation.Menus;
+using TheEmptying.Presentation.Startup;
 using TheEmptying.Presentation.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -133,7 +134,18 @@ namespace TheEmptying.Presentation
         private void Awake()
         {
             ResolveFolders();
-            StartupReport report = BuildSimulation();
+
+            StartupReport report;
+            try
+            {
+                report = BuildSimulation();
+            }
+            catch (ContentValidationException ex)
+            {
+                ShowContentErrorScreen(ex.Report.Problems);
+                return;
+            }
+
             BuildUi();
             WireInput();
             BuildWorld();
@@ -142,6 +154,57 @@ namespace TheEmptying.Presentation
             BuildDebugWindow();
             LogAndClearAnyStartupFocus();
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
+        }
+
+        /// <summary>
+        /// R5b: content problems stop the game before anything that would
+        /// need a simulation gets built - no world, no camera, no cheat
+        /// menu. Logs every problem individually (so the debug window's
+        /// Errors tab shows them too, the same as any other startup
+        /// error) and shows the full-screen panel in its place. Works
+        /// whether the Game scene was reached from the main menu or opened
+        /// directly, since both run through this same Awake().
+        /// </summary>
+        private void ShowContentErrorScreen(IReadOnlyList<ContentValidationProblem> problems)
+        {
+            foreach (ContentValidationProblem problem in problems)
+            {
+                Debug.LogError($"[TheEmptying] Content: {problem}");
+            }
+
+            var panelSettings = Resources.Load<PanelSettings>("GamePanelSettings");
+            if (panelSettings == null)
+            {
+                Debug.LogError("[TheEmptying] Could not load GamePanelSettings from Resources. The content error screen will not render.");
+                return;
+            }
+
+            _uiDocument = gameObject.AddComponent<UIDocument>();
+            _uiDocument.panelSettings = panelSettings;
+            UiPreferences.RegisterPanel(panelSettings);
+
+            VisualElement root = _uiDocument.rootVisualElement;
+            root.style.flexGrow = 1;
+            root.style.position = Position.Absolute;
+            root.style.left = 0;
+            root.style.right = 0;
+            root.style.top = 0;
+            root.style.bottom = 0;
+
+            ContentErrorScreenPresenter.Build(root, problems);
+            BuildDebugWindow();
+
+            var asset = Resources.Load<InputActionAsset>("TheEmptyingControls");
+            if (asset == null)
+            {
+                Debug.LogError("[TheEmptying] Could not load TheEmptyingControls input actions from Resources.");
+                return;
+            }
+
+            _actions = Instantiate(asset);
+            InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
+            gameplayMap.FindAction("ToggleDebugWindow").performed += _ => _debugWindow.ToggleWindow();
+            _actions.Enable();
         }
 
         /// <summary>
@@ -234,10 +297,11 @@ namespace TheEmptying.Presentation
         private StartupReport BuildSimulation()
         {
             List<string> sources = ResolveSourceFolders();
-            List<ContentAssetDefinition> contentAssets = LoadContentAssetDefinitions();
+            var contentAssetProblems = new List<ContentValidationProblem>();
+            List<ContentAssetDefinition> contentAssets = LoadContentAssetDefinitions(contentAssetProblems);
             IModule[] modules = ModuleCatalog.CreateModules();
 
-            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
+            (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets, contentAssetProblems: contentAssetProblems);
             _simulation = simulation;
 
             // The closure reads _simulation live, so it keeps working after a load swaps the field.
@@ -254,7 +318,7 @@ namespace TheEmptying.Presentation
         }
 
         /// <summary>Converts every ScriptableObject content asset in the shipped catalog into the plain records the simulation reads.</summary>
-        private static List<ContentAssetDefinition> LoadContentAssetDefinitions()
+        private static List<ContentAssetDefinition> LoadContentAssetDefinitions(List<ContentValidationProblem> problems)
         {
             var catalog = Resources.Load<ContentCatalog>("ContentCatalog");
             if (catalog == null)
@@ -263,7 +327,7 @@ namespace TheEmptying.Presentation
                 return new List<ContentAssetDefinition>();
             }
 
-            return ContentAssetConverter.BuildDefinitions(catalog);
+            return ContentAssetConverter.BuildDefinitions(catalog, problems);
         }
 
         /// <summary>TEMPORARY (R1): the placeholder ground and the strategy camera that looks at it. Replace once the real map system exists.</summary>
@@ -729,9 +793,10 @@ namespace TheEmptying.Presentation
                 }
 
                 IModule[] modules = ModuleCatalog.CreateModules();
+                var contentAssetProblems = new List<ContentValidationProblem>();
 
                 using var stream = File.OpenRead(path);
-                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
+                (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions(contentAssetProblems), contentAssetProblems: contentAssetProblems);
 
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);

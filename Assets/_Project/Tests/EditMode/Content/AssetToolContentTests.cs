@@ -1,12 +1,10 @@
 using System.Collections.Generic;
 using System.Linq;
-using System.Text.RegularExpressions;
 using NUnit.Framework;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Presentation.Content;
 using UnityEngine;
-using UnityEngine.TestTools;
 
 namespace TheEmptying.Tests.EditMode.Content
 {
@@ -170,8 +168,10 @@ namespace TheEmptying.Tests.EditMode.Content
                 new List<BuildingAsset> { building },
                 new List<ItemAsset> { item });
 
-            List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog);
+            var problems = new List<ContentValidationProblem>();
+            List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog, problems);
 
+            Assert.IsEmpty(problems);
             Assert.AreEqual(4, definitions.Count);
 
             var unitRecord = (UnitContent)definitions.Single(d => d.TypeName == BuiltInContentTypes.UnitTypeName).Definition;
@@ -193,18 +193,20 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual("Log", itemRecord.DisplayName);
         }
 
+        /// <summary>R5b: a missing model is reported, not silently skipped-and-logged - it goes into the same problem list as everything else ContentLoader finds, so it stops the game the same way.</summary>
         [Test]
-        public void BuildDefinitions_SkipsAndLogsAnAssetWithNoModel()
+        public void BuildDefinitions_ReportsAnAssetWithNoModel()
         {
             var unit = ScriptableObject.CreateInstance<UnitAsset>();
             unit.SetForEditor("unit.villager", "Villager", null);
 
             ContentCatalog catalog = MakeCatalog(units: new List<UnitAsset> { unit });
 
-            LogAssert.Expect(LogType.Error, new Regex("has no Model"));
-            List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog);
+            var problems = new List<ContentValidationProblem>();
+            List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog, problems);
 
             Assert.AreEqual(0, definitions.Count);
+            Assert.IsTrue(problems.Any(p => p.ItemId == "unit.villager" && p.Field == "model"));
         }
 
         [Test]
@@ -218,7 +220,7 @@ namespace TheEmptying.Tests.EditMode.Content
 
             ContentCatalog catalog = MakeCatalog(units: new List<UnitAsset> { a, b });
 
-            List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog);
+            List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog, new List<ContentValidationProblem>());
 
             CollectionAssert.AreEqual(new[] { "unit.aardvark", "unit.zebra" }, definitions.ConvertAll(d => d.Definition.Id));
         }
@@ -272,6 +274,32 @@ namespace TheEmptying.Tests.EditMode.Content
             (_, ContentLoadReport report) = loader.Load(null, assetDefinitions: assets);
 
             Assert.IsTrue(report.Problems.Any(p => p.ItemId == "unit.villager" && p.Field == "id"));
+        }
+
+        /// <summary>R5b, FINISH: a missing model is reported alongside an unrelated content problem in the same run, and Development mode's single exception carries both.</summary>
+        [Test]
+        public void MissingModelProblem_FlowsThroughContentLoader_AlongsideOtherProblems()
+        {
+            var unit = ScriptableObject.CreateInstance<UnitAsset>();
+            unit.SetForEditor("unit.villager", "Villager", null);
+
+            ContentCatalog catalog = MakeCatalog(units: new List<UnitAsset> { unit });
+
+            var contentAssetProblems = new List<ContentValidationProblem>();
+            ContentAssetConverter.BuildDefinitions(catalog, contentAssetProblems);
+
+            var otherAssets = new[]
+            {
+                new ContentAssetDefinition(BuiltInContentTypes.ResourceTypeName, new ResourceContent { Id = "resource.tree", DisplayName = "Tree", FootprintWidth = 0, FootprintDepth = 1 }, "content-assets", "resource.tree")
+            };
+
+            var loader = new ContentLoader(CreateTypes(), ErrorMode.Development);
+
+            ContentValidationException ex = Assert.Throws<ContentValidationException>(() =>
+                loader.Load(null, assetDefinitions: otherAssets, extraProblems: contentAssetProblems));
+
+            Assert.IsTrue(ex.Report.Problems.Any(p => p.ItemId == "unit.villager" && p.Field == "model"));
+            Assert.IsTrue(ex.Report.Problems.Any(p => p.ItemId == "resource.tree" && p.Field == "footprintWidth"));
         }
 
         #endregion

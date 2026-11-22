@@ -29,7 +29,8 @@ namespace TheEmptying.Core.Startup
             bool isLoading = false,
             ILogSink logSink = null,
             Action<ContentDatabase> contentOverlay = null,
-            IEnumerable<ContentAssetDefinition> contentAssets = null)
+            IEnumerable<ContentAssetDefinition> contentAssets = null,
+            IEnumerable<ContentValidationProblem> contentAssetProblems = null)
         {
             List<string> sources = sourceFolders?.ToList() ?? new List<string>();
             List<IModule> moduleList = modules?.ToList() ?? new List<IModule>();
@@ -53,7 +54,7 @@ namespace TheEmptying.Core.Startup
 
             // 4. Load and validate all content.
             var loader = new ContentLoader(simulation.ContentTypes, errorMode);
-            (ContentDatabase database, ContentLoadReport contentReport) = loader.Load(sources, assetDefinitions: contentAssets);
+            (ContentDatabase database, ContentLoadReport contentReport) = loader.Load(sources, assetDefinitions: contentAssets, extraProblems: contentAssetProblems);
             simulation.Content = database;
 
             // 5. Register event definitions and settings from the loaded content.
