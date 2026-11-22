@@ -163,7 +163,10 @@ namespace TheEmptying.Presentation.Buildings
             {
                 var type = (BuildingType)entry.Definition;
                 // 3.9i: the keep already exists from the start of the game and can never be placed.
-                if (!type.IsGovernment || type.Id == BuildingsModule.KeepTypeId)
+                // 3.10b: a founder-built starter building is decided and placed by the founders
+                // themselves, never the player - it never appears here, even though it's still a
+                // government (crown-owned) building underneath.
+                if (!type.IsGovernment || type.Id == BuildingsModule.KeepTypeId || type.IsFounderBuilt)
                 {
                     continue;
                 }

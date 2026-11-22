@@ -26,8 +26,9 @@ MonoBehaviour:
   _trainerSlots: 0
   _isBasic: 0
   _isGovernment: 1
+  _isFounderBuilt: 1
   _allowedZones: []
   _isHome: 1
   _householdsProvided: 1
   _homeClass: 0
-  _description: '3.10a placeholder: a crown bootstrap building, built from raw logs and stone alone - cheap, rough lower-class housing, like a cottage.'
+  _description: '3.10a placeholder: a crown bootstrap building, built from raw logs and stone alone - cheap, rough lower-class housing, like a cottage. 3.10b: founders decide to build this themselves, never offered in the player''s build menu.'

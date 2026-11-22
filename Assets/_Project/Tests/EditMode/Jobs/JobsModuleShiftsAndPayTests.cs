@@ -41,6 +41,11 @@ namespace TheEmptying.Tests.EditMode.Jobs
                 simulation.Entities.Destroy(row.Key);
             }
 
+            // 3.10b: this file spawns ad-hoc test people with no home and no concept of immigration
+            // yet - without this, the founders' own "someone is homeless" trigger would build an
+            // unrelated log cabin, competing for the one person these tests actually care about.
+            simulation.Settings.Set(GatheringModule.LogCabinEnabledSettingId, 0);
+
             return (simulation, jobs, buildings, land, wealth, people, inventory);
         }
 

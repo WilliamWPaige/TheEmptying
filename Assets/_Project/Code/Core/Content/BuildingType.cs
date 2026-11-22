@@ -47,6 +47,10 @@ namespace TheEmptying.Core.Content
         [JsonProperty("homeClass")]
         public SocialClass? HomeClass { get; }
 
+        /// <summary>3.10b: a government building the founders build themselves when the town needs it (a saw pit, a camp, a cabin...), never offered in the player's build menu.</summary>
+        [JsonProperty("isFounderBuilt")]
+        public bool IsFounderBuilt { get; }
+
         [JsonConstructor]
         public BuildingType(
             string id,
@@ -61,7 +65,8 @@ namespace TheEmptying.Core.Content
             bool isGovernment,
             IReadOnlyList<ContentRef<Zone>> allowedZones,
             int householdsProvided,
-            SocialClass? homeClass)
+            SocialClass? homeClass,
+            bool isFounderBuilt = false)
         {
             Id = id;
             Name = name;
@@ -76,6 +81,7 @@ namespace TheEmptying.Core.Content
             AllowedZones = allowedZones ?? Array.Empty<ContentRef<Zone>>();
             HouseholdsProvided = householdsProvided;
             HomeClass = homeClass;
+            IsFounderBuilt = isFounderBuilt;
         }
     }
 }

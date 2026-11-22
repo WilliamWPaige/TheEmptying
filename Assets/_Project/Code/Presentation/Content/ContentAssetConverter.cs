@@ -69,7 +69,8 @@ namespace TheEmptying.Presentation.Content
                 asset.IsGovernment,
                 asset.AllowedZones.Where(z => z != null).Select(z => new ContentRef<Zone>(z.Id)).ToList(),
                 asset.HouseholdsProvided,
-                asset.HomeClass);
+                asset.HomeClass,
+                asset.IsFounderBuilt);
 
         public static Recipe ToRecord(RecipeAsset asset) =>
             new Recipe(

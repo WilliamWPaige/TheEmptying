@@ -128,6 +128,10 @@ namespace TheEmptying.Tests.EditMode.Jobs
 
             EntityId owner = sim.Entities.Create(EntityKind.Person);
             EntityId bakeryId = DiscoverAndBuildBakery(sim, buildings, land, wealth, inventory, owner, new GridPoint(50, 50));
+            // 3.10b: no banked hours - the bakery's own flour input (its owner's inventory) must
+            // never run out here, or production would just sit blocked throughout, measuring
+            // nothing about skill speed.
+            inventory.Add(owner, "good.flour", 100000);
             StepDays(sim, 1);
 
             EntityId worker = people.SpawnPerson(30, 30);
@@ -137,17 +141,20 @@ namespace TheEmptying.Tests.EditMode.Jobs
             Assert.IsTrue(jobs.TryGetJobs(bakeryId, out JobsState state));
             Assert.AreEqual(worker, state.Worker.Occupants[0]);
 
+            // 3.10b: measured by loaves produced, not WorkHoursAccumulated - now that production
+            // actually runs (3.10a), that accumulator is repeatedly drained by whole completed
+            // batches and never grows past one batch's worth, so it no longer reflects cumulative
+            // skill speed the way it did while the recipe could never complete at all.
             StepDays(sim, 5); // five days at skill 0 (50% speed)
-            double unskilledGain = state.Worker.WorkHoursAccumulated;
+            int loavesAfterUnskilled = inventory.GetCount(owner, "good.loaf");
 
             people.TryGetPerson(worker, out PersonState workerState);
             workerState.Skills[(int)Skill.Cooking] = 20; // max: 150% speed
 
-            double before = state.Worker.WorkHoursAccumulated;
             StepDays(sim, 5); // the same five days, now at skill 20
-            double skilledGain = state.Worker.WorkHoursAccumulated - before;
+            int skilledGain = inventory.GetCount(owner, "good.loaf") - loavesAfterUnskilled;
 
-            Assert.Greater(skilledGain, unskilledGain, "A skill-20 worker (150% speed) should out-accumulate the same worker's own skill-0 period (50% speed) over the same number of days.");
+            Assert.Greater(skilledGain, loavesAfterUnskilled, "A skill-20 worker (150% speed) should out-produce the same worker's own skill-0 period (50% speed) over the same number of days.");
         }
 
         [Test]

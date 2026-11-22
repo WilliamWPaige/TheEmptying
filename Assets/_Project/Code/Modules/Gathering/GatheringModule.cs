@@ -53,10 +53,26 @@ namespace TheEmptying.Modules.Gathering
         public const string FoodNeededPerPersonPerMonthSettingId = "setting.gathering.food_needed_per_person_per_month";
         public const string WheatFarmerCapSettingId = "setting.gathering.wheat_farmer_cap";
 
+        // 3.10b: founders building their own starter buildings.
+        public const string LogReserveSettingId = "setting.gathering.starter.log_reserve";
+        public const string StoneReserveSettingId = "setting.gathering.starter.stone_reserve";
+        public const string PlankReserveSettingId = "setting.gathering.starter.plank_reserve";
+        public const string StarterBuildingSearchRadiusCellsSettingId = "setting.gathering.starter.search_radius_cells";
+        public const string LogCabinEnabledSettingId = "setting.gathering.starter.log_cabin_enabled";
+        public const string StarterBuildingsEnabledSettingId = "setting.gathering.starter.enabled";
+
         private const string LogGoodId = "good.log";
         private const string StoneGoodId = "good.stone";
         private const string WheatGoodId = "good.wheat";
         private const string LoafGoodId = "good.loaf";
+        private const string PlankGoodId = "good.plank";
+        private const string BlockGoodId = "good.block";
+
+        private const string SawPitTypeId = "building.saw_pit";
+        private const string WoodcuttersCampTypeId = "building.woodcutters_camp";
+        private const string QuarryCampTypeId = "building.quarry";
+        private const string StoneYardTypeId = "building.stone_yard";
+        private const string LogCabinTypeId = "building.log_cabin";
 
         private sealed class HourlySystem : ISimSystem
         {
@@ -81,6 +97,9 @@ namespace TheEmptying.Modules.Gathering
 
         private EntityTable<GatherTaskState> _tasks;
         private Recipe _farmRecipe;
+
+        /// <summary>3.10b: no banked hours - why each production building currently can't make progress, if it can't; recomputed every hour by the availability provider, never saved.</summary>
+        private readonly Dictionary<EntityId, string> _productionWaitReasons = new Dictionary<EntityId, string>();
 
         public GatheringModule(PeopleModule people, BuildingsModule buildings, JobsModule jobs, InventoryModule inventory, MarketModule market, MapMovementModule mapMovement, MapResourcesModule mapResources)
         {
@@ -121,6 +140,9 @@ namespace TheEmptying.Modules.Gathering
             // sawmill/mason/carpenter/mill/bakery, none of which ever produced anything before this)
             // now runs on.
             _jobs.SetProductionProvider(ProcessWorkerProductionHour);
+            // 3.10b: no banked hours - gates WorkHoursAccumulated itself, before this module's own
+            // production step ever sees an hour it can't use.
+            _jobs.SetProductionAvailabilityProvider(TryGetProductionBlockReason);
 
             context.Subscribe<NewDayEvent>(evt => AssignTasks());
             // So builders start the same day a site goes up, not the next morning.
@@ -238,6 +260,163 @@ namespace TheEmptying.Modules.Gathering
                 SetTask(personId, task, isFarmer ? GatherTaskKind.Farm : PickScarcerMaterial(), anchor, radius, null,
                     isFarmer ? "nothing to build and the wheat cap still has room" : "nothing to build; gathering whichever raw material is scarcer");
             }
+
+            // 3.10b: runs last, so if a starter building is needed, its leader's forced Build
+            // assignment below is the final word for this pass - not overwritten by the generic
+            // per-person loop above, which has no notion of "this specific founder leads this
+            // specific new site".
+            TryStartNeededStarterBuildings();
+        }
+
+        /// <summary>Founders claimed as a starter building's leader earlier in the current TryStartNeededStarterBuildings pass - never claimed twice in the same pass, even though they remain otherwise eligible (e.g. already building something else) between passes.</summary>
+        private readonly HashSet<EntityId> _claimedStarterBuildingLeadersThisPass = new HashSet<EntityId>();
+
+        /// <summary>
+        /// 3.10b: "the people decide the work, not the player" - each time tasks are reassigned
+        /// (a new morning, or a shortage-adjacent trigger: a site starting or finishing, the
+        /// stockpile going up), checks whether the town needs a starter building it doesn't have
+        /// yet, and if so starts it: places it near the resource it works (a camp) or the
+        /// stockpile (a workshop or cabin), and force-assigns the founder with the highest skill in
+        /// its trade to build it, logged through the normal task-change log. Only one of each ever
+        /// exists - while the first stands (building or complete), a second is never started; extra
+        /// founders help the existing one through the ordinary "any crown site waiting" build logic
+        /// instead.
+        /// </summary>
+        private void TryStartNeededStarterBuildings()
+        {
+            if (_settings.Get(StarterBuildingsEnabledSettingId) == 0 || !_buildings.TryFindCrownStorehouse(out EntityId storehouseId))
+            {
+                return; // the player (or a test) has this turned off, or there's nothing to build toward yet
+            }
+
+            _claimedStarterBuildingLeadersThisPass.Clear();
+
+            int logs = _inventory.GetCount(storehouseId, LogGoodId);
+            int stone = _inventory.GetCount(storehouseId, StoneGoodId);
+            int planks = _inventory.GetCount(storehouseId, PlankGoodId);
+
+            bool anyTreeStanding = _mapResources.Nodes.Any(row => row.Value.Kind == ResourceNodeKind.Tree);
+            bool anyOutcropStanding = _mapResources.Nodes.Any(row => row.Value.Kind == ResourceNodeKind.Outcrop);
+
+            GridPoint stockpileAnchor = GetStockpileAnchor();
+            int searchRadius = (int)_settings.Get(StarterBuildingSearchRadiusCellsSettingId);
+
+            if (!AnyBuildingOfType(WoodcuttersCampTypeId) && anyTreeStanding &&
+                (logs < (int)_settings.Get(LogReserveSettingId) || AnyWaitingSiteIsStalledOn(LogGoodId)) &&
+                _mapResources.TryFindNearest(ResourceNodeKind.Tree, stockpileAnchor, null, out _, out GridPoint treeCell))
+            {
+                StartStarterBuilding(WoodcuttersCampTypeId, Skill.Logging, "best woodcutter", treeCell, searchRadius);
+            }
+
+            if (!AnyBuildingOfType(QuarryCampTypeId) && anyOutcropStanding &&
+                (stone < (int)_settings.Get(StoneReserveSettingId) || AnyWaitingSiteIsStalledOn(StoneGoodId)) &&
+                _mapResources.TryFindNearest(ResourceNodeKind.Outcrop, stockpileAnchor, null, out _, out GridPoint outcropCell))
+            {
+                StartStarterBuilding(QuarryCampTypeId, Skill.Mining, "best quarrier", outcropCell, searchRadius);
+            }
+
+            if (!AnyBuildingOfType(SawPitTypeId) && (logs > 0 || anyTreeStanding) &&
+                (planks < (int)_settings.Get(PlankReserveSettingId) || AnyWaitingSiteIsStalledOn(PlankGoodId)))
+            {
+                StartStarterBuilding(SawPitTypeId, Skill.Crafting, "best sawyer", stockpileAnchor, searchRadius);
+            }
+
+            if (!AnyBuildingOfType(StoneYardTypeId) && AnyWaitingSiteIsStalledOn(BlockGoodId))
+            {
+                StartStarterBuilding(StoneYardTypeId, Skill.Crafting, "best mason", stockpileAnchor, searchRadius);
+            }
+
+            if (_settings.Get(LogCabinEnabledSettingId) != 0 && !AnyBuildingOfType(LogCabinTypeId) && _people.People.Any(row => _people.IsHomeless(row.Key)))
+            {
+                StartStarterBuilding(LogCabinTypeId, Skill.Construction, "best builder", stockpileAnchor, searchRadius);
+            }
+        }
+
+        private bool AnyBuildingOfType(string typeId) => _buildings.Buildings.Any(row => row.Value.BuildingTypeId == typeId);
+
+        /// <summary>
+        /// Whether any crown (unowned) site under construction is genuinely stalled specifically on
+        /// this good - reuses the exact same "stock or on order" check ProcessBuild's own stall
+        /// detection already does (GetStalledMissingGood), rather than a raw construction-cost gap:
+        /// a freshly-placed site always shows an undelivered gap for a moment even when the
+        /// stockpile already has plenty, and that alone should never read as "needed".
+        /// </summary>
+        private bool AnyWaitingSiteIsStalledOn(string goodId)
+        {
+            foreach (KeyValuePair<EntityId, BuildingState> row in _buildings.Buildings)
+            {
+                BuildingState site = row.Value;
+                if (site.Owner.HasValue || site.Construction == null)
+                {
+                    continue;
+                }
+
+                if (GetStalledMissingGood(row.Key, site) == goodId)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>Places a starter building near anchor, picks the founder with the highest skill in its trade to lead it, and force-assigns them to build it - logged by name, e.g. "Ada Holt (best woodcutter) is building a woodcutter's camp".</summary>
+        private void StartStarterBuilding(string typeId, Skill leaderSkill, string tradeLabel, GridPoint anchor, int searchRadius)
+        {
+            if (!_buildings.TryPlaceGovernmentBuildingNear(typeId, anchor, searchRadius, out EntityId buildingId, out _))
+            {
+                return; // no free spot right now - the next trigger (tomorrow, at latest) will try again
+            }
+
+            EntityId? leaderId = FindBestFounderFor(leaderSkill);
+            if (!leaderId.HasValue)
+            {
+                return; // nobody available to lead it right now; it still gets built via the ordinary build-labor logic, just with no leader logged
+            }
+
+            _claimedStarterBuildingLeadersThisPass.Add(leaderId.Value);
+
+            if (!_tasks.TryGet(leaderId.Value, out GatherTaskState leaderTask))
+            {
+                leaderTask = new GatherTaskState();
+                _tasks.Add(leaderId.Value, leaderTask);
+            }
+
+            BuildingType type = _buildings.GetBuildingType(typeId);
+            string leaderName = _people.TryGetPerson(leaderId.Value, out PersonState leaderPerson) ? leaderPerson.FullName : leaderId.Value.ToString();
+            string reason = $"{leaderName} ({tradeLabel}) is building a {type?.Name ?? typeId}";
+
+            SetTask(leaderId.Value, leaderTask, GatherTaskKind.Build, anchor, (int)_settings.Get(RadiusCellsSettingId), buildingId, reason);
+        }
+
+        /// <summary>The adult, non-monarch, unemployed founder with the highest level in skill - ties broken by entity index, so this is deterministic. May already be building something else (they get pulled onto this instead - a founder's own skill decides what the town needs them for most); never the same founder claimed as leader of a different starter building earlier in this same pass (see _claimedStarterBuildingLeadersThisPass). Null if no founder is eligible right now.</summary>
+        private EntityId? FindBestFounderFor(Skill skill)
+        {
+            int adultAge = (int)_settings.Get(PeopleModule.AdultAgeYearsSettingId);
+
+            EntityId? best = null;
+            int bestSkill = -1;
+
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.People)
+            {
+                EntityId personId = row.Key;
+                PersonState person = row.Value;
+
+                if (!_people.IsFounder(personId) || person.AgeLifeYears < adultAge || _people.IsMonarch(personId) || _jobs.IsEmployed(personId) ||
+                    _claimedStarterBuildingLeadersThisPass.Contains(personId))
+                {
+                    continue;
+                }
+
+                int level = person.Skills[(int)skill];
+                if (best == null || level > bestSkill || (level == bestSkill && personId.Index < best.Value.Index))
+                {
+                    best = personId;
+                    bestSkill = level;
+                }
+            }
+
+            return best;
         }
 
         /// <summary>Whether any adult, non-monarch, non-employed person currently has no gathering task at all - see UpdateHourly.</summary>
@@ -274,8 +453,11 @@ namespace TheEmptying.Modules.Gathering
         {
             if (newKind == GatherTaskKind.Build)
             {
-                bool buildKindChanged = task.Kind != newKind;
-                if (buildKindChanged)
+                // 3.10b: also counts as a change when staying Build but switching to a different
+                // site - e.g. a starter building's leader gets pulled off whatever crown site they
+                // were generically helping build, onto the one they specifically lead instead.
+                bool buildChanged = task.Kind != newKind || task.TargetSite != targetSite;
+                if (buildChanged)
                 {
                     PostTaskChanged(personId, task.Kind, newKind, reason);
                 }
@@ -456,7 +638,7 @@ namespace TheEmptying.Modules.Gathering
         }
 
         /// <summary>The nearest crown (unowned) construction site, if any - founders only ever build for the crown, never a private owner's site.</summary>
-        private bool TryFindCrownSiteNeedingLabor(EntityId personId, out EntityId siteId)
+        private bool TryFindCrownSiteNeedingLabor(EntityId personId, out EntityId siteId, EntityId? excludeSiteId = null)
         {
             GridPoint from = _mapMovement.GetCell(personId);
             siteId = EntityId.None;
@@ -465,7 +647,7 @@ namespace TheEmptying.Modules.Gathering
 
             foreach (KeyValuePair<EntityId, BuildingState> row in _buildings.Buildings)
             {
-                if (row.Value.Owner.HasValue || row.Value.Construction == null)
+                if (row.Value.Owner.HasValue || row.Value.Construction == null || row.Key == excludeSiteId)
                 {
                     continue;
                 }
@@ -572,6 +754,9 @@ namespace TheEmptying.Modules.Gathering
 
         /// <summary>What a person's hand-gathering task is doing right now; None if they have no active task.</summary>
         public GatherTaskKind GetTaskKind(EntityId personId) => _tasks.TryGet(personId, out GatherTaskState task) ? task.Kind : GatherTaskKind.None;
+
+        /// <summary>The construction site a Build-tasked person is currently assigned to; null if their task isn't Build (or they have none).</summary>
+        public EntityId? GetTargetSite(EntityId personId) => _tasks.TryGet(personId, out GatherTaskState task) && task.Kind == GatherTaskKind.Build ? task.TargetSite : null;
 
         /// <summary>A plain, player-facing label for a task kind (e.g. for a person's world label or the People panel) - shared so both stay in sync.</summary>
         public static string DescribeTaskKind(GatherTaskKind kind) =>
@@ -761,6 +946,20 @@ namespace TheEmptying.Modules.Gathering
             string missingGoodId = GetStalledMissingGood(task.TargetSite.Value, site);
             if (missingGoodId != null)
             {
+                // 3.10b: logs or stone can be hand-gathered directly; anything else (planks,
+                // blocks...) can't, so check for a different crown site that can actually use this
+                // builder's labor right now before falling back to speculative material-gathering -
+                // otherwise a builder stuck on, say, a planks-starved site could spend forever
+                // fetching whichever raw material happens to be scarcer while a nearby site that's
+                // only waiting on plain labor (not materials) never gets anyone.
+                if (missingGoodId != LogGoodId && missingGoodId != StoneGoodId &&
+                    TryFindCrownSiteNeedingLabor(personId, out EntityId otherSiteId, excludeSiteId: task.TargetSite.Value))
+                {
+                    SetTask(personId, task, GatherTaskKind.Build, GetStockpileAnchor(), (int)_settings.Get(RadiusCellsSettingId), otherSiteId,
+                        $"the site is stalled waiting for {missingGoodId} - helping build a different site instead until it arrives");
+                    return;
+                }
+
                 GatherTaskKind gatherKind = missingGoodId == LogGoodId ? GatherTaskKind.Woodcut
                     : missingGoodId == StoneGoodId ? GatherTaskKind.Quarry
                     : PickScarcerMaterial();
@@ -896,6 +1095,77 @@ namespace TheEmptying.Modules.Gathering
         /// (GrowthTimeMonths > 0, e.g. Farm Field) is left alone - that building's own real-building
         /// production isn't part of this prompt's scope.
         /// </summary>
+        /// <summary>
+        /// 3.10b: no banked hours - whether a production building can make progress right now, and
+        /// why not if it can't. JobsModule asks this before letting a worked hour count toward
+        /// WorkHoursAccumulated at all, so a blocked building never silently banks hours below the
+        /// recipe's own batch threshold either; this module also remembers the answer per building
+        /// (GetProductionWaitReason) for the worker's activity label and the People panel.
+        /// </summary>
+        private string TryGetProductionBlockReason(EntityId buildingId, BuildingState building, Recipe recipe)
+        {
+            string reason = ComputeProductionBlockReason(building, recipe);
+
+            if (reason == null)
+            {
+                _productionWaitReasons.Remove(buildingId);
+            }
+            else
+            {
+                _productionWaitReasons[buildingId] = reason;
+            }
+
+            return reason;
+        }
+
+        private string ComputeProductionBlockReason(BuildingState building, Recipe recipe)
+        {
+            if (recipe.Outputs.Count == 0 || recipe.DurationHours <= 0 || recipe.GrowthTimeMonths > 0)
+            {
+                return null; // not a recipe this system gates at all
+            }
+
+            if (IsResourceCampRecipe(recipe))
+            {
+                ResourceNodeKind nodeKind = recipe.Outputs[0].Good.Id == LogGoodId ? ResourceNodeKind.Tree : ResourceNodeKind.Outcrop;
+                bool found = _mapResources.TryFindNearest(nodeKind, building.Rect.Center, null, out _, out _);
+                return found ? null : nodeKind == ResourceNodeKind.Tree ? "Waiting for trees." : "Waiting for outcrops.";
+            }
+
+            if (!TryResolveProductionStorage(building, out EntityId storageId))
+            {
+                return "Waiting for a stockpile.";
+            }
+
+            foreach (GoodAmount input in recipe.Inputs)
+            {
+                if (_inventory.GetCount(storageId, input.Good.Id) < input.Amount)
+                {
+                    return $"Waiting for {GoodDisplayName(input.Good.Id)}.";
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>A plain, placeholder display name for a good id's wait reason (e.g. "good.log" -> "logs") - this system only ever gates recipes using a small, known set of raw/processed goods.</summary>
+        private static string GoodDisplayName(string goodId) => goodId switch
+        {
+            LogGoodId => "logs",
+            StoneGoodId => "stone",
+            PlankGoodId => "planks",
+            BlockGoodId => "blocks",
+            WheatGoodId => "wheat",
+            "good.flour" => "flour",
+            _ => goodId.StartsWith("good.") ? goodId.Substring("good.".Length) : goodId
+        };
+
+        /// <summary>This production building's current wait reason (e.g. "Waiting for logs."), for the worker's activity label and the People panel; null if it isn't blocked (or isn't a production building at all).</summary>
+        public string GetProductionWaitReason(EntityId buildingId) => _productionWaitReasons.TryGetValue(buildingId, out string reason) ? reason : null;
+
+        private static bool IsResourceCampRecipe(Recipe recipe) =>
+            recipe.Inputs.Count == 0 && recipe.Outputs.Count == 1 && (recipe.Outputs[0].Good.Id == LogGoodId || recipe.Outputs[0].Good.Id == StoneGoodId);
+
         private void ProcessWorkerProductionHour(EntityId buildingId, BuildingState building, Recipe recipe, JobSlotGroup group)
         {
             if (recipe.Outputs.Count == 0 || recipe.DurationHours <= 0 || recipe.GrowthTimeMonths > 0)
@@ -903,10 +1173,7 @@ namespace TheEmptying.Modules.Gathering
                 return;
             }
 
-            bool isResourceCamp = recipe.Inputs.Count == 0 && recipe.Outputs.Count == 1 &&
-                                   (recipe.Outputs[0].Good.Id == LogGoodId || recipe.Outputs[0].Good.Id == StoneGoodId);
-
-            if (isResourceCamp)
+            if (IsResourceCampRecipe(recipe))
             {
                 ProcessResourceCampHour(building, recipe, group);
                 return;
@@ -921,11 +1188,10 @@ namespace TheEmptying.Modules.Gathering
             {
                 if (!HasAllInputs(storageId, recipe.Inputs))
                 {
-                    // Not enough input stock yet - leave the accumulated hours exactly as they are
-                    // (JobSlotGroup.WorkHoursAccumulated is also read as a plain cumulative
-                    // skill-speed measure elsewhere, so this never resets or caps it) and try again
-                    // next hour. A long wait does mean a catch-up flood of output the moment the
-                    // input finally arrives - acceptable for a placeholder production system.
+                    // 3.10b: shouldn't actually happen any more - JobsModule's availability provider
+                    // (TryGetProductionBlockReason) already stops hours from accumulating at all once
+                    // inputs run out, so WorkHoursAccumulated can't reach a full batch while blocked.
+                    // Left as a safety net rather than relied on.
                     return;
                 }
 
@@ -954,7 +1220,7 @@ namespace TheEmptying.Modules.Gathering
             {
                 if (!_mapResources.TryFindNearest(nodeKind, from, null, out EntityId nodeId, out _))
                 {
-                    return; // nothing left in reach - the camp simply waits, hours left as they are
+                    return; // 3.10b: shouldn't happen - the availability provider already caught this before any hours accumulated. Safety net.
                 }
 
                 int harvested = _mapResources.Harvest(nodeId, output.Amount);

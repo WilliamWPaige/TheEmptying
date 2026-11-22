@@ -325,6 +325,74 @@ namespace TheEmptying.Modules.Buildings
             return true;
         }
 
+        /// <summary>
+        /// 3.10b: for the founders' own decision to build a starter building (a camp beside a
+        /// resource node, a workshop or cabin near the stockpile) - the same placement rules as
+        /// TryPlaceGovernmentBuilding, but finds its own free footprint by searching outward from
+        /// anchor in rings, skipping anything that would overlap the crown grounds, instead of
+        /// taking an exact cell from the player.
+        /// </summary>
+        public bool TryPlaceGovernmentBuildingNear(string typeId, GridPoint anchor, int searchRadiusCells, out EntityId buildingId, out string error)
+        {
+            buildingId = EntityId.None;
+
+            if (typeId == KeepTypeId)
+            {
+                error = "The keep already stands in the crown grounds and can never be placed.";
+                return false;
+            }
+
+            if (!_buildingTypesById.TryGetValue(typeId, out BuildingType type) || !type.IsGovernment)
+            {
+                error = $"'{typeId}' is not a government building type.";
+                return false;
+            }
+
+            // Starts at radius 1, not 0: anchor itself is either a resource node's own cell (a camp
+            // belongs beside it, not on top of it) or the stockpile's own footprint (already
+            // occupied, so radius 0 would only ever waste a check).
+            for (int radius = 1; radius <= searchRadiusCells; radius++)
+            {
+                foreach (GridPoint origin in RingOrigins(anchor, radius))
+                {
+                    var rect = new CellRect(origin.X, origin.Y, type.FootprintWidth, type.FootprintDepth);
+                    if (_land.CrownGrounds.Overlaps(rect) || !IsFreeOfBuildingsAndPlots(rect))
+                    {
+                        continue;
+                    }
+
+                    buildingId = CreateBuilding(type, rect, owner: null, plotId: null);
+                    error = null;
+                    return true;
+                }
+            }
+
+            error = $"No free spot for a {type.Name} within {searchRadiusCells} cells of ({anchor.X},{anchor.Y}).";
+            return false;
+        }
+
+        /// <summary>Every cell on the ring exactly radius cells (Chebyshev) out from anchor - radius 0 is anchor itself.</summary>
+        private static IEnumerable<GridPoint> RingOrigins(GridPoint anchor, int radius)
+        {
+            if (radius == 0)
+            {
+                yield return anchor;
+                yield break;
+            }
+
+            for (int dx = -radius; dx <= radius; dx++)
+            {
+                yield return new GridPoint(anchor.X + dx, anchor.Y - radius);
+                yield return new GridPoint(anchor.X + dx, anchor.Y + radius);
+            }
+
+            for (int dy = -radius + 1; dy <= radius - 1; dy++)
+            {
+                yield return new GridPoint(anchor.X - radius, anchor.Y + dy);
+                yield return new GridPoint(anchor.X + radius, anchor.Y + dy);
+            }
+        }
+
         /// <summary>"requestbuilding": simulates a person's demand for a type (town growth wires the real thing in 3.11). Discovers a non-basic type the first time it's asked for.</summary>
         public bool TryRequestPrivateBuilding(EntityId person, string typeId, out EntityId buildingId, out string error)
         {

@@ -68,6 +68,9 @@ namespace TheEmptying.Modules.Jobs
         /// <summary>3.10a: Gathering registers the actual recipe-execution step here (what a Worker slot's accumulated hours turn into) - this module only tracks hours and pay, never what a building makes.</summary>
         private Action<EntityId, BuildingState, Recipe, JobSlotGroup> _productionProvider = (_, __, ___, ____) => { };
 
+        /// <summary>3.10b: no banked hours - Gathering registers a read-only check here, consulted before a worked hour counts toward a Worker slot's accumulated hours at all. Returns null when the building can make progress right now; otherwise the reason it can't, which Gathering also surfaces as this worker's activity and in the People panel.</summary>
+        private Func<EntityId, BuildingState, Recipe, string> _productionAvailabilityProvider = (_, __, ___) => null;
+
         /// <summary>Reverse index: a working person's building and slot type, for O(1) lookups from People's hourly schedule.</summary>
         private readonly Dictionary<EntityId, (EntityId Building, JobSlotType Type)> _employmentByPerson = new Dictionary<EntityId, (EntityId, JobSlotType)>();
 
@@ -147,9 +150,17 @@ namespace TheEmptying.Modules.Jobs
                     jobs = new JobsState();
                 }
 
+                // 3.10b: a founder-built starter building (a saw pit, a camp, a cabin...) relies
+                // entirely on Gathering's unpaid, stall-aware hand-building - it never also opens a
+                // paid Builder slot. A paid builder has no notion of a stalled site (they just keep
+                // banking labor hours regardless of whether materials ever arrive), so paying some
+                // founders to "build" it would only pull them out of the unpaid pool that's actually
+                // capable of noticing the site is stuck and going to gather what it's missing.
+                bool isFounderBuilt = _buildings.GetBuildingType(building.BuildingTypeId)?.IsFounderBuilt ?? false;
+
                 if (building.Construction != null)
                 {
-                    if (jobs.Builder == null)
+                    if (jobs.Builder == null && !isFounderBuilt)
                     {
                         int count = (int)_settings.Get(BuilderSlotsPerSiteSettingId);
                         Money pay = Money.FromCopper(_settings.Get(WealthModule.SkilledWagePerDaySettingId));
@@ -289,6 +300,10 @@ namespace TheEmptying.Modules.Jobs
         public void SetProductionProvider(Action<EntityId, BuildingState, Recipe, JobSlotGroup> provider) =>
             _productionProvider = provider ?? ((_, __, ___, ____) => { });
 
+        /// <summary>3.10b: Gathering calls this during its own Initialize to supply the no-banked-hours availability check. Never called directly by this module otherwise.</summary>
+        public void SetProductionAvailabilityProvider(Func<EntityId, BuildingState, Recipe, string> provider) =>
+            _productionAvailabilityProvider = provider ?? ((_, __, ___) => null);
+
         /// <summary>Null when the person holds no job - Gathering layers its own hand-gathering workplace underneath this one.</summary>
         public GridPoint? GetWorkplaceLocation(EntityId person) =>
             _employmentByPerson.TryGetValue(person, out (EntityId Building, JobSlotType Type) employment) ? _buildings.GetDoorstep(employment.Building) : null;
@@ -352,6 +367,12 @@ namespace TheEmptying.Modules.Jobs
                 return;
             }
 
+            Recipe recipe = null;
+            bool isProductionGroup = type == JobSlotType.Worker && building != null && _recipeByWorkplaceId.TryGetValue(building.BuildingTypeId, out recipe);
+            // 3.10b: no banked hours - checked once per group per hour, not per occupant, since it's
+            // the same answer (the building's own inputs or nearest resource node) for everyone in it.
+            bool canAccumulate = !isProductionGroup || _productionAvailabilityProvider(buildingId, building, recipe) == null;
+
             for (int i = 0; i < group.Occupants.Count; i++)
             {
                 EntityId? occupant = group.Occupants[i];
@@ -364,7 +385,11 @@ namespace TheEmptying.Modules.Jobs
                 {
                     double speed = WorkSpeed.ForSkillLevel(person.Skills[(int)group.Skill]);
                     _people.AddSkillExperience(occupant.Value, group.Skill, skillGainPerHour);
-                    group.WorkHoursAccumulated += speed;
+
+                    if (canAccumulate)
+                    {
+                        group.WorkHoursAccumulated += speed;
+                    }
 
                     if (type == JobSlotType.Builder && building != null && building.Construction != null)
                     {
@@ -386,7 +411,7 @@ namespace TheEmptying.Modules.Jobs
                 }
             }
 
-            if (type == JobSlotType.Worker && building != null && _recipeByWorkplaceId.TryGetValue(building.BuildingTypeId, out Recipe recipe))
+            if (isProductionGroup)
             {
                 _productionProvider(buildingId, building, recipe, group);
             }

@@ -22,6 +22,9 @@ namespace TheEmptying.Presentation.Content
         [SerializeField, Tooltip("Placeable anywhere, regardless of zones (the crown's own buildings). A non-government building type must allow at least one zone.")]
         private bool _isGovernment;
 
+        [SerializeField, Tooltip("3.10b: the founders build this themselves when the town needs it (a saw pit, a camp, a cabin...) - never offered in the player's build menu, even though it's still a government building.")]
+        private bool _isFounderBuilt;
+
         [SerializeField] private List<ZoneAsset> _allowedZones = new List<ZoneAsset>();
         [SerializeField] private bool _isHome;
         [SerializeField] private int _householdsProvided;
@@ -41,6 +44,7 @@ namespace TheEmptying.Presentation.Content
         public int TrainerSlots => _trainerSlots;
         public bool IsBasic => _isBasic;
         public bool IsGovernment => _isGovernment;
+        public bool IsFounderBuilt => _isFounderBuilt;
         public IReadOnlyList<ZoneAsset> AllowedZones => _allowedZones;
         public int HouseholdsProvided => _isHome ? _householdsProvided : 0;
         public SocialClass? HomeClass => _isHome ? _homeClass : (SocialClass?)null;
@@ -94,7 +98,8 @@ namespace TheEmptying.Presentation.Content
             List<ZoneAsset> allowedZones,
             int householdsProvided,
             SocialClass? homeClass,
-            string description)
+            string description,
+            bool isFounderBuilt = false)
         {
             _id = id;
             _displayName = displayName;
@@ -111,6 +116,7 @@ namespace TheEmptying.Presentation.Content
             _householdsProvided = householdsProvided;
             _homeClass = homeClass ?? default;
             _description = description;
+            _isFounderBuilt = isFounderBuilt;
         }
 #endif
     }

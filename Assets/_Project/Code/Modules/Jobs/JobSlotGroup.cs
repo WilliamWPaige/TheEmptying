@@ -25,7 +25,7 @@ namespace TheEmptying.Modules.Jobs
         public List<int> UnpaidDaysInARow = new List<int>();
         public List<int> BadMoodDaysInARow = new List<int>();
 
-        /// <summary>Cumulative skill-adjusted hours worked by this group, for 3.10's production to read; construction uses BuildingsModule's own labor hours instead.</summary>
+        /// <summary>Cumulative skill-adjusted hours worked by this group, for 3.10's production to read; construction uses BuildingsModule's own labor hours instead. 3.10b: never banked while production can't progress (JobsModule's productionAvailabilityProvider gates it) - no catch-up burst once an input arrives.</summary>
         public double WorkHoursAccumulated;
     }
 }

@@ -218,7 +218,13 @@ namespace TheEmptying.Presentation.People
             GridPoint? target = _mapMovement?.GetDestination(id) ?? _gathering?.GetLocation(id);
             string targetText = DescribeTargetAndDistance(id, target);
 
-            var summary = new Label($"{person.FullName} ({role}) - {PeopleModule.DescribeActivity(person.Activity)}");
+            // 3.10b: no banked hours - a production worker whose building currently can't progress
+            // (no inputs, or no resource node in reach for a camp) shows why instead of plain "Working".
+            string activityText = hasJob && person.Activity == PersonActivity.Working && _gathering?.GetProductionWaitReason(jobBuilding) is string waitReason
+                ? waitReason
+                : PeopleModule.DescribeActivity(person.Activity);
+
+            var summary = new Label($"{person.FullName} ({role}) - {activityText}");
             summary.AddToClassList("people-panel-row-summary");
             row.Add(summary);
 
@@ -264,7 +270,8 @@ namespace TheEmptying.Presentation.People
                 buildingName = type?.Name ?? state.BuildingTypeId;
             }
 
-            return $"{slotType} at {buildingName}";
+            string waitReason = _gathering?.GetProductionWaitReason(building);
+            return string.IsNullOrEmpty(waitReason) ? $"{slotType} at {buildingName}" : $"{slotType} at {buildingName} ({waitReason})";
         }
 
         private static string DescribeGatherTask(GatherTaskKind kind) => GatheringModule.DescribeTaskKind(kind);

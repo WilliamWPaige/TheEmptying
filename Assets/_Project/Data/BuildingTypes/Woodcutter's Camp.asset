@@ -24,8 +24,9 @@ MonoBehaviour:
   _trainerSlots: 0
   _isBasic: 0
   _isGovernment: 1
+  _isFounderBuilt: 1
   _allowedZones: []
   _isHome: 0
   _householdsProvided: 0
   _homeClass: 0
-  _description: 'placeholder: footprint, slots and construction cost are not final. 3.10a: recost to logs-only and made a crown building, so it can bootstrap a new game before the market/zoned economy exists.'
+  _description: 'placeholder: footprint, slots and construction cost are not final. 3.10a: recost to logs-only and made a crown building, so it can bootstrap a new game before the market/zoned economy exists. 3.10b: founders decide to build this themselves, never offered in the player''s build menu.'

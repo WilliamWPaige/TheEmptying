@@ -258,6 +258,11 @@ namespace TheEmptying.Tests.EditMode.Gathering
                 contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            // This test is about the pre-existing (3.10a) "switch to gathering when stalled"
+            // behavior specifically, on this one site - not about the founders' own (3.10b) decision
+            // to go build a saw pit in response to the very same stall, which would otherwise pull
+            // builders onto a second, usually-closer site instead of the lodging this test cares about.
+            sim.Settings.Set(GatheringModule.StarterBuildingsEnabledSettingId, 0);
             // Spend the default starting planks down to zero (the true default stockpile already
             // holds more planks than the lodging alone needs, so this test forces the "missing"
             // condition directly instead of relying on exact numbers happening to fall short).
@@ -271,9 +276,9 @@ namespace TheEmptying.Tests.EditMode.Gathering
             inventory.Add(storehouseId, "good.loaf", 10000);
 
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
-            sim.Step(); // deliver ConstructionSiteStartedEventId and assign builders
+            sim.Step(); // deliver ConstructionSiteStartedEventId and assign builders - this stall also gives the founders a reason to start their own saw pit (3.10b), so pick a builder on THIS site specifically, not whichever site a founder happens to be building.
 
-            EntityId someBuilder = people.People.First(row => people.IsFounder(row.Key) && gathering.GetTaskKind(row.Key) == GatherTaskKind.Build).Key;
+            EntityId someBuilder = people.People.First(row => people.IsFounder(row.Key) && gathering.GetTargetSite(row.Key) == siteId).Key;
 
             // Give them time to actually reach the site, not just be assigned to it - ProcessBuild
             // (where the stall check lives) only runs once a builder has physically arrived.
@@ -296,6 +301,274 @@ namespace TheEmptying.Tests.EditMode.Gathering
             }
 
             Assert.AreEqual(GatherTaskKind.Build, gathering.GetTaskKind(someBuilder), "Expected the builder to return to building once planks were available again.");
+        }
+
+        /// <summary>3.10b: "the people decide the work, not the player" - the founder with the highest Logging skill leads a woodcutter's camp the moment the town needs one, reported in the task-change log by name.</summary>
+        [Test]
+        public void FoundersDecideToBuildAWoodcuttersCamp_LedByTheFounderWithTheHighestLoggingSkill()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+
+            // The ambient log reserve defaults to 0 (purely reactive) - so give the town a genuine,
+            // immediate reason to need logs: a saw pit with none in stock and none on order yet,
+            // stalled on its own 20-log construction cost the moment it's placed.
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.saw_pit", new GridPoint(30, 10), out _, out string pitError), pitError);
+            Assert.AreEqual(0, inventory.GetCount(storehouseId, "good.log"), "Setup: expected zero logs in stock, so the saw pit is genuinely stalled.");
+
+            // Founders start with varied (not identical) skills - give one a lead unmistakably
+            // beyond whatever the current highest actually is.
+            int currentMaxLogging = people.People.Where(row => people.IsFounder(row.Key)).Max(row => row.Value.Skills[(int)Skill.Logging]);
+            EntityId bestWoodcutter = people.People.First(row => people.IsFounder(row.Key)).Key;
+            Assert.IsTrue(people.TryGetPerson(bestWoodcutter, out PersonState bestWoodcutterState));
+            bestWoodcutterState.Skills[(int)Skill.Logging] = currentMaxLogging + 10;
+            string expectedName = bestWoodcutterState.FullName;
+
+            var capturedReasons = new List<string>();
+            sim.Events.Subscribe(GatheringModule.TaskChangedEventId, e => capturedReasons.Add(e.Data.GetString("reason")));
+
+            sim.Step(); // delivers ConstructionSiteStartedEventId -> AssignTasks -> TryStartNeededStarterBuildings - this queues the task-changed events it posts
+            sim.Step(); // events post during a tick and deliver at the end of the NEXT one - this flushes them to the subscriber above
+
+            Assert.IsTrue(buildings.Buildings.Any(row => row.Value.BuildingTypeId == "building.woodcutters_camp"),
+                "Expected the founders to have started a woodcutter's camp on their own.");
+            Assert.AreEqual(GatherTaskKind.Build, gathering.GetTaskKind(bestWoodcutter), "Expected the best-logging founder to be the one assigned to build it.");
+
+            string expectedReason = $"{expectedName} (best woodcutter) is building a Woodcutter's Camp";
+            Assert.IsTrue(capturedReasons.Contains(expectedReason), $"Expected a task-change log line \"{expectedReason}\" - got: {string.Join(" | ", capturedReasons)}");
+        }
+
+        /// <summary>3.10b: only one of each starter building ever exists - a second is never started while the first stands, even across many days with the same shortage persisting.</summary>
+        [Test]
+        public void StarterBuildings_OnlyOneOfEachEverExists_EvenWhenTheShortageNeverLetsUp()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+
+            // The ambient reserves default to 0 (purely reactive) - so give the town a genuine,
+            // persistent reason to need logs: a saw pit, kept permanently stalled on its own 20-log
+            // construction cost by draining any logs that arrive before they can be delivered to it.
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.saw_pit", new GridPoint(30, 10), out _, out string pitError), pitError);
+
+            for (int day = 0; day < 20; day++)
+            {
+                int logsInStock = inventory.GetCount(storehouseId, "good.log");
+                if (logsInStock > 0)
+                {
+                    inventory.TryRemove(storehouseId, "good.log", logsInStock); // TryRemove throws for a zero amount
+                }
+
+                for (long i = 0; i < CalendarConstants.TicksPerDay; i++)
+                {
+                    sim.Step();
+                }
+
+                Assert.LessOrEqual(buildings.Buildings.Count(row => row.Value.BuildingTypeId == "building.woodcutters_camp"), 1, $"Day {day}: expected at most one woodcutter's camp ever.");
+            }
+
+            Assert.IsTrue(buildings.Buildings.Any(row => row.Value.BuildingTypeId == "building.woodcutters_camp"),
+                "Setup: expected the persistent shortage to actually have triggered one at some point.");
+        }
+
+        /// <summary>
+        /// 3.10b: the user's actual ask - from a true default new game with no console help and
+        /// nothing placed but the stockpile, the founders decide for themselves to build a
+        /// woodcutter's camp and a saw pit (3.10a's version of this test placed them directly - this
+        /// is the same bootstrap chain, but with the founders choosing to build both on their own).
+        /// Once that's working, a crown lodging needing more planks than the stock completes with no
+        /// further help at all.
+        /// </summary>
+        [Test]
+        public void TrueDefaultNewGame_FoundersBuildTheirOwnWoodcuttersCampAndSawPit_AndTheCrownLodgingCompletes()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+
+            // The true default stockpile already holds more planks than the lodging alone needs -
+            // spend them down first, so the saw pit the founders build themselves is genuinely
+            // load-bearing here, matching the user's actual hand test.
+            Assert.IsTrue(inventory.TryRemove(storehouseId, "good.plank", inventory.GetCount(storehouseId, "good.plank")));
+
+            int initialTreeCount = mapResources.Nodes.Count(n => n.Value.Kind == ResourceNodeKind.Tree);
+            Assert.Greater(initialTreeCount, 0, "Setup: expected trees to exist.");
+
+            // No console help at all, and nothing placed but the stockpile and this one lodging -
+            // the founders decide for themselves to build the woodcutter's camp and the saw pit.
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId lodgingId, out string lodgingError), lodgingError);
+
+            int planksNeeded = buildings.GetBuildingType("building.crown_lodging").ConstructionCost.First(c => c.Good.Id == "good.plank").Amount;
+            Assert.Greater(planksNeeded, 0, "Setup: expected the crown lodging to need planks.");
+            Assert.AreEqual(0, inventory.GetCount(storehouseId, "good.plank"), "Setup: expected zero planks in stock at this point.");
+
+            const long maxTicks = CalendarConstants.TicksPerDay * 90;
+            long campAtTick = -1;
+            long pitAtTick = -1;
+            long completedAtTick = -1;
+
+            for (long i = 0; i < maxTicks; i++)
+            {
+                sim.Step();
+
+                if (campAtTick < 0 && buildings.Buildings.Any(row => row.Value.BuildingTypeId == "building.woodcutters_camp"))
+                {
+                    campAtTick = i;
+                }
+
+                if (pitAtTick < 0 && buildings.Buildings.Any(row => row.Value.BuildingTypeId == "building.saw_pit"))
+                {
+                    pitAtTick = i;
+                }
+
+                if (buildings.TryGetBuilding(lodgingId, out BuildingState lodging) && lodging.Construction == null)
+                {
+                    completedAtTick = i;
+                    break;
+                }
+            }
+
+            Assert.IsTrue(campAtTick >= 0, "Expected the founders to have started a woodcutter's camp on their own.");
+            Assert.IsTrue(pitAtTick >= 0, "Expected the founders to have started a saw pit on their own.");
+            Assert.IsTrue(completedAtTick >= 0, $"Expected the crown lodging to complete within {maxTicks / CalendarConstants.TicksPerDay} days, with the founders bootstrapping everything themselves.");
+
+            int remainingTrees = mapResources.Nodes.Count(n => n.Value.Kind == ResourceNodeKind.Tree);
+            Assert.Less(remainingTrees, initialTreeCount, "Expected at least one tree to have visibly depleted (disappeared) along the way.");
+
+            TestContext.WriteLine($"Founders started their own woodcutter's camp by day {campAtTick / (double)CalendarConstants.TicksPerDay:F1} " +
+                $"and saw pit by day {pitAtTick / (double)CalendarConstants.TicksPerDay:F1}; " +
+                $"the crown lodging completed in {completedAtTick / (double)CalendarConstants.TicksPerDay:F1} in-game days ({completedAtTick} ticks).");
+        }
+
+        /// <summary>3.10b: no banked hours - a saw pit with no logs makes no progress at all while waiting, and resumes at the recipe's normal rate (no burst) once logs arrive.</summary>
+        [Test]
+        public void SawPit_WithNoLogs_AccumulatesNoHours_AndProducesNormallyOnceLogsArrive()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            // No founders at all (destroyed immediately, before anything can reference them - the
+            // same safe pattern the Jobs test files use) and a dedicated worker spawned instead, so
+            // nobody else can hand-cut a stray log into the stockpile in the background - this test
+            // is about the saw pit's own production hours specifically, not a race against the rest
+            // of the town's woodcutters.
+            foreach (KeyValuePair<EntityId, PersonState> row in people.People.ToList())
+            {
+                sim.Entities.Destroy(row.Key);
+            }
+
+            // No founders left to lead one anyway, but keeps the world down to exactly the one
+            // worker this test cares about - no stray log cabin from the spawned worker's own homelessness.
+            sim.Settings.Set(GatheringModule.StarterBuildingsEnabledSettingId, 0);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            // The default stockpile starts with its own planks already - drain them, so any planks
+            // seen later are unambiguously the saw pit's own output.
+            Assert.IsTrue(inventory.TryRemove(storehouseId, "good.plank", inventory.GetCount(storehouseId, "good.plank")));
+
+            // Built already complete, via the same test-only shortcut other test files use
+            // (TryDeliverGoods/TryAddLaborHours) - no logs or builders needed to get there.
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.saw_pit", new GridPoint(30, 10), out EntityId sawPitId, out string pitError), pitError);
+            inventory.Add(storehouseId, "good.log", 20);
+            Assert.IsTrue(buildings.TryDeliverGoods(sawPitId, "good.log", 20, out string deliverError), deliverError);
+            Assert.IsTrue(buildings.TryAddLaborHours(sawPitId, buildings.GetLaborHoursNeeded(sawPitId), out string laborError), laborError);
+            Assert.IsTrue(buildings.TryGetBuilding(sawPitId, out BuildingState sawPitSetup) && sawPitSetup.Construction == null, "Setup: expected the saw pit to be finished.");
+            Assert.AreEqual(0, inventory.GetCount(storehouseId, "good.log"), "Setup: expected delivery to have spent all 20 logs on construction.");
+
+            EntityId sawPitWorker = people.SpawnPerson(30, 30);
+            inventory.Add(sawPitWorker, "good.loaf", 10000);
+
+            long hiredAtTick = -1;
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 5; i++)
+            {
+                sim.Step();
+                if (jobs.TryGetEmployment(sawPitWorker, out EntityId employedAt, out _) && employedAt == sawPitId)
+                {
+                    hiredAtTick = i;
+                    break;
+                }
+            }
+
+            Assert.IsTrue(hiredAtTick >= 0, "Setup: expected the spawned worker to be hired at the saw pit.");
+            Assert.IsTrue(jobs.TryGetJobs(sawPitId, out JobsState jobsState) && jobsState.Worker != null);
+
+            // No logs at all - the worker is there, on shift, but has nothing to saw.
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 3; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.AreEqual(0.0, jobsState.Worker.WorkHoursAccumulated, "Expected no banked hours at all while waiting for logs - the whole point of 'no banked hours'.");
+            Assert.AreEqual(0, inventory.GetCount(storehouseId, "good.plank"), "Expected no planks produced while waiting for logs.");
+
+            // Logs arrive - production should resume at the recipe's normal rate, not a sudden
+            // burst reflecting all the hours that would otherwise have banked up while blocked.
+            inventory.Add(storehouseId, "good.log", 100);
+
+            long planksArrivedAtTick = -1;
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 5; i++)
+            {
+                sim.Step();
+                if (inventory.GetCount(storehouseId, "good.plank") > 0)
+                {
+                    planksArrivedAtTick = i;
+                    break;
+                }
+            }
+
+            Assert.IsTrue(planksArrivedAtTick >= 0, "Expected planks to start appearing again once logs arrived.");
         }
 
         /// <summary>The user's actual case: the stockpile plus one building placed, from a true default start.</summary>
