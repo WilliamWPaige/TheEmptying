@@ -171,7 +171,7 @@ What a new module needs, based on what the milestone-1 demo module (`module.demo
 
 ## Known pitfalls
 
-- If keyboard input is dead in Play mode but the mouse works, it is the Unity Editor focus issue (Play Maximized), not code. These ProjectSettings are the workaround; check them before debugging input code.
+- If keyboard input is dead in Play mode but the mouse works, it is the Unity Editor focus issue (Play Maximized), not code. The workaround: Run In Background on, Input System Background Behavior = Ignore Focus, Play Mode Input Behavior = All Device Input Always Goes To Game View. Check these before debugging input code.
 
 ## How we work
 
