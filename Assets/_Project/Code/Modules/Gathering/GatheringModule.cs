@@ -489,7 +489,7 @@ namespace TheEmptying.Modules.Gathering
             bool changed = task.Kind != GatherTaskKind.Haul || task.TargetSite != siteId;
             if (changed)
             {
-                PostTaskChanged(personId, task.Kind, GatherTaskKind.Haul, reason);
+                PostTaskChanged(personId, task, GatherTaskKind.Haul, reason);
             }
 
             task.Kind = GatherTaskKind.Haul;
@@ -681,7 +681,7 @@ namespace TheEmptying.Modules.Gathering
                 // in their hands would otherwise just vanish; return it to the stockpile instead.
                 ReturnCarriedGoodsToStorehouseIfPossible(task);
 
-                PostTaskChanged(personId, task.Kind, GatherTaskKind.None, reason);
+                PostTaskChanged(personId, task, GatherTaskKind.None, reason);
                 task.Kind = GatherTaskKind.None;
                 task.TargetSite = null;
                 task.HaulGoodId = null;
@@ -699,7 +699,7 @@ namespace TheEmptying.Modules.Gathering
                 bool buildChanged = task.Kind != newKind || task.TargetSite != targetSite;
                 if (buildChanged)
                 {
-                    PostTaskChanged(personId, task.Kind, newKind, reason);
+                    PostTaskChanged(personId, task, newKind, reason);
                 }
 
                 task.Kind = newKind;
@@ -728,7 +728,7 @@ namespace TheEmptying.Modules.Gathering
             bool kindChanged = task.Kind != newKind;
             if (kindChanged)
             {
-                PostTaskChanged(personId, task.Kind, newKind, reason);
+                PostTaskChanged(personId, task, newKind, reason);
             }
 
             task.Kind = newKind;
@@ -770,7 +770,7 @@ namespace TheEmptying.Modules.Gathering
             {
                 if (task.Kind != GatherTaskKind.None)
                 {
-                    PostTaskChanged(personId, task.Kind, GatherTaskKind.None, reason);
+                    PostTaskChanged(personId, task, GatherTaskKind.None, reason);
                 }
 
                 task.Kind = GatherTaskKind.None;
@@ -783,7 +783,7 @@ namespace TheEmptying.Modules.Gathering
             bool changed = task.Kind != newKind || task.ResourceNodeId != nodeId;
             if (changed)
             {
-                PostTaskChanged(personId, task.Kind, newKind, reason);
+                PostTaskChanged(personId, task, newKind, reason);
                 task.WorkHoursAccumulated = 0;
             }
 
@@ -874,13 +874,15 @@ namespace TheEmptying.Modules.Gathering
         }
 
         /// <summary>Posts TaskChangedEventId so the presentation layer can log it behind setting.debug.log_task_changes - see GameBootstrap.</summary>
-        private void PostTaskChanged(EntityId personId, GatherTaskKind oldKind, GatherTaskKind newKind, string reason)
+        private void PostTaskChanged(EntityId personId, GatherTaskState task, GatherTaskKind newKind, string reason)
         {
             _events.Post(TaskChangedEventId, _currentTick(), new EventData()
                 .SetEntity("person", personId)
-                .SetString("oldTask", oldKind.ToString())
+                .SetString("oldTask", task.Kind.ToString())
                 .SetString("newTask", newKind.ToString())
                 .SetString("reason", reason));
+
+            task.LastAssignReason = reason;
         }
 
         /// <summary>The nearest crown (unowned) construction site, if any - founders only ever build for the crown, never a private owner's site.</summary>
@@ -1066,6 +1068,61 @@ namespace TheEmptying.Modules.Gathering
         /// <summary>How much this person is personally carrying right now, if they're hauling (0 to the carry limit); 0 if they're not. For tests and inspection.</summary>
         public int GetHaulAmount(EntityId personId) => _tasks.TryGet(personId, out GatherTaskState task) && task.Kind == GatherTaskKind.Haul ? task.HaulAmount : 0;
 
+        /// <summary>The good this person is personally carrying right now, if they're hauling and have picked something up; null otherwise. For the debug readout and state dump.</summary>
+        public string GetHaulGoodId(EntityId personId) => _tasks.TryGet(personId, out GatherTaskState task) && task.Kind == GatherTaskKind.Haul ? task.HaulGoodId : null;
+
+        /// <summary>A plain "5 planks" (or "nothing") for whatever this person is personally carrying right now. For the debug readout and state dump.</summary>
+        public string DescribeCarrying(EntityId personId)
+        {
+            int amount = GetHaulAmount(personId);
+            return amount > 0 ? $"{amount} {GoodDisplayName(GetHaulGoodId(personId))}" : "nothing";
+        }
+
+        /// <summary>
+        /// 3.10b4: which leg of their task a person is actually on right now - not just the task
+        /// kind, but whether they've arrived at their spot yet (comparing their current cell to
+        /// GetLocation, the same check the hourly dispatch itself uses before it will process them).
+        /// For the debug readout and state dump.
+        /// </summary>
+        public string DescribeTaskPhase(EntityId personId)
+        {
+            if (!_tasks.TryGet(personId, out GatherTaskState task) || task.Kind == GatherTaskKind.None)
+            {
+                return "idle";
+            }
+
+            GridPoint? location = GetLocation(personId);
+            bool arrived = location.HasValue && _mapMovement.IsMover(personId) && _mapMovement.GetCell(personId) == location.Value;
+
+            if (task.Kind == GatherTaskKind.Haul)
+            {
+                if (task.HaulPhase == HaulPhase.ToStockpile)
+                {
+                    return arrived ? "picking up at the stockpile" : "walking to the stockpile";
+                }
+
+                return arrived ? "dropping off at the site" : "carrying to the site";
+            }
+
+            if (task.Kind == GatherTaskKind.Build)
+            {
+                return arrived ? "building" : "walking to the site";
+            }
+
+            return arrived ? "gathering" : "walking to the spot";
+        }
+
+        /// <summary>The plain-English reason this person's current task was assigned (or why they have none - see DescribeIdleReason). For the debug readout and state dump.</summary>
+        public string GetTaskReason(EntityId personId)
+        {
+            if (GetTaskKind(personId) == GatherTaskKind.None)
+            {
+                return DescribeIdleReason(personId);
+            }
+
+            return _tasks.TryGet(personId, out GatherTaskState task) ? task.LastAssignReason ?? "" : "";
+        }
+
         /// <summary>How many founders are currently building this crown construction site by hand - for the building panel (hired builders, if any, are counted separately by JobsModule).</summary>
         public int GetBuilderCountAtSite(EntityId siteId) => _tasks.Rows().Count(row => row.Value.Kind == GatherTaskKind.Build && row.Value.TargetSite == siteId);
 
@@ -1136,6 +1193,20 @@ namespace TheEmptying.Modules.Gathering
             // run yet since they became eligible - the next NewDayEvent, or an immediate reassignment
             // trigger (a site started, finished, or the stockpile was just placed), will cover them.
             return "No task yet: waiting for the next reassignment.";
+        }
+
+        /// <summary>
+        /// Whether the current in-game hour falls within the configured day shift (regardless of
+        /// whether this person is actually working it) - for the debug readout and state dump. Does
+        /// not account for the hauling-interruption bypass in IsWorkingHour; that shows up instead as
+        /// a hauling/carrying task phase outside these hours.
+        /// </summary>
+        public bool IsOnShift()
+        {
+            int hour = GameDate.FromTick(_currentTick()).Hour;
+            int dayStart = (int)_settings.Get(JobsModule.DayShiftStartHourSettingId);
+            int dayEnd = (int)_settings.Get(JobsModule.DayShiftEndHourSettingId);
+            return dayStart > dayEnd ? hour >= dayStart || hour < dayEnd : hour >= dayStart && hour < dayEnd;
         }
 
         #region Workplace provider (layered underneath Jobs)
@@ -1262,7 +1333,7 @@ namespace TheEmptying.Modules.Gathering
             {
                 // The BuildingCompletedEventId subscription (see Initialize) re-runs AssignTasks the
                 // instant this happens, so this builder picks a new task immediately, not next morning.
-                PostTaskChanged(personId, task.Kind, GatherTaskKind.None, "the site finished or no longer exists");
+                PostTaskChanged(personId, task, GatherTaskKind.None, "the site finished or no longer exists");
                 task.Kind = GatherTaskKind.None;
                 return;
             }
@@ -1516,7 +1587,7 @@ namespace TheEmptying.Modules.Gathering
 
         private void ClearHaulTask(EntityId personId, GatherTaskState task, string reason)
         {
-            PostTaskChanged(personId, task.Kind, GatherTaskKind.None, reason);
+            PostTaskChanged(personId, task, GatherTaskKind.None, reason);
             task.Kind = GatherTaskKind.None;
             task.TargetSite = null;
             task.HaulGoodId = null;

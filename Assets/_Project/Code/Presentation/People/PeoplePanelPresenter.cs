@@ -54,6 +54,9 @@ namespace TheEmptying.Presentation.People
         /// <summary>For tests: the currently selected person, if any.</summary>
         public EntityId? SelectedPersonIdForTesting => _selectedPersonId;
 
+        /// <summary>3.10b4: the currently selected person, if any - for the debug readout, which tracks the same selection a People panel row click or a world click on a person sets.</summary>
+        public EntityId? SelectedPersonId => _selectedPersonId;
+
         /// <summary>For tests: whether the selection line is currently drawn.</summary>
         public bool IsSelectionLineVisibleForTesting => _selectionLine != null && _selectionLine.enabled;
 

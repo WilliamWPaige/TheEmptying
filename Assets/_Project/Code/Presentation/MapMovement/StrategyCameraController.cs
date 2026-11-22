@@ -14,6 +14,12 @@ namespace TheEmptying.Presentation.MapMovement
     {
         public const string EdgeScrollingSettingId = "setting.camera.edge_scrolling";
 
+        /// <summary>3.10b4: WASD panning was reported broken in the real Editor with no reproducible
+        /// cause found by reading the code (see Docs/KnownIssues.md). Logs on every press/release edge
+        /// of any of W/A/S/D: the raw key states, the Pan action's read value, and whether the action
+        /// and its map are enabled - so the next real repro shows directly where the value goes missing.</summary>
+        public const string LogCameraInputSettingId = "setting.debug.log_camera_input";
+
         private const float PanMetersPerSecond = 30f;
         private const float EdgePanBorderPixels = 14f;
         private const float ZoomMetersPerSecond = 40f;
@@ -25,6 +31,7 @@ namespace TheEmptying.Presentation.MapMovement
         private InputAction _rotateAction;
         private InputAction _zoomAction;
         private SettingsRegistry _settings;
+        private bool _lastAnyPanKeyDown;
 
         public void Initialize(InputActionMap gameplayMap, SettingsRegistry settings)
         {
@@ -42,6 +49,8 @@ namespace TheEmptying.Presentation.MapMovement
 
         private void Update()
         {
+            LogCameraInputIfEnabled();
+
             if (_panAction == null)
             {
                 return;
@@ -81,6 +90,26 @@ namespace TheEmptying.Presentation.MapMovement
                 position.y = Mathf.Clamp(position.y, MinHeight, MaxHeight);
                 transform.position = position;
             }
+        }
+
+        private void LogCameraInputIfEnabled()
+        {
+            if (_settings == null || _settings.Get(LogCameraInputSettingId) == 0 || Keyboard.current == null)
+            {
+                return;
+            }
+
+            bool anyPanKeyDown = Keyboard.current.wKey.isPressed || Keyboard.current.aKey.isPressed
+                || Keyboard.current.sKey.isPressed || Keyboard.current.dKey.isPressed;
+
+            if (anyPanKeyDown == _lastAnyPanKeyDown)
+            {
+                return;
+            }
+
+            _lastAnyPanKeyDown = anyPanKeyDown;
+            Vector2 panValue = _panAction?.ReadValue<Vector2>() ?? Vector2.zero;
+            Debug.Log($"[CameraInput] anyWasdDown={anyPanKeyDown} w={Keyboard.current.wKey.isPressed} a={Keyboard.current.aKey.isPressed} s={Keyboard.current.sKey.isPressed} d={Keyboard.current.dKey.isPressed} panReadValue={panValue} panActionNull={_panAction == null} panActionEnabled={_panAction?.enabled} mapEnabled={_panAction?.actionMap?.enabled}");
         }
 
         private Vector2 EdgePan()

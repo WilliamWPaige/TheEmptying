@@ -123,9 +123,10 @@ Docs/
 
 ## Tests
 
-- Every simulation feature ships with edit-mode tests in `Tests/EditMode/`, named after the module (`NeedsTests`, `EventBusTests`).
+- William does all behavior testing by hand in the real Editor. Only write new tests for data: content files, settings, schemas, and save/load round trips. Do not write new simulation or behavior tests.
 - Tests must be deterministic: seed every random source.
-- A task is not done until its tests pass. Report the test results.
+- Before every commit, run the existing EditMode suite and make sure it passes. Report the results.
+- Do not run PlayMode tests unless the prompt asks for it.
 
 ## Running tests
 
@@ -169,10 +170,12 @@ What a new module needs, based on what the milestone-1 demo module (`module.demo
 
 ## How we work
 
-- One task per prompt. Do what the prompt asks, nothing more. If you notice something else that needs doing, list it at the end instead of doing it.
+- One thing per prompt. Do only what the prompt asks. If you notice something else that needs doing, note it under a "Noticed, not fixed" heading in your report instead of doing it.
+- Stop rule: if a fix doesn't work after your first serious attempt, stop. Report what you found, what you tried, and your best guesses at the cause. Do not keep looping or try a long series of alternatives.
+- Specs: when a design doc section lists states and transitions for a behavior, implement exactly that list. If it's ambiguous or seems wrong, stop and ask instead of inventing logic.
 - Before writing code, say briefly which files you will create or change.
 - Never touch `Assets/ThirdParty/`, `Library/`, or Unity version settings.
 - Never add packages or third-party code without asking.
 - Never commit or push unless the prompt says to. When asked, use clear commit messages describing what changed.
-- At the end of each task, report: what you built, files changed, test results, anything left open, and any place the docs and the code disagree.
+- Reporting: keep messages and the final report in plain language. Name the files changed and say what changed and why, including test results, anything left open, and any place the docs and the code disagree. Do not paste code excerpts in messages or reports; William will read the code if needed.
 - New ideas from William go through a mini review (scope, what it touches, fit with the locked design) before they enter the docs or the code.

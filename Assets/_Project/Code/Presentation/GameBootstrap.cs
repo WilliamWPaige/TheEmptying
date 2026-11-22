@@ -23,6 +23,7 @@ using TheEmptying.Modules.People;
 using TheEmptying.Modules.Wealth;
 using TheEmptying.Presentation.Buildings;
 using TheEmptying.Presentation.Content;
+using TheEmptying.Presentation.DevTools;
 using TheEmptying.Presentation.Land;
 using TheEmptying.Presentation.MapMovement;
 using TheEmptying.Presentation.People;
@@ -75,6 +76,8 @@ namespace TheEmptying.Presentation
 
         private UIDocument _uiDocument;
         private VisualElement _hudPanel;
+        private Label _toastLabel;
+        private float _toastHideAtTime;
         private Label _dateLabel;
         private Label _speedLabel;
         private Label _treasuryLabel;
@@ -129,6 +132,7 @@ namespace TheEmptying.Presentation
         private BuildingsPresenter _buildingsPresenter;
         private BuildingPanelPresenter _buildingPanelPresenter;
         private PeoplePanelPresenter _peoplePanelPresenter;
+        private DebugReadoutPresenter _debugReadoutPresenter;
         private StockpilePanelPresenter _stockpilePanelPresenter;
         private StrategyCameraController _cameraController;
 
@@ -379,6 +383,16 @@ namespace TheEmptying.Presentation
 
         private void Update()
         {
+            if (Keyboard.current != null && Keyboard.current.f9Key.wasPressedThisFrame)
+            {
+                ShowToast(WriteStateDump());
+            }
+
+            if (_toastLabel != null && _toastLabel.style.display == DisplayStyle.Flex && Time.unscaledTime >= _toastHideAtTime)
+            {
+                _toastLabel.style.display = DisplayStyle.None;
+            }
+
             RefreshQuestionPopup();
 
             if (_paused || IsBlockedByPendingQuestion())
@@ -477,6 +491,7 @@ namespace TheEmptying.Presentation
             {
                 _simulation.Settings.Set(WorldClickDebugLogger.EnabledSettingId, 1);
                 _simulation.Settings.Set(TaskChangeLogSettingId, 1);
+                _simulation.Settings.Set(StrategyCameraController.LogCameraInputSettingId, 1);
             }
 #endif
         }
@@ -624,6 +639,10 @@ namespace TheEmptying.Presentation
             var panelObject = new GameObject("PeoplePanelPresenter");
             _peoplePanelPresenter = panelObject.AddComponent<PeoplePanelPresenter>();
             _peoplePanelPresenter.Initialize(_peopleModule, _gatheringModule, _jobsModule, _buildingsModule, _mapMovementModule, _cameraController, _uiDocument.rootVisualElement);
+
+            var debugReadoutObject = new GameObject("DebugReadoutPresenter");
+            _debugReadoutPresenter = debugReadoutObject.AddComponent<DebugReadoutPresenter>();
+            _debugReadoutPresenter.Initialize(_peopleModule, _gatheringModule, _mapMovementModule, _peoplePanelPresenter, _uiDocument.rootVisualElement);
         }
 
         /// <summary>The player just placed the starting stockpile: nothing else to gate on, so resume play automatically.</summary>
@@ -828,7 +847,149 @@ namespace TheEmptying.Presentation
             _hudPanel.Add(_treasuryLabel);
             root.Add(_hudPanel);
 
+            _toastLabel = new Label
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    left = 8,
+                    top = 40,
+                    paddingLeft = 6,
+                    paddingRight = 6,
+                    paddingTop = 4,
+                    paddingBottom = 4,
+                    color = Color.white,
+                    backgroundColor = new Color(0f, 0f, 0f, 0.6f),
+                    display = DisplayStyle.None
+                }
+            };
+            root.Add(_toastLabel);
+
             RefreshHud();
+        }
+
+        /// <summary>3.10b4: a brief on-screen message (3 seconds), for things like "state dump written" that the console log alone might not be open to show.</summary>
+        private void ShowToast(string message)
+        {
+            if (_toastLabel == null)
+            {
+                return;
+            }
+
+            _toastLabel.text = message;
+            _toastLabel.style.display = DisplayStyle.Flex;
+            _toastHideAtTime = Time.unscaledTime + 3f;
+        }
+
+        /// <summary>
+        /// 3.10b4: F9 writes a plain-text snapshot of the whole game to Logs/ - the in-game time, the
+        /// stockpile, every construction site (materials, labor, workers), and every person (the same
+        /// fields as the debug readout, plus their location) - for the user to attach when reporting a
+        /// hand-tested bug. Returns the message to show on screen.
+        /// </summary>
+        private string WriteStateDump()
+        {
+            try
+            {
+                var sb = new StringBuilder();
+                GameDate date = _simulation.Clock.CurrentDate;
+                bool use24h = _simulation.Settings.Get(Clock24hSettingId) != 0;
+                sb.AppendLine($"The Emptying state dump - {date}, {date.ToClockString(use24h)}");
+                sb.AppendLine();
+
+                sb.AppendLine("== Stockpile ==");
+                if (_buildingsModule != null && _inventoryModule != null && _buildingsModule.TryFindCrownStorehouse(out EntityId storehouseId))
+                {
+                    List<KeyValuePair<string, int>> goods = _inventoryModule.GetAll(storehouseId).OrderBy(kv => kv.Key, StringComparer.Ordinal).ToList();
+                    if (goods.Count == 0)
+                    {
+                        sb.AppendLine("  Empty.");
+                    }
+                    else
+                    {
+                        foreach (KeyValuePair<string, int> good in goods)
+                        {
+                            sb.AppendLine($"  {good.Key}: {good.Value}");
+                        }
+                    }
+                }
+                else
+                {
+                    sb.AppendLine("  No stockpile yet.");
+                }
+
+                sb.AppendLine();
+                sb.AppendLine("== Construction sites ==");
+                if (_buildingsModule != null)
+                {
+                    foreach (KeyValuePair<EntityId, BuildingState> row in _buildingsModule.Buildings)
+                    {
+                        BuildingState site = row.Value;
+                        if (site.Construction == null)
+                        {
+                            continue;
+                        }
+
+                        BuildingType type = _buildingsModule.GetBuildingType(site.BuildingTypeId);
+                        double laborNeeded = _buildingsModule.GetLaborHoursNeeded(row.Key);
+                        sb.AppendLine($"  {type?.Name ?? site.BuildingTypeId} {row.Key} at ({site.Rect.X},{site.Rect.Y}):");
+                        sb.AppendLine($"    Labor: {site.Construction.LaborHoursDone:F1}/{laborNeeded:F1} hours");
+
+                        if (type != null)
+                        {
+                            foreach (GoodAmount cost in type.ConstructionCost)
+                            {
+                                int delivered = site.Construction.DeliveredGoods.TryGetValue(cost.Good.Id, out int d) ? d : 0;
+                                int carried = _gatheringModule?.GetCarriedTowardSite(row.Key, cost.Good.Id) ?? 0;
+                                sb.AppendLine($"    {cost.Good.Id}: {delivered}/{cost.Amount} delivered, {carried} carried");
+                            }
+                        }
+
+                        if (_gatheringModule != null)
+                        {
+                            foreach ((EntityId person, string description) in _gatheringModule.GetWorkersAtSite(row.Key))
+                            {
+                                sb.AppendLine($"    {person}: {description}");
+                            }
+                        }
+                    }
+                }
+
+                sb.AppendLine();
+                sb.AppendLine("== People ==");
+                if (_peopleModule != null)
+                {
+                    foreach (KeyValuePair<EntityId, PersonState> row in _peopleModule.People)
+                    {
+                        EntityId id = row.Key;
+                        PersonState person = row.Value;
+                        GridPoint? position = _mapMovementModule != null && _mapMovementModule.IsMover(id) ? _mapMovementModule.GetCell(id) : (GridPoint?)null;
+                        GatherTaskKind kind = _gatheringModule?.GetTaskKind(id) ?? GatherTaskKind.None;
+
+                        sb.AppendLine($"  {person.FullName} ({id}) at {(position.HasValue ? position.Value.ToString() : "unknown")}:");
+                        sb.AppendLine($"    Task: {GatheringModule.DescribeTaskKind(kind)}");
+                        sb.AppendLine($"    Phase: {_gatheringModule?.DescribeTaskPhase(id) ?? "idle"}");
+                        sb.AppendLine($"    Carrying: {_gatheringModule?.DescribeCarrying(id) ?? "nothing"}");
+                        sb.AppendLine($"    On shift: {((_gatheringModule?.IsOnShift() ?? false) ? "yes" : "no")}");
+                        sb.AppendLine($"    Reason: {_gatheringModule?.GetTaskReason(id) ?? ""}");
+                    }
+                }
+
+                string fileName = $"state_dump_{DateTime.Now:yyyy-MM-dd_HH-mm-ss}.txt";
+                string logsFolder = Path.Combine(Application.dataPath, "..", "Logs");
+                Directory.CreateDirectory(logsFolder);
+                string path = Path.Combine(logsFolder, fileName);
+                File.WriteAllText(path, sb.ToString());
+
+                AppendLog($"State dump written to {fileName}.");
+                return $"State dump written to {fileName}";
+            }
+            catch (Exception ex)
+            {
+                string message = $"State dump failed: {ex.Message}";
+                AppendLog(message, Color.yellow);
+                return message;
+            }
         }
 
         private void RefreshHud()
@@ -1273,6 +1434,7 @@ namespace TheEmptying.Presentation
                 _buildingsPresenter?.Rebind(_buildingsModule, _mapMovementModule.Grid);
                 _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule, _marketModule, _inventoryModule, _gatheringModule);
                 _peoplePanelPresenter?.Rebind(_peopleModule, _gatheringModule, _jobsModule, _buildingsModule, _mapMovementModule);
+                _debugReadoutPresenter?.Rebind(_peopleModule, _gatheringModule, _mapMovementModule, _peoplePanelPresenter);
                 _stockpilePanelPresenter?.Rebind(_buildingsModule, _inventoryModule);
 
                 if (_buildingsModule != null && _buildingsModule.NeedsInitialStockpilePlacement)

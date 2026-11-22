@@ -37,5 +37,8 @@ namespace TheEmptying.Modules.Gathering
 
         /// <summary>3.10b3, for Haul: how much is currently being carried - 0 until picked up at the stockpile, back to 0 once dropped off.</summary>
         public int HaulAmount;
+
+        /// <summary>3.10b4: the plain-English reason this task was assigned - set whenever PostTaskChanged fires, for the debug readout and state dump.</summary>
+        public string LastAssignReason;
     }
 }

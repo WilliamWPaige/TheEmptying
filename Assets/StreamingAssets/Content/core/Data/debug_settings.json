@@ -18,6 +18,15 @@
             "maximum": 1,
             "category": "Debug",
             "description": "On every hand-gathering task change, logs who, their old task, their new task, and why. Off by default; the Editor forces it on at startup (see GameBootstrap)."
+        },
+        {
+            "id": "setting.debug.log_camera_input",
+            "valueType": "Number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1,
+            "category": "Debug",
+            "description": "On every press/release edge of W, A, S or D, logs the raw key states, the Pan action's read value, and whether the action and its map are enabled. Off by default; the Editor forces it on at startup (see GameBootstrap)."
         }
     ]
 }
