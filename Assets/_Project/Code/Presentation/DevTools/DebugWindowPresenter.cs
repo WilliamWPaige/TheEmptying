@@ -14,6 +14,9 @@ namespace TheEmptying.Presentation.DevTools
     /// sections). F1 toggles it; it starts hidden in the Editor and in
     /// builds alike. Never blocks gameplay keys except while one of its own
     /// text fields is actively focused for typing (see UiInputUtility).
+    /// F1 and Escape bypass that check entirely - see HandleEscapeKey and
+    /// GameBootstrap's F1 wiring - so a stuck focus check can never trap
+    /// the player.
     /// </summary>
     public sealed class DebugWindowPresenter : MonoBehaviour
     {
@@ -22,6 +25,14 @@ namespace TheEmptying.Presentation.DevTools
             All,
             ErrorsOnly,
             WarningsOnly
+        }
+
+        /// <summary>One live row's control plus the UI element(s) its value is pushed into each frame - built once, never recreated just to show a new value.</summary>
+        private sealed class CheatRowBinding
+        {
+            public CheatControl Control;
+            public Toggle ToggleElement;
+            public FloatField NumberField;
         }
 
         private VisualElement _uiRoot;
@@ -43,6 +54,7 @@ namespace TheEmptying.Presentation.DevTools
 
         private ErrorFilter _filter = ErrorFilter.All;
         private readonly HashSet<DebugLogEntry> _expandedEntries = new HashSet<DebugLogEntry>();
+        private readonly List<CheatRowBinding> _cheatBindings = new List<CheatRowBinding>();
 
         public bool IsOpen => _windowRoot != null && _windowRoot.style.display == DisplayStyle.Flex;
 
@@ -51,6 +63,7 @@ namespace TheEmptying.Presentation.DevTools
             _uiRoot = uiRoot;
             _cheatMenu = cheatMenu;
             BuildUi();
+            RebuildCheatsStructure();
 
             ErrorCatcher.Changed += OnErrorsChanged;
         }
@@ -62,12 +75,13 @@ namespace TheEmptying.Presentation.DevTools
 
         private void Update()
         {
-            if (IsOpen && _cheatsPanel.style.display == DisplayStyle.Flex && !UiInputUtility.IsTextFieldFocused(_uiRoot))
+            if (IsOpen && _cheatsPanel.style.display == DisplayStyle.Flex)
             {
-                RefreshCheatsList();
+                RefreshCheatValuesInPlace();
             }
         }
 
+        /// <summary>F1's entry point. Never gated by the focus check - see class remarks.</summary>
         public void ToggleWindow()
         {
             if (IsOpen)
@@ -86,18 +100,49 @@ namespace TheEmptying.Presentation.DevTools
             Open(showErrorsTab: true);
         }
 
+        /// <summary>Escape's entry point. Never gated by the focus check: it clears a focused text field, or closes the window if nothing is focused.</summary>
+        public void HandleEscapeKey()
+        {
+            if (UiInputUtility.IsTextFieldFocused(_uiRoot))
+            {
+                (_uiRoot.panel.focusController.focusedElement as VisualElement)?.Blur();
+                return;
+            }
+
+            if (IsOpen)
+            {
+                Close();
+            }
+        }
+
         private void Open(bool showErrorsTab)
         {
             _windowRoot.style.display = DisplayStyle.Flex;
             SwitchTab(showErrorsTab);
-            RefreshErrorsList();
-            RefreshCheatsList();
         }
 
         private void Close()
         {
             _windowRoot.style.display = DisplayStyle.None;
-            _uiRoot.panel?.focusController?.focusedElement?.Blur();
+            ClearFocusIfInsideWindow();
+        }
+
+        /// <summary>Closing the window always clears focus from anything inside it - never from a HUD control outside it.</summary>
+        private void ClearFocusIfInsideWindow()
+        {
+            if (!(_uiRoot?.panel?.focusController?.focusedElement is VisualElement focused))
+            {
+                return;
+            }
+
+            for (VisualElement current = focused; current != null; current = current.parent)
+            {
+                if (current == _windowRoot)
+                {
+                    focused.Blur();
+                    return;
+                }
+            }
         }
 
         private void OnErrorsChanged()
@@ -165,7 +210,7 @@ namespace TheEmptying.Presentation.DevTools
             }
             else
             {
-                RefreshCheatsList();
+                RefreshCheatValuesInPlace();
             }
         }
 
@@ -286,7 +331,14 @@ namespace TheEmptying.Presentation.DevTools
 
         #region Cheats tab
 
-        private void RefreshCheatsList()
+        /// <summary>
+        /// Builds the Cheats tab's rows once. Call again only when
+        /// CheatMenuRegistry's sections themselves change (the simulation
+        /// was rebuilt by a new game or a load) - never on a timer or just
+        /// to reflect a changed value, which RefreshCheatValuesInPlace does
+        /// without touching the tree.
+        /// </summary>
+        public void RebuildCheatsStructure()
         {
             if (_cheatsList == null || _cheatMenu == null)
             {
@@ -294,6 +346,7 @@ namespace TheEmptying.Presentation.DevTools
             }
 
             _cheatsList.Clear();
+            _cheatBindings.Clear();
 
             foreach (CheatSection section in _cheatMenu.Sections)
             {
@@ -306,6 +359,49 @@ namespace TheEmptying.Presentation.DevTools
                     _cheatsList.Add(BuildCheatRow(control));
                 }
             }
+
+            RefreshCheatValuesInPlace();
+        }
+
+        /// <summary>
+        /// Pushes each control's current value into its already-built UI
+        /// element - never clears or recreates anything. Skips exactly the
+        /// one number field the player is currently typing in; everything
+        /// else (including every other number field) still updates.
+        /// </summary>
+        private void RefreshCheatValuesInPlace()
+        {
+            Focusable focused = _uiRoot?.panel?.focusController?.focusedElement;
+
+            foreach (CheatRowBinding binding in _cheatBindings)
+            {
+                if (binding.ToggleElement != null)
+                {
+                    binding.ToggleElement.SetValueWithoutNotify(binding.Control.GetToggleValue());
+                }
+                else if (binding.NumberField != null && !IsFocusedWithin(binding.NumberField, focused))
+                {
+                    binding.NumberField.SetValueWithoutNotify((float)binding.Control.GetNumberValue());
+                }
+            }
+        }
+
+        private static bool IsFocusedWithin(VisualElement container, Focusable focused)
+        {
+            if (!(focused is VisualElement element))
+            {
+                return false;
+            }
+
+            for (VisualElement current = element; current != null; current = current.parent)
+            {
+                if (current == container)
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         private VisualElement BuildCheatRow(CheatControl control)
@@ -324,6 +420,7 @@ namespace TheEmptying.Presentation.DevTools
                     var toggle = new Toggle(control.Label) { value = control.GetToggleValue() };
                     toggle.RegisterValueChangedCallback(evt => control.SetToggleValue(evt.newValue));
                     row.Add(toggle);
+                    _cheatBindings.Add(new CheatRowBinding { Control = control, ToggleElement = toggle });
                     AddResetButtonIfAny(row, control);
                     break;
                 }
@@ -343,13 +440,9 @@ namespace TheEmptying.Presentation.DevTools
                             CommitNumber(control, field);
                             field.Blur();
                         }
-                        else if (evt.keyCode == KeyCode.Escape)
-                        {
-                            field.SetValueWithoutNotify((float)control.GetNumberValue());
-                            field.Blur();
-                        }
                     });
                     row.Add(field);
+                    _cheatBindings.Add(new CheatRowBinding { Control = control, NumberField = field });
 
                     if (control.Minimum.HasValue || control.Maximum.HasValue)
                     {

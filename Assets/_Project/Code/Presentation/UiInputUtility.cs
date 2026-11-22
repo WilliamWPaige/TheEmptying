@@ -24,11 +24,40 @@ namespace TheEmptying.Presentation
         /// text-entry control (TextField, IntegerField, FloatField and so
         /// on) shares the same inner focusable element, named
         /// "unity-text-input", regardless of the field's own value type.
+        ///
+        /// The focus controller can keep pointing at an element after it
+        /// (or an ancestor) has been removed or hidden - most commonly a
+        /// field destroyed by its own panel rebuilding itself while still
+        /// holding focus. Such a stale reference never counts as focused.
         /// </summary>
         public static bool IsTextFieldFocused(VisualElement uiRoot)
         {
             Focusable focused = uiRoot?.panel?.focusController?.focusedElement;
-            return focused is VisualElement element && element.name == "unity-text-input";
+            if (!(focused is VisualElement element) || element.name != "unity-text-input")
+            {
+                return false;
+            }
+
+            return IsAttachedAndVisible(element);
+        }
+
+        /// <summary>Still part of the panel's tree (not removed), and no ancestor up to the root is display: none (not hidden, and not inside a closed window).</summary>
+        private static bool IsAttachedAndVisible(VisualElement element)
+        {
+            if (element.panel == null)
+            {
+                return false;
+            }
+
+            for (VisualElement current = element; current != null; current = current.parent)
+            {
+                if (current.resolvedStyle.display == DisplayStyle.None)
+                {
+                    return false;
+                }
+            }
+
+            return true;
         }
     }
 }

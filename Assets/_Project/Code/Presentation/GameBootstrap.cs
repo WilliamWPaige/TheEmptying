@@ -345,7 +345,8 @@ namespace TheEmptying.Presentation
             gameplayMap.FindAction("SetSpeed1").performed += _ => HandleSetSpeed(1);
             gameplayMap.FindAction("SetSpeed2").performed += _ => HandleSetSpeed(2);
             gameplayMap.FindAction("SetSpeed3").performed += _ => HandleSetSpeed(3);
-            gameplayMap.FindAction("ToggleDebugWindow").performed += _ => HandleToggleDebugWindow();
+            gameplayMap.FindAction("ToggleDebugWindow").performed += _ => _debugWindow.ToggleWindow();
+            gameplayMap.FindAction("Escape").performed += _ => _debugWindow.HandleEscapeKey();
 
             // Always enabled: the keyboard rule is that gameplay keys work unless a text
             // field is actively focused for typing, never that the whole map gets disabled
@@ -373,17 +374,6 @@ namespace TheEmptying.Presentation
             }
 
             _simulation.Commands.Execute($"speed {speed}");
-        }
-
-        /// <summary>F1 toggles the debug window.</summary>
-        private void HandleToggleDebugWindow()
-        {
-            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement))
-            {
-                return;
-            }
-
-            _debugWindow.ToggleWindow();
         }
 
         /// <summary>A left click that lands on nothing in the UI always clears whatever UI control currently has focus.</summary>
@@ -685,6 +675,7 @@ namespace TheEmptying.Presentation
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings);
                 BuildCheatMenu();
+                _debugWindow?.RebuildCheatsStructure();
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");
