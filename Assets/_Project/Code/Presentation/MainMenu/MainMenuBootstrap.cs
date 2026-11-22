@@ -1,21 +1,24 @@
 using System;
+using TheEmptying.Presentation.Menus;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
-#if UNITY_EDITOR
-using UnityEditor;
-#endif
 
 namespace TheEmptying.Presentation.MainMenu
 {
     /// <summary>
     /// Builds the main menu entirely in code, the same way GameBootstrap
     /// builds the HUD - a plain centered UI Toolkit panel, no scene-authored
-    /// UI. Load and Options are shown but disabled; they get built later.
+    /// UI. Load stays disabled; it gets built later. Options opens the
+    /// shared OptionsMenuPresenter, the same panel the in-game Escape menu
+    /// uses.
     /// </summary>
     public sealed class MainMenuBootstrap : MonoBehaviour
     {
         private const string GameSceneName = "Game";
+
+        private VisualElement _mainPanel;
+        private OptionsMenuPresenter _options;
 
         private void Awake()
         {
@@ -28,6 +31,7 @@ namespace TheEmptying.Presentation.MainMenu
 
             var uiDocument = gameObject.AddComponent<UIDocument>();
             uiDocument.panelSettings = panelSettings;
+            UiPreferences.RegisterPanel(panelSettings);
 
             VisualElement root = uiDocument.rootVisualElement;
             root.style.flexGrow = 1;
@@ -39,6 +43,25 @@ namespace TheEmptying.Presentation.MainMenu
             root.style.justifyContent = Justify.Center;
             root.style.alignItems = Align.Center;
 
+            _mainPanel = BuildMainPanel();
+            root.Add(_mainPanel);
+
+            _options = new OptionsMenuPresenter();
+            _options.Initialize(onBack: () =>
+            {
+                _options.Close();
+                _mainPanel.style.display = DisplayStyle.Flex;
+            });
+            root.Add(_options.Panel);
+        }
+
+        private void OnDestroy()
+        {
+            _options?.Dispose();
+        }
+
+        private VisualElement BuildMainPanel()
+        {
             var panel = new VisualElement
             {
                 style =
@@ -67,10 +90,16 @@ namespace TheEmptying.Presentation.MainMenu
 
             panel.Add(BuildMenuButton("Start", StartGame, enabled: true));
             panel.Add(BuildMenuButton("Load", null, enabled: false));
-            panel.Add(BuildMenuButton("Options", null, enabled: false));
-            panel.Add(BuildMenuButton("Exit", ExitGame, enabled: true));
+            panel.Add(BuildMenuButton("Options", OpenOptions, enabled: true));
+            panel.Add(BuildMenuButton("Exit", GameExit.Quit, enabled: true));
 
-            root.Add(panel);
+            return panel;
+        }
+
+        private void OpenOptions()
+        {
+            _mainPanel.style.display = DisplayStyle.None;
+            _options.Open();
         }
 
         private static Button BuildMenuButton(string text, Action onClick, bool enabled)
@@ -92,15 +121,6 @@ namespace TheEmptying.Presentation.MainMenu
         private static void StartGame()
         {
             SceneManager.LoadScene(GameSceneName);
-        }
-
-        private static void ExitGame()
-        {
-#if UNITY_EDITOR
-            EditorApplication.isPlaying = false;
-#else
-            Application.Quit();
-#endif
         }
     }
 }

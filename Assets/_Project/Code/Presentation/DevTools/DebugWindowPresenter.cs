@@ -14,9 +14,10 @@ namespace TheEmptying.Presentation.DevTools
     /// sections). F1 toggles it; it starts hidden in the Editor and in
     /// builds alike. Never blocks gameplay keys except while one of its own
     /// text fields is actively focused for typing (see UiInputUtility).
-    /// F1 and Escape bypass that check entirely - see HandleEscapeKey and
-    /// GameBootstrap's F1 wiring - so a stuck focus check can never trap
-    /// the player.
+    /// F1 (ToggleWindow) bypasses that check entirely, so a stuck focus
+    /// check can never trap the player. Escape is handled by
+    /// GameBootstrap, which closes this window (via ToggleWindow) before
+    /// anything else gets a turn - see its HandleEscapeKeyPressed.
     /// </summary>
     public sealed class DebugWindowPresenter : MonoBehaviour
     {
@@ -98,21 +99,6 @@ namespace TheEmptying.Presentation.DevTools
         public void OpenOnErrorsTab()
         {
             Open(showErrorsTab: true);
-        }
-
-        /// <summary>Escape's entry point. Never gated by the focus check: it clears a focused text field, or closes the window if nothing is focused.</summary>
-        public void HandleEscapeKey()
-        {
-            if (UiInputUtility.IsTextFieldFocused(_uiRoot))
-            {
-                (_uiRoot.panel.focusController.focusedElement as VisualElement)?.Blur();
-                return;
-            }
-
-            if (IsOpen)
-            {
-                Close();
-            }
         }
 
         private void Open(bool showErrorsTab)

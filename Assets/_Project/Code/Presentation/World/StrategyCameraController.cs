@@ -40,6 +40,9 @@ namespace TheEmptying.Presentation.World
         private float _height;
         private float _yaw;
 
+        /// <summary>Set by the Escape menu while it (or its Options/confirm sub-panels) is open: the camera stays completely still, same as while a text field is focused.</summary>
+        public bool InputSuspended { get; set; }
+
         public void Initialize(InputActionMap gameplayMap, SettingsRegistry settings, VisualElement uiRoot, float groundWidthMeters, float groundDepthMeters)
         {
             _panAction = gameplayMap.FindAction("Pan");
@@ -67,7 +70,7 @@ namespace TheEmptying.Presentation.World
 
         private void Update()
         {
-            if (_settings == null || UiInputUtility.IsTextFieldFocused(_uiRoot))
+            if (_settings == null || InputSuspended || UiInputUtility.IsTextFieldFocused(_uiRoot))
             {
                 return;
             }

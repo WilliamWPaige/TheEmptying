@@ -13,6 +13,7 @@ using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.DevTools;
+using TheEmptying.Presentation.Menus;
 using TheEmptying.Presentation.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -75,6 +76,7 @@ namespace TheEmptying.Presentation
 
         private readonly CheatMenuRegistry _cheatMenu = new CheatMenuRegistry();
         private DebugWindowPresenter _debugWindow;
+        private EscapeMenuPresenter _escapeMenu;
         private VisualElement _errorBadge;
         private Label _errorBadgeErrorsLabel;
         private Label _errorBadgeWarningsLabel;
@@ -134,6 +136,7 @@ namespace TheEmptying.Presentation
             BuildUi();
             WireInput();
             BuildWorld();
+            BuildEscapeMenu();
             BuildCheatMenu();
             BuildDebugWindow();
             LogAndClearAnyStartupFocus();
@@ -339,6 +342,13 @@ namespace TheEmptying.Presentation
             _debugWindow.Initialize(_uiDocument.rootVisualElement, _cheatMenu);
         }
 
+        /// <summary>R4: Resume/Main Menu/Options/Exit Game, with the shared Options panel and the two Yes/No confirmations.</summary>
+        private void BuildEscapeMenu()
+        {
+            _escapeMenu = gameObject.AddComponent<EscapeMenuPresenter>();
+            _escapeMenu.Initialize(_uiDocument.rootVisualElement, this, _cameraController);
+        }
+
         #endregion
 
         #region Input
@@ -360,7 +370,7 @@ namespace TheEmptying.Presentation
             gameplayMap.FindAction("SetSpeed2").performed += _ => HandleSetSpeed(2);
             gameplayMap.FindAction("SetSpeed3").performed += _ => HandleSetSpeed(3);
             gameplayMap.FindAction("ToggleDebugWindow").performed += _ => _debugWindow.ToggleWindow();
-            gameplayMap.FindAction("Escape").performed += _ => _debugWindow.HandleEscapeKey();
+            gameplayMap.FindAction("Escape").performed += _ => HandleEscapeKeyPressed();
 
             // Always enabled: the keyboard rule is that gameplay keys work unless a text
             // field is actively focused for typing, never that the whole map gets disabled
@@ -374,7 +384,7 @@ namespace TheEmptying.Presentation
         /// <summary>Space, and the matching HUD button, both funnel through here - and, like every cheat action, through the command system.</summary>
         private void HandleTogglePause()
         {
-            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement))
+            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement) || (_escapeMenu != null && _escapeMenu.IsOpen))
             {
                 return;
             }
@@ -385,12 +395,38 @@ namespace TheEmptying.Presentation
         /// <summary>1/2/3, and the matching HUD buttons, both funnel through here. The speed command itself also unpauses.</summary>
         private void HandleSetSpeed(int speed)
         {
-            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement))
+            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement) || (_escapeMenu != null && _escapeMenu.IsOpen))
             {
                 return;
             }
 
             _simulation.Commands.Execute($"speed {speed}");
+        }
+
+        /// <summary>
+        /// R4: Escape's single entry point, in strict priority order - stop
+        /// typing, then close the debug window, then hand off to the Escape
+        /// menu for going back one step or opening/closing itself. Never
+        /// gated by the text-field focus check itself (step 1 IS that
+        /// check, for every panel at once), so a stuck focus can never trap
+        /// the player, same reasoning as F1.
+        /// </summary>
+        private void HandleEscapeKeyPressed()
+        {
+            VisualElement root = _uiDocument.rootVisualElement;
+            if (UiInputUtility.IsTextFieldFocused(root))
+            {
+                (root.panel.focusController.focusedElement as VisualElement)?.Blur();
+                return;
+            }
+
+            if (_debugWindow.IsOpen)
+            {
+                _debugWindow.ToggleWindow();
+                return;
+            }
+
+            _escapeMenu.HandleEscapePressed();
         }
 
         /// <summary>A left click that lands on nothing in the UI always clears whatever UI control currently has focus.</summary>
@@ -426,6 +462,7 @@ namespace TheEmptying.Presentation
 
             _uiDocument = gameObject.AddComponent<UIDocument>();
             _uiDocument.panelSettings = panelSettings;
+            UiPreferences.RegisterPanel(panelSettings);
 
             // The root element's own Yoga style defaults to width/height: auto, which
             // shrinks to fit its (non-absolute) children rather than filling the
