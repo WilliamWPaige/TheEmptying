@@ -228,7 +228,7 @@ namespace TheEmptying.Presentation.People
             bool isIdle = !hasJob && taskKind == GatherTaskKind.None && person.Activity == PersonActivity.Idle;
 
             string role = DescribeRole(id, person);
-            string taskOrJob = hasJob ? DescribeJob(jobBuilding, jobSlotType) : DescribeGatherTask(taskKind);
+            string taskOrJob = hasJob ? DescribeJob(jobBuilding, jobSlotType) : DescribeGatherTask(id);
 
             GridPoint? target = _mapMovement?.GetDestination(id) ?? _gathering?.GetLocation(id);
             string targetText = DescribeTargetAndDistance(id, target);
@@ -289,7 +289,8 @@ namespace TheEmptying.Presentation.People
             return string.IsNullOrEmpty(waitReason) ? $"{slotType} at {buildingName}" : $"{slotType} at {buildingName} ({waitReason})";
         }
 
-        private static string DescribeGatherTask(GatherTaskKind kind) => GatheringModule.DescribeTaskKind(kind);
+        private string DescribeGatherTask(EntityId id) =>
+            _gathering != null ? _gathering.DescribeTaskDetail(id) : GatheringModule.DescribeTaskKind(GatherTaskKind.None);
 
         private string DescribeTargetAndDistance(EntityId id, GridPoint? target)
         {

@@ -604,46 +604,13 @@ namespace TheEmptying.Modules.Buildings
 
         #region Construction
 
+        /// <summary>Delivers goods to a site from wherever they're paid for: the owner's own inventory, or (for a crown site) the crown storehouse. For a hauler who already removed the goods from the stockpile at pickup, see TryDepositCarriedGoods instead - this method would otherwise try to remove them a second time.</summary>
         public bool TryDeliverGoods(EntityId siteId, string goodId, int count, out string error)
         {
-            if (count <= 0)
+            if (!TryValidateDelivery(siteId, goodId, count, out BuildingState site, out BuildingType type, out int delivered, out int toDeliver, out error))
             {
-                error = "Count must be positive.";
                 return false;
             }
-
-            if (!_buildings.TryGet(siteId, out BuildingState site) || site.Construction == null)
-            {
-                error = "No such construction site.";
-                return false;
-            }
-
-            BuildingType type = _buildingTypesById[site.BuildingTypeId];
-            int costIndex = -1;
-            for (int i = 0; i < type.ConstructionCost.Count; i++)
-            {
-                if (type.ConstructionCost[i].Good.Id == goodId)
-                {
-                    costIndex = i;
-                    break;
-                }
-            }
-
-            if (costIndex < 0)
-            {
-                error = $"A {type.Name} doesn't need {goodId}.";
-                return false;
-            }
-
-            int delivered = site.Construction.DeliveredGoods.TryGetValue(goodId, out int d) ? d : 0;
-            int remaining = type.ConstructionCost[costIndex].Amount - delivered;
-            if (remaining <= 0)
-            {
-                error = $"{goodId} has already been fully delivered.";
-                return false;
-            }
-
-            int toDeliver = Math.Min(count, remaining);
 
             if (site.Owner.HasValue)
             {
@@ -667,11 +634,81 @@ namespace TheEmptying.Modules.Buildings
                 }
             }
 
-            site.Construction.DeliveredGoods[goodId] = delivered + toDeliver;
-            CheckCompletion(siteId, site, type, _currentTick());
-
+            DepositDelivered(siteId, site, type, goodId, delivered, toDeliver);
             error = null;
             return true;
+        }
+
+        /// <summary>
+        /// 3.10b3: a hauler's drop-off - the goods already left the crown storehouse at pickup
+        /// (GatheringModule), carried by that person ever since, so this only credits the site's
+        /// delivered total; it never touches any inventory (there's nowhere left to remove them from).
+        /// </summary>
+        public bool TryDepositCarriedGoods(EntityId siteId, string goodId, int count, out string error)
+        {
+            if (!TryValidateDelivery(siteId, goodId, count, out BuildingState site, out BuildingType type, out int delivered, out int toDeliver, out error))
+            {
+                return false;
+            }
+
+            DepositDelivered(siteId, site, type, goodId, delivered, toDeliver);
+            error = null;
+            return true;
+        }
+
+        private bool TryValidateDelivery(EntityId siteId, string goodId, int count, out BuildingState site, out BuildingType type, out int delivered, out int toDeliver, out string error)
+        {
+            site = null;
+            type = null;
+            delivered = 0;
+            toDeliver = 0;
+
+            if (count <= 0)
+            {
+                error = "Count must be positive.";
+                return false;
+            }
+
+            if (!_buildings.TryGet(siteId, out site) || site.Construction == null)
+            {
+                error = "No such construction site.";
+                return false;
+            }
+
+            type = _buildingTypesById[site.BuildingTypeId];
+            int costIndex = -1;
+            for (int i = 0; i < type.ConstructionCost.Count; i++)
+            {
+                if (type.ConstructionCost[i].Good.Id == goodId)
+                {
+                    costIndex = i;
+                    break;
+                }
+            }
+
+            if (costIndex < 0)
+            {
+                error = $"A {type.Name} doesn't need {goodId}.";
+                return false;
+            }
+
+            delivered = site.Construction.DeliveredGoods.TryGetValue(goodId, out int d) ? d : 0;
+            int remaining = type.ConstructionCost[costIndex].Amount - delivered;
+            if (remaining <= 0)
+            {
+                error = $"{goodId} has already been fully delivered.";
+                return false;
+            }
+
+            toDeliver = Math.Min(count, remaining);
+            error = null;
+            return true;
+        }
+
+        private void DepositDelivered(EntityId siteId, BuildingState site, BuildingType type, string goodId, int delivered, int toDeliver)
+        {
+            site.Construction.DeliveredGoods[goodId] = delivered + toDeliver;
+            CheckCompletion(siteId, site, type, _currentTick());
         }
 
         public bool TryAddLaborHours(EntityId siteId, double hours, out string error)
@@ -1017,7 +1054,7 @@ namespace TheEmptying.Modules.Buildings
             return null;
         }
 
-        /// <summary>The crown's own goods reserve, if a complete one exists yet. Market's crown construction sites take materials from here first.</summary>
+        /// <summary>The crown's own goods reserve, if a complete one exists yet. A crown construction site's materials come from here first, hauled over by a founder (GatheringModule).</summary>
         public bool TryFindCrownStorehouse(out EntityId storehouseId)
         {
             EntityId? found = FindCrownStorehouse();
@@ -1226,8 +1263,9 @@ namespace TheEmptying.Modules.Buildings
                     : error;
             }));
 
-            // Normal play no longer needs this: Market's bulk orders (3.9) now source and deliver
-            // construction materials automatically. Kept for tests and debugging.
+            // Normal play no longer needs this: a private owner's site is still sourced and delivered
+            // by Market's bulk orders, and a crown site's own stockpile stock is hauled over by
+            // founders by hand (GatheringModule, 3.10b3). Kept for tests and debugging.
             context.RegisterCommand(new ConsoleCommand("deliver", "deliver <siteId> <good> <count> - delivers goods to a construction site, from the owner's inventory (or the crown storehouse) (test/debug only).", args =>
             {
                 if (args.Length != 3 || !EntityId.TryParse(args[0], out EntityId siteId) || !ConsoleArgs.TryParseInt(args[2], out int count))

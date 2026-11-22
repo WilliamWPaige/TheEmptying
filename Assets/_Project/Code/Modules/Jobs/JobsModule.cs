@@ -71,6 +71,15 @@ namespace TheEmptying.Modules.Jobs
         /// <summary>3.10b: no banked hours - Gathering registers a read-only check here, consulted before a worked hour counts toward a Worker slot's accumulated hours at all. Returns null when the building can make progress right now; otherwise the reason it can't, which Gathering also surfaces as this worker's activity and in the People panel.</summary>
         private Func<EntityId, BuildingState, Recipe, string> _productionAvailabilityProvider = (_, __, ___) => null;
 
+        /// <summary>
+        /// 3.10b3: Gathering registers a read-only check here, consulted before a currently-jobless
+        /// person is even considered an applicant for an opening. True (the default) for everyone -
+        /// Gathering uses this to keep at least one founder available for the crown's own unpaid
+        /// construction when a site is still waiting, rather than letting ordinary hiring absorb
+        /// every last one of them and leave nobody to ever finish it.
+        /// </summary>
+        private Func<EntityId, bool> _hiringEligibilityProvider = _ => true;
+
         /// <summary>Reverse index: a working person's building and slot type, for O(1) lookups from People's hourly schedule.</summary>
         private readonly Dictionary<EntityId, (EntityId Building, JobSlotType Type)> _employmentByPerson = new Dictionary<EntityId, (EntityId, JobSlotType)>();
 
@@ -303,6 +312,10 @@ namespace TheEmptying.Modules.Jobs
         /// <summary>3.10b: Gathering calls this during its own Initialize to supply the no-banked-hours availability check. Never called directly by this module otherwise.</summary>
         public void SetProductionAvailabilityProvider(Func<EntityId, BuildingState, Recipe, string> provider) =>
             _productionAvailabilityProvider = provider ?? ((_, __, ___) => null);
+
+        /// <summary>3.10b3: Gathering calls this during its own Initialize to keep at least one founder in reserve for pending crown construction. Never called directly by this module otherwise.</summary>
+        public void SetHiringEligibilityProvider(Func<EntityId, bool> provider) =>
+            _hiringEligibilityProvider = provider ?? (_ => true);
 
         /// <summary>Null when the person holds no job - Gathering layers its own hand-gathering workplace underneath this one.</summary>
         public GridPoint? GetWorkplaceLocation(EntityId person) =>
@@ -575,6 +588,14 @@ namespace TheEmptying.Modules.Jobs
                 }
 
                 bool isEmployed = _employmentByPerson.TryGetValue(personId, out (EntityId Building, JobSlotType Type) current);
+
+                // 3.10b3: a currently-jobless person the crown still needs for construction never
+                // becomes a new hire - only gates NEW applications, never a job someone already holds.
+                if (!isEmployed && !_hiringEligibilityProvider(personId))
+                {
+                    continue;
+                }
+
                 Money currentPay = Money.Zero;
                 if (isEmployed && _jobs.TryGet(current.Building, out JobsState currentJobs))
                 {

@@ -274,6 +274,7 @@ namespace TheEmptying.Presentation
         public bool IsBuildingPanelOpenForTesting => _buildingPanelPresenter?.IsShowingForTesting ?? false;
         public EntityId BuildingPanelShownIdForTesting => _buildingPanelPresenter?.ShownBuildingIdForTesting ?? EntityId.None;
         public int BuildingPanelSlotsChildCountForTesting => _buildingPanelPresenter?.SlotsChildCountForTesting ?? 0;
+        public IEnumerable<string> BuildingPanelSlotLabelTextsForTesting => _buildingPanelPresenter?.SlotLabelTextsForTesting ?? Enumerable.Empty<string>();
 
         /// <summary>For tests: whether the people panel is currently shown, and how many rows it lists.</summary>
         public bool IsPeoplePanelOpenForTesting => _peoplePanelPresenter?.IsShowingForTesting ?? false;
@@ -601,7 +602,7 @@ namespace TheEmptying.Presentation
 
             var panelObject = new GameObject("BuildingPanelPresenter");
             _buildingPanelPresenter = panelObject.AddComponent<BuildingPanelPresenter>();
-            _buildingPanelPresenter.Initialize(_buildingsModule, _jobsModule, _marketModule, _inventoryModule, _uiDocument.rootVisualElement, command => _simulation.Commands.Execute(command));
+            _buildingPanelPresenter.Initialize(_buildingsModule, _jobsModule, _marketModule, _inventoryModule, _gatheringModule, _uiDocument.rootVisualElement, command => _simulation.Commands.Execute(command));
 
             var stockpilePanelObject = new GameObject("StockpilePanelPresenter");
             _stockpilePanelPresenter = stockpilePanelObject.AddComponent<StockpilePanelPresenter>();
@@ -1270,7 +1271,7 @@ namespace TheEmptying.Presentation
                 _mapPresenter?.SetGatheringModule(_gatheringModule);
                 _landPresenter?.Rebind(_landModule, _mapMovementModule.Grid);
                 _buildingsPresenter?.Rebind(_buildingsModule, _mapMovementModule.Grid);
-                _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule, _marketModule, _inventoryModule);
+                _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule, _marketModule, _inventoryModule, _gatheringModule);
                 _peoplePanelPresenter?.Rebind(_peopleModule, _gatheringModule, _jobsModule, _buildingsModule, _mapMovementModule);
                 _stockpilePanelPresenter?.Rebind(_buildingsModule, _inventoryModule);
 

@@ -11,6 +11,9 @@ namespace TheEmptying.Modules.Gathering
 
         Farm,
         Woodcut,
-        Quarry
+        Quarry,
+
+        /// <summary>A founder-only task: carrying construction materials from the crown stockpile to a crown construction site that needs them.</summary>
+        Haul
     }
 }

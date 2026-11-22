@@ -281,7 +281,7 @@ namespace TheEmptying.Presentation.MapMovement
                 GatherTaskKind kind = _gatheringModule.GetTaskKind(id);
                 if (kind != GatherTaskKind.None)
                 {
-                    return GatheringModule.DescribeTaskKind(kind);
+                    return _gatheringModule.DescribeTaskDetail(id);
                 }
             }
 

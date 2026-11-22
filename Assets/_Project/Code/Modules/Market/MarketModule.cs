@@ -618,11 +618,6 @@ namespace TheEmptying.Modules.Market
 
                 foreach (GoodAmount cost in type.ConstructionCost)
                 {
-                    if (site.Construction == null)
-                    {
-                        break; // a previous good's draw from the storehouse just completed the site
-                    }
-
                     string goodId = cost.Good.Id;
                     int delivered = site.Construction.DeliveredGoods.TryGetValue(goodId, out int d) ? d : 0;
                     int onOrder = _onOrderForSite.TryGetValue((siteId, goodId), out int o) ? o : 0;
@@ -632,15 +627,10 @@ namespace TheEmptying.Modules.Market
                         continue;
                     }
 
-                    if (!site.Owner.HasValue)
-                    {
-                        stillNeeded -= TryDrawFromStorehouse(siteId, goodId, stillNeeded);
-                        if (stillNeeded <= 0)
-                        {
-                            continue;
-                        }
-                    }
-
+                    // 3.10b3: a crown site's own storehouse stock no longer moves here on its own - a
+                    // founder hauls it over by hand (GatheringModule). This bulk-order pass still buys
+                    // the shortfall from a private seller (and delivers it after a distance delay) for
+                    // any site, crown included, exactly as before; only the stockpile-to-site leg changed.
                     AccountId buyerAccount = site.Owner.HasValue ? AccountId.Person(site.Owner.Value) : AccountId.Crown;
                     GridPoint from = site.Rect.Center;
 
@@ -679,28 +669,6 @@ namespace TheEmptying.Modules.Market
                     _onOrderForSite[(siteId, goodId)] = onOrder + toOrder;
                 }
             }
-        }
-
-        /// <summary>
-        /// A crown site's goods come from the storehouse first, immediately (no transit delay - it's
-        /// already the crown's own stock). TryDeliverGoods already draws from the storehouse itself for
-        /// a crown site (BuildingsModule, 3.9), so this only has to ask for it - not remove it twice.
-        /// Returns how much was drawn.
-        /// </summary>
-        private int TryDrawFromStorehouse(EntityId siteId, string goodId, int amountNeeded)
-        {
-            if (!_buildings.TryFindCrownStorehouse(out EntityId storehouseId) || storehouseId == siteId)
-            {
-                return 0;
-            }
-
-            int toDraw = Math.Min(_inventory.GetCount(storehouseId, goodId), amountNeeded);
-            if (toDraw <= 0)
-            {
-                return 0;
-            }
-
-            return _buildings.TryDeliverGoods(siteId, goodId, toDraw, out _) ? toDraw : 0;
         }
 
         private void DeliverArrivedOrders(long tick)

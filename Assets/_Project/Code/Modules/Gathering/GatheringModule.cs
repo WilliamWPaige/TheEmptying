@@ -52,6 +52,7 @@ namespace TheEmptying.Modules.Gathering
         public const string RadiusCellsSettingId = "setting.gathering.radius_cells";
         public const string FoodNeededPerPersonPerMonthSettingId = "setting.gathering.food_needed_per_person_per_month";
         public const string WheatFarmerCapSettingId = "setting.gathering.wheat_farmer_cap";
+        public const string HaulCarryLimitSettingId = "setting.gathering.haul_carry_limit";
 
         // 3.10b: founders building their own starter buildings.
         public const string LogReserveSettingId = "setting.gathering.starter.log_reserve";
@@ -143,6 +144,10 @@ namespace TheEmptying.Modules.Gathering
             // 3.10b: no banked hours - gates WorkHoursAccumulated itself, before this module's own
             // production step ever sees an hour it can't use.
             _jobs.SetProductionAvailabilityProvider(TryGetProductionBlockReason);
+            // 3.10b3: keeps at least one founder in reserve for pending crown construction, so
+            // ordinary hiring can never absorb every last one of them and leave a crown site (the
+            // lodging, say) permanently short of anyone to build or haul for it.
+            _jobs.SetHiringEligibilityProvider(IsEligibleForHiring);
 
             context.Subscribe<NewDayEvent>(evt => AssignTasks());
             // So builders start the same day a site goes up, not the next morning.
@@ -195,6 +200,11 @@ namespace TheEmptying.Modules.Gathering
             bool anySiteWaiting = AnyCrownSiteNeedsLabor();
             bool canFarmNow = CanFarmNow();
 
+            // 3.10b3: the one founder reserved for crown construction (see IsEligibleForHiring) is
+            // off limits to farming too - otherwise the wheat-farming carve-out below would happily
+            // pull them in instead, leaving nobody at all to ever finish a waiting crown site.
+            EntityId reservedForConstruction = anySiteWaiting ? FindFounderReservedForCrownConstruction() : EntityId.None;
+
             // Deterministic (so a save/load round trip picks the same ones) - ordered by each
             // person's entity index, which never changes once assigned. Up to the cap farm wheat;
             // while a site is waiting, only founders are eligible for this (everyone else just
@@ -203,7 +213,7 @@ namespace TheEmptying.Modules.Gathering
             if (canFarmNow)
             {
                 IEnumerable<KeyValuePair<EntityId, PersonState>> candidates = _people.People
-                    .Where(row => row.Value.AgeLifeYears >= adultAge && !_people.IsMonarch(row.Key) && !_jobs.IsEmployed(row.Key));
+                    .Where(row => row.Value.AgeLifeYears >= adultAge && !_people.IsMonarch(row.Key) && !_jobs.IsEmployed(row.Key) && row.Key != reservedForConstruction);
                 if (anySiteWaiting)
                 {
                     candidates = candidates.Where(row => _people.IsFounder(row.Key));
@@ -211,6 +221,11 @@ namespace TheEmptying.Modules.Gathering
 
                 farmerIds = new HashSet<EntityId>(candidates.OrderBy(row => row.Key.Index).Take(wheatFarmerCap).Select(row => row.Key));
             }
+
+            // 3.10b3: who hauls construction materials versus who builds, decided per site (not
+            // founder by founder in arbitrary iteration order) - see PlanHaulingAndBuilding.
+            (Dictionary<EntityId, EntityId> routedSiteByFounder, HashSet<EntityId> haulerIdsThisPass) =
+                anySiteWaiting ? PlanHaulingAndBuilding(farmerIds, adultAge) : (null, null);
 
             foreach (KeyValuePair<EntityId, PersonState> row in _people.People.ToList())
             {
@@ -235,6 +250,11 @@ namespace TheEmptying.Modules.Gathering
                     continue; // don't abandon a crop already in the ground
                 }
 
+                if (task.Kind == GatherTaskKind.Haul)
+                {
+                    continue; // never abandon a trip already under way - ProcessHaul hands them back once it's done
+                }
+
                 bool isFarmer = farmerIds != null && farmerIds.Contains(personId);
                 bool isFounder = _people.IsFounder(personId);
 
@@ -244,9 +264,16 @@ namespace TheEmptying.Modules.Gathering
                     {
                         SetTask(personId, task, GatherTaskKind.Farm, anchor, radius, null, "a crown site is waiting, but the wheat cap still has room and food isn't covered yet");
                     }
-                    else if (TryFindCrownSiteNeedingLabor(personId, out EntityId siteId))
+                    else if (routedSiteByFounder.TryGetValue(personId, out EntityId siteId))
                     {
-                        SetTask(personId, task, GatherTaskKind.Build, anchor, radius, siteId, "a crown site is waiting for builders");
+                        if (haulerIdsThisPass.Contains(personId))
+                        {
+                            StartHaulTask(personId, task, siteId, "the site needs materials carried from the stockpile");
+                        }
+                        else
+                        {
+                            SetTask(personId, task, GatherTaskKind.Build, anchor, radius, siteId, "a crown site is waiting for builders");
+                        }
                     }
                     else
                     {
@@ -266,6 +293,213 @@ namespace TheEmptying.Modules.Gathering
             // per-person loop above, which has no notion of "this specific founder leads this
             // specific new site".
             TryStartNeededStarterBuildings();
+        }
+
+        /// <summary>
+        /// 3.10b3: decides, for every founder who'd otherwise build this pass, whether they haul
+        /// construction materials instead - grouped by the crown site they'd route to (their
+        /// nearest one needing labor), since "everyone hauls first" and "the hauling skill decides
+        /// who goes first" both have to be judged per site, not founder by founder in whatever order
+        /// _people.People happens to enumerate. A founder already mid-haul (GatherTaskKind.Haul) is
+        /// excluded entirely here - AssignTasks never touches them until their trip finishes on its
+        /// own (see the Haul guard above), so they're simply absent from this pass's routing.
+        /// </summary>
+        private (Dictionary<EntityId, EntityId> RoutedSite, HashSet<EntityId> Haulers) PlanHaulingAndBuilding(HashSet<EntityId> farmerIds, int adultAge)
+        {
+            var routedSite = new Dictionary<EntityId, EntityId>();
+            var bySite = new Dictionary<EntityId, List<EntityId>>();
+
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.People)
+            {
+                EntityId personId = row.Key;
+                PersonState person = row.Value;
+
+                bool eligible = person.AgeLifeYears >= adultAge && !_people.IsMonarch(personId) && !_jobs.IsEmployed(personId);
+                if (!eligible || !_people.IsFounder(personId) || (farmerIds != null && farmerIds.Contains(personId)))
+                {
+                    continue;
+                }
+
+                if (_tasks.TryGet(personId, out GatherTaskState existing) && existing.Kind == GatherTaskKind.Haul)
+                {
+                    continue; // already out on a trip - not up for reassignment this pass at all
+                }
+
+                if (!TryFindCrownSiteNeedingLabor(personId, out EntityId siteId))
+                {
+                    continue;
+                }
+
+                routedSite[personId] = siteId;
+                if (!bySite.TryGetValue(siteId, out List<EntityId> founders))
+                {
+                    founders = new List<EntityId>();
+                    bySite[siteId] = founders;
+                }
+
+                founders.Add(personId);
+            }
+
+            var haulers = new HashSet<EntityId>();
+            foreach (KeyValuePair<EntityId, List<EntityId>> group in bySite)
+            {
+                EntityId siteId = group.Key;
+                if (!_buildings.TryGetBuilding(siteId, out BuildingState site) || !SiteNeedsMoreHauling(siteId, site))
+                {
+                    continue; // nothing the stockpile can supply right now - ProcessBuild's own stall check (raw-gather, or help elsewhere) covers a genuinely empty stockpile
+                }
+
+                if (!AnyGoodsDeliveredAtSite(site))
+                {
+                    // Nothing has arrived yet - everyone routed here hauls first.
+                    foreach (EntityId personId in group.Value)
+                    {
+                        haulers.Add(personId);
+                    }
+
+                    continue;
+                }
+
+                // Some founders haul and the rest build: enough haulers to keep every trip's worth of
+                // stock actually moving (one per still-needed carry-limit's worth, per good, minus
+                // whoever's already out fetching), never more - the rest build. The hauling skill
+                // decides who goes first when the group is bigger than the useful slot count.
+                int carryLimit = (int)_settings.Get(HaulCarryLimitSettingId);
+                int usefulSlots = TotalUsefulHaulerSlots(siteId, site, carryLimit);
+                int moreNeeded = Math.Max(0, usefulSlots - GetHaulerCountAtSite(siteId));
+                if (moreNeeded <= 0)
+                {
+                    continue; // already as many haulers out as this site can usefully use right now
+                }
+
+                List<EntityId> ordered = group.Value
+                    .OrderByDescending(id => PersonSkillLevel(id, Skill.Hauling))
+                    .ThenBy(id => id.Index)
+                    .ToList();
+
+                for (int i = 0; i < moreNeeded && i < ordered.Count; i++)
+                {
+                    haulers.Add(ordered[i]);
+                }
+            }
+
+            return (routedSite, haulers);
+        }
+
+        /// <summary>How many haulers this crown site could usefully put to work right now: one per carry-limit's worth of each needed good that's actually in the storehouse (never more than the stock on hand would cover).</summary>
+        private int TotalUsefulHaulerSlots(EntityId siteId, BuildingState site, int carryLimit)
+        {
+            BuildingType type = _buildings.GetBuildingType(site.BuildingTypeId);
+            if (type == null || carryLimit <= 0 || !_buildings.TryFindCrownStorehouse(out EntityId storehouseId))
+            {
+                return 0;
+            }
+
+            int slots = 0;
+            foreach (GoodAmount cost in type.ConstructionCost)
+            {
+                int remaining = RemainingNeedForGood(siteId, site, cost.Good.Id, EntityId.None);
+                int stock = _inventory.GetCount(storehouseId, cost.Good.Id);
+                int haulable = Math.Min(remaining, stock);
+                if (haulable > 0)
+                {
+                    slots += (haulable + carryLimit - 1) / carryLimit;
+                }
+            }
+
+            return slots;
+        }
+
+        private int PersonSkillLevel(EntityId personId, Skill skill) => _people.TryGetPerson(personId, out PersonState person) ? person.Skills[(int)skill] : 0;
+
+        /// <summary>
+        /// 3.10b3: JobsModule's hiring eligibility hook. False only for the one founder reserved for
+        /// pending crown construction (see FindFounderReservedForCrownConstruction) - the crown
+        /// always keeps at least one of its own servants free to finish its own construction, rather
+        /// than ordinary hiring quietly stranding it forever by absorbing every last one of them in
+        /// a single pass. Never blocks a job someone already holds, and never applies to anyone but
+        /// a founder. Deterministic (the same founder, by the lowest entity index) so that every
+        /// candidate's own check agrees on who's reserved, regardless of hiring order within the pass.
+        /// </summary>
+        private bool IsEligibleForHiring(EntityId personId)
+        {
+            if (!_people.IsFounder(personId) || !AnyCrownSiteNeedsLabor())
+            {
+                return true;
+            }
+
+            return FindFounderReservedForCrownConstruction() != personId;
+        }
+
+        /// <summary>
+        /// The jobless founder (lowest entity index, for a stable result independent of iteration or
+        /// hiring order) currently held in reserve for crown construction; EntityId.None if none are
+        /// eligible. Deliberately ignores current task kind (Farm included) - AssignTasks also keeps
+        /// this one out of the wheat-farming pool (see its own farmer-candidate filter), so being
+        /// reserved means never drifting into farming either, not just never being hired.
+        /// </summary>
+        private EntityId FindFounderReservedForCrownConstruction()
+        {
+            int adultAge = (int)_settings.Get(PeopleModule.AdultAgeYearsSettingId);
+            EntityId best = EntityId.None;
+
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.People)
+            {
+                EntityId personId = row.Key;
+                if (!_people.IsFounder(personId) || _jobs.IsEmployed(personId) || row.Value.AgeLifeYears < adultAge || _people.IsMonarch(personId))
+                {
+                    continue;
+                }
+
+                if (best == EntityId.None || personId.Index < best.Index)
+                {
+                    best = personId;
+                }
+            }
+
+            return best;
+        }
+
+        /// <summary>Whether a crown site has received any construction goods at all yet (sum across every needed good, delivered only - not carried).</summary>
+        private static bool AnyGoodsDeliveredAtSite(BuildingState site) => site.Construction.DeliveredGoods.Values.Any(v => v > 0);
+
+        /// <summary>Whether this crown site could still use another hauler right now: some needed good isn't yet fully delivered-or-carried, and the crown storehouse actually has some of it to fetch.</summary>
+        private bool SiteNeedsMoreHauling(EntityId siteId, BuildingState site)
+        {
+            BuildingType type = _buildings.GetBuildingType(site.BuildingTypeId);
+            if (type == null || !_buildings.TryFindCrownStorehouse(out EntityId storehouseId))
+            {
+                return false;
+            }
+
+            foreach (GoodAmount cost in type.ConstructionCost)
+            {
+                int remaining = RemainingNeedForGood(siteId, site, cost.Good.Id, EntityId.None);
+                if (remaining > 0 && _inventory.GetCount(storehouseId, cost.Good.Id) > 0)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        private void StartHaulTask(EntityId personId, GatherTaskState task, EntityId siteId, string reason)
+        {
+            bool changed = task.Kind != GatherTaskKind.Haul || task.TargetSite != siteId;
+            if (changed)
+            {
+                PostTaskChanged(personId, task.Kind, GatherTaskKind.Haul, reason);
+            }
+
+            task.Kind = GatherTaskKind.Haul;
+            task.TargetSite = siteId;
+            task.HaulPhase = HaulPhase.ToStockpile;
+            task.HaulGoodId = null;
+            task.HaulAmount = 0;
+            task.ResourceNodeId = null;
+            task.NoResourceReason = null;
+            task.Spot = _buildings.TryFindCrownStorehouse(out EntityId storehouseId) ? _buildings.GetDoorstep(storehouseId) ?? GetStockpileAnchor() : GetStockpileAnchor();
         }
 
         /// <summary>Founders claimed as a starter building's leader earlier in the current TryStartNeededStarterBuildings pass - never claimed twice in the same pass, even though they remain otherwise eligible (e.g. already building something else) between passes.</summary>
@@ -443,9 +677,15 @@ namespace TheEmptying.Modules.Gathering
         {
             if (_tasks.TryGet(personId, out GatherTaskState task))
             {
+                // 3.10b3: a founder can become ineligible (hired into a real job) mid-haul - the load
+                // in their hands would otherwise just vanish; return it to the stockpile instead.
+                ReturnCarriedGoodsToStorehouseIfPossible(task);
+
                 PostTaskChanged(personId, task.Kind, GatherTaskKind.None, reason);
                 task.Kind = GatherTaskKind.None;
                 task.TargetSite = null;
+                task.HaulGoodId = null;
+                task.HaulAmount = 0;
             }
         }
 
@@ -464,7 +704,13 @@ namespace TheEmptying.Modules.Gathering
 
                 task.Kind = newKind;
                 task.TargetSite = targetSite;
-                task.ResourceNodeId = null;
+                // 3.10b3: deliberately NOT clearing ResourceNodeId here (unused while Kind is Build
+                // anyway) - a founder bounced through Build for one hour before ProcessBuild's own
+                // stall check redirects them straight back to hand-gathering (the exact same tree,
+                // nine times out of ten) must not look like a brand new assignment when they land back
+                // on Woodcut/Quarry, or AssignResourceTask wipes their accumulated hours every single
+                // time this happens - which, with a daily reassignment trigger, meant real progress on
+                // a distant tree could never survive from one day to the next. See AssignResourceTask.
                 task.NoResourceReason = null;
                 // Recomputed every call (not just when kindChanged), same as before - but spread
                 // around the site's edge instead of everyone sharing the single doorstep.
@@ -638,31 +884,57 @@ namespace TheEmptying.Modules.Gathering
         }
 
         /// <summary>The nearest crown (unowned) construction site, if any - founders only ever build for the crown, never a private owner's site.</summary>
+        /// <summary>
+        /// 3.10b3: the nearest crown (unowned) site under construction, preferring one a builder can
+        /// actually make progress on right now (not stalled at all, or stalled on something hand
+        /// tools can fetch directly - logs or stone) over one that's stalled on something they can
+        /// only wait on (planks, blocks...) - a hand test found builders bounced to a plank-starved
+        /// site, wasting a whole trip there before the stall check sent them elsewhere, while a
+        /// nearby site that genuinely needed a woodcutter went unhelped. Only falls back to an
+        /// unhelpable site when nothing helpable exists anywhere, so AnyCrownSiteNeedsLabor's "someone
+        /// is always routed somewhere" guarantee still holds.
+        /// </summary>
         private bool TryFindCrownSiteNeedingLabor(EntityId personId, out EntityId siteId, EntityId? excludeSiteId = null)
         {
             GridPoint from = _mapMovement.GetCell(personId);
             siteId = EntityId.None;
-            bool found = false;
-            int bestDistance = int.MaxValue;
+            EntityId bestAny = EntityId.None;
+            EntityId bestHelpable = EntityId.None;
+            bool foundAny = false;
+            bool foundHelpable = false;
+            int bestAnyDistance = int.MaxValue;
+            int bestHelpableDistance = int.MaxValue;
 
             foreach (KeyValuePair<EntityId, BuildingState> row in _buildings.Buildings)
             {
-                if (row.Value.Owner.HasValue || row.Value.Construction == null || row.Key == excludeSiteId)
+                BuildingState site = row.Value;
+                if (site.Owner.HasValue || site.Construction == null || row.Key == excludeSiteId)
                 {
                     continue;
                 }
 
-                GridPoint doorstep = _buildings.GetDoorstep(row.Key) ?? row.Value.Rect.Center;
+                GridPoint doorstep = _buildings.GetDoorstep(row.Key) ?? site.Rect.Center;
                 int distance = Math.Abs(from.X - doorstep.X) + Math.Abs(from.Y - doorstep.Y);
-                if (!found || distance < bestDistance)
+
+                if (!foundAny || distance < bestAnyDistance)
                 {
-                    found = true;
-                    bestDistance = distance;
-                    siteId = row.Key;
+                    foundAny = true;
+                    bestAnyDistance = distance;
+                    bestAny = row.Key;
+                }
+
+                string missingGoodId = GetStalledMissingGood(row.Key, site);
+                bool helpable = missingGoodId == null || missingGoodId == LogGoodId || missingGoodId == StoneGoodId;
+                if (helpable && (!foundHelpable || distance < bestHelpableDistance))
+                {
+                    foundHelpable = true;
+                    bestHelpableDistance = distance;
+                    bestHelpable = row.Key;
                 }
             }
 
-            return found;
+            siteId = foundHelpable ? bestHelpable : bestAny;
+            return foundAny;
         }
 
         /// <summary>Whether any crown (unowned) construction site anywhere is still waiting for labor.</summary>
@@ -755,8 +1027,9 @@ namespace TheEmptying.Modules.Gathering
         /// <summary>What a person's hand-gathering task is doing right now; None if they have no active task.</summary>
         public GatherTaskKind GetTaskKind(EntityId personId) => _tasks.TryGet(personId, out GatherTaskState task) ? task.Kind : GatherTaskKind.None;
 
-        /// <summary>The construction site a Build-tasked person is currently assigned to; null if their task isn't Build (or they have none).</summary>
-        public EntityId? GetTargetSite(EntityId personId) => _tasks.TryGet(personId, out GatherTaskState task) && task.Kind == GatherTaskKind.Build ? task.TargetSite : null;
+        /// <summary>The construction site a Build- or Haul-tasked person is currently assigned to; null if their task is neither (or they have none).</summary>
+        public EntityId? GetTargetSite(EntityId personId) =>
+            _tasks.TryGet(personId, out GatherTaskState task) && (task.Kind == GatherTaskKind.Build || task.Kind == GatherTaskKind.Haul) ? task.TargetSite : null;
 
         /// <summary>A plain, player-facing label for a task kind (e.g. for a person's world label or the People panel) - shared so both stay in sync.</summary>
         public static string DescribeTaskKind(GatherTaskKind kind) =>
@@ -767,8 +1040,58 @@ namespace TheEmptying.Modules.Gathering
                 GatherTaskKind.Farm => "Farming",
                 GatherTaskKind.Woodcut => "Woodcutting",
                 GatherTaskKind.Quarry => "Quarrying",
+                GatherTaskKind.Haul => "Hauling",
                 _ => kind.ToString()
             };
+
+        /// <summary>
+        /// 3.10b3: a richer label than DescribeTaskKind alone can give for a Haul task specifically -
+        /// "Hauling 5 planks" once a load is picked up, or a plain "Hauling" while still walking to the
+        /// stockpile - the same text for a person's world label and the People panel.
+        /// </summary>
+        public string DescribeTaskDetail(EntityId personId)
+        {
+            GatherTaskKind kind = GetTaskKind(personId);
+            if (kind == GatherTaskKind.Haul && _tasks.TryGet(personId, out GatherTaskState task))
+            {
+                return task.HaulAmount > 0 ? $"Hauling {task.HaulAmount} {GoodDisplayName(task.HaulGoodId)}" : "Hauling";
+            }
+
+            return DescribeTaskKind(kind);
+        }
+
+        /// <summary>How much of a good is currently in a hauler's hands on the way to this crown construction site - for the building panel.</summary>
+        public int GetCarriedTowardSite(EntityId siteId, string goodId) => CarriedTowardSite(siteId, goodId, EntityId.None);
+
+        /// <summary>How much this person is personally carrying right now, if they're hauling (0 to the carry limit); 0 if they're not. For tests and inspection.</summary>
+        public int GetHaulAmount(EntityId personId) => _tasks.TryGet(personId, out GatherTaskState task) && task.Kind == GatherTaskKind.Haul ? task.HaulAmount : 0;
+
+        /// <summary>How many founders are currently building this crown construction site by hand - for the building panel (hired builders, if any, are counted separately by JobsModule).</summary>
+        public int GetBuilderCountAtSite(EntityId siteId) => _tasks.Rows().Count(row => row.Value.Kind == GatherTaskKind.Build && row.Value.TargetSite == siteId);
+
+        /// <summary>How many founders are currently hauling materials toward this crown construction site - for the building panel.</summary>
+        public int GetHaulerCountAtSite(EntityId siteId) => _tasks.Rows().Count(row => row.Value.Kind == GatherTaskKind.Haul && row.Value.TargetSite == siteId);
+
+        /// <summary>Every founder currently building or hauling for this crown construction site, with a plain description of what they're doing - for the building panel.</summary>
+        public IEnumerable<(EntityId Person, string Description)> GetWorkersAtSite(EntityId siteId)
+        {
+            foreach (KeyValuePair<EntityId, GatherTaskState> row in _tasks.Rows())
+            {
+                if (row.Value.TargetSite != siteId)
+                {
+                    continue;
+                }
+
+                if (row.Value.Kind == GatherTaskKind.Build)
+                {
+                    yield return (row.Key, "building");
+                }
+                else if (row.Value.Kind == GatherTaskKind.Haul)
+                {
+                    yield return (row.Key, row.Value.HaulAmount > 0 ? $"hauling {row.Value.HaulAmount} {GoodDisplayName(row.Value.HaulGoodId)}" : "hauling (fetching)");
+                }
+            }
+        }
 
         /// <summary>
         /// A short, plain-English reason this person currently has no gathering task - for the People
@@ -840,6 +1163,14 @@ namespace TheEmptying.Modules.Gathering
                 return false;
             }
 
+            // 3.10b3: "an interrupted hauler finishes the trip and drops the load at the site first" -
+            // once they're actually carrying something, shift end (or anything else that would
+            // otherwise send them home) never stops them short of delivering it.
+            if (task.Kind == GatherTaskKind.Haul && task.HaulAmount > 0)
+            {
+                return true;
+            }
+
             int dayStart = (int)_settings.Get(JobsModule.DayShiftStartHourSettingId);
             int dayEnd = (int)_settings.Get(JobsModule.DayShiftEndHourSettingId);
             return dayStart > dayEnd ? hour >= dayStart || hour < dayEnd : hour >= dayStart && hour < dayEnd;
@@ -906,6 +1237,9 @@ namespace TheEmptying.Modules.Gathering
                     case GatherTaskKind.Farm:
                         ProcessFarm(personId, person, task, wheatPerHarvest, skillGainPerHour, tick);
                         break;
+                    case GatherTaskKind.Haul:
+                        ProcessHaul(personId, task, skillGainPerHour);
+                        break;
                 }
             }
 
@@ -930,6 +1264,31 @@ namespace TheEmptying.Modules.Gathering
                 // instant this happens, so this builder picks a new task immediately, not next morning.
                 PostTaskChanged(personId, task.Kind, GatherTaskKind.None, "the site finished or no longer exists");
                 task.Kind = GatherTaskKind.None;
+                return;
+            }
+
+            // 3.10b3: "never labeled builder while adding no labor" - once this site's own labor need
+            // is fully met, there's nothing left for a builder to do here (goods, if still short, are
+            // a hauler's job now, not a builder's); go help a different crown site, or gather, rather
+            // than stand here contributing nothing while still showing as "Building".
+            double laborRemaining = Math.Max(0.0, _buildings.GetLaborHoursNeeded(task.TargetSite.Value) - site.Construction.LaborHoursDone);
+            if (laborRemaining <= 0.0)
+            {
+                if (SiteNeedsMoreHauling(task.TargetSite.Value, site))
+                {
+                    StartHaulTask(personId, task, task.TargetSite.Value, "this site's labor is already fully done - hauling its remaining materials instead");
+                }
+                else if (TryFindCrownSiteNeedingLabor(personId, out EntityId siteNeedingLabor, excludeSiteId: task.TargetSite.Value))
+                {
+                    SetTask(personId, task, GatherTaskKind.Build, GetStockpileAnchor(), (int)_settings.Get(RadiusCellsSettingId), siteNeedingLabor,
+                        "this site's labor is already fully done - helping build a different site instead");
+                }
+                else
+                {
+                    SetTask(personId, task, PickScarcerMaterial(), GetStockpileAnchor(), (int)_settings.Get(RadiusCellsSettingId), null,
+                        "this site's labor is already fully done and no other site needs builders - gathering instead");
+                }
+
                 return;
             }
 
@@ -975,12 +1334,12 @@ namespace TheEmptying.Modules.Gathering
         }
 
         /// <summary>
-        /// The first construction-cost good this site still needs that isn't already on order and
-        /// isn't actually available to IT - a crown site's own storehouse stock for a crown site, or
-        /// ordinary for-sale stock for a privately-owned one (3.10b2: MarketModule.GetAvailableStockForSite,
-        /// not just whether the crown storehouse happens to be non-empty - stock that can never reach
-        /// this particular site must never make it look like it can still progress). Null if the site
-        /// can still make progress.
+        /// The first construction-cost good this site still needs that isn't already on order,
+        /// isn't already in a hauler's hands on the way here, and isn't actually available to IT - a
+        /// crown site's own storehouse stock for a crown site, or ordinary for-sale stock for a
+        /// privately-owned one (MarketModule.GetAvailableStockForSite, not just whether the crown
+        /// storehouse happens to be non-empty - stock that can never reach this particular site must
+        /// never make it look like it can still progress). Null if the site can still make progress.
         /// </summary>
         private string GetStalledMissingGood(EntityId siteId, BuildingState site)
         {
@@ -1000,18 +1359,168 @@ namespace TheEmptying.Modules.Gathering
 
                 if (_market.GetOnOrder(siteId, cost.Good.Id) > 0)
                 {
-                    continue; // already on its way
+                    continue; // already on its way, bought from a seller
+                }
+
+                if (CarriedTowardSite(siteId, cost.Good.Id, EntityId.None) > 0)
+                {
+                    continue; // already on its way, in a hauler's hands
                 }
 
                 if (_market.GetAvailableStockForSite(siteId, cost.Good.Id) > 0)
                 {
-                    continue; // the daily bulk-order pass will draw it down to the site
+                    continue; // sitting in the stockpile (or for sale) - a hauler (or the bulk-order pass) will get it moving
                 }
 
                 return cost.Good.Id;
             }
 
             return null;
+        }
+
+        /// <summary>How much of a good is currently in a hauler's hands on the way to siteId, excluding excludePersonId (so a hauler can ask "how much do the OTHERS already have" when deciding what's left to fetch).</summary>
+        private int CarriedTowardSite(EntityId siteId, string goodId, EntityId excludePersonId)
+        {
+            int total = 0;
+            foreach (KeyValuePair<EntityId, GatherTaskState> row in _tasks.Rows())
+            {
+                if (row.Key == excludePersonId)
+                {
+                    continue;
+                }
+
+                GatherTaskState t = row.Value;
+                if (t.Kind == GatherTaskKind.Haul && t.TargetSite == siteId && t.HaulGoodId == goodId && t.HaulAmount > 0)
+                {
+                    total += t.HaulAmount;
+                }
+            }
+
+            return total;
+        }
+
+        /// <summary>How much more of goodId this crown site still needs: its construction cost minus what's already delivered and minus what's already carried toward it (by anyone but excludePersonId).</summary>
+        private int RemainingNeedForGood(EntityId siteId, BuildingState site, string goodId, EntityId excludePersonId)
+        {
+            BuildingType type = _buildings.GetBuildingType(site.BuildingTypeId);
+            if (type == null)
+            {
+                return 0;
+            }
+
+            int needed = 0;
+            foreach (GoodAmount cost in type.ConstructionCost)
+            {
+                if (cost.Good.Id == goodId)
+                {
+                    needed = cost.Amount;
+                    break;
+                }
+            }
+
+            int delivered = site.Construction.DeliveredGoods.TryGetValue(goodId, out int d) ? d : 0;
+            return needed - delivered - CarriedTowardSite(siteId, goodId, excludePersonId);
+        }
+
+        /// <summary>The first construction-cost good this crown site still genuinely needs more of, that the crown storehouse actually has right now; null if nothing qualifies.</summary>
+        private string ChooseGoodToHaul(EntityId siteId, BuildingState site, EntityId storehouseId, EntityId haulingPersonId)
+        {
+            BuildingType type = _buildings.GetBuildingType(site.BuildingTypeId);
+            if (type == null)
+            {
+                return null;
+            }
+
+            foreach (GoodAmount cost in type.ConstructionCost)
+            {
+                if (RemainingNeedForGood(siteId, site, cost.Good.Id, haulingPersonId) > 0 && _inventory.GetCount(storehouseId, cost.Good.Id) > 0)
+                {
+                    return cost.Good.Id;
+                }
+            }
+
+            return null;
+        }
+
+        /// <summary>
+        /// 3.10b3: a haul trip's two legs. At the stockpile (ToStockpile), picks up up to the carry
+        /// limit of whichever good the site still needs and the storehouse still has - removed from
+        /// the stockpile right here, so it's genuinely in this person's hands from this moment, not
+        /// teleporting later. At the site (ToSite), deposits the whole load in one go. Either leg can
+        /// end the trip (ClearHaulTask) if there's nothing left to usefully do, handing the person
+        /// back to AssignTasks for a fresh decision; walking between the two legs is the ordinary
+        /// commute every other task already uses (see GetLocation/UpdateHourly).
+        /// </summary>
+        private void ProcessHaul(EntityId personId, GatherTaskState task, double skillGainPerHour)
+        {
+            _people.AddSkillExperience(personId, Skill.Hauling, skillGainPerHour);
+
+            if (!task.TargetSite.HasValue)
+            {
+                ClearHaulTask(personId, task, "no destination site");
+                return;
+            }
+
+            EntityId siteId = task.TargetSite.Value;
+
+            if (task.HaulPhase == HaulPhase.ToStockpile)
+            {
+                if (!_buildings.TryGetBuilding(siteId, out BuildingState site) || site.Construction == null || !_buildings.TryFindCrownStorehouse(out EntityId storehouseId))
+                {
+                    ClearHaulTask(personId, task, "the site finished, no longer exists, or there's no stockpile");
+                    return;
+                }
+
+                string goodId = ChooseGoodToHaul(siteId, site, storehouseId, personId);
+                if (goodId == null)
+                {
+                    ClearHaulTask(personId, task, "nothing left to fetch for this site");
+                    return;
+                }
+
+                int carryLimit = (int)_settings.Get(HaulCarryLimitSettingId);
+                int toCarry = Math.Min(carryLimit, Math.Min(RemainingNeedForGood(siteId, site, goodId, personId), _inventory.GetCount(storehouseId, goodId)));
+                if (toCarry <= 0)
+                {
+                    ClearHaulTask(personId, task, "nothing left to fetch for this site");
+                    return;
+                }
+
+                _inventory.TryRemove(storehouseId, goodId, toCarry);
+                task.HaulGoodId = goodId;
+                task.HaulAmount = toCarry;
+                task.HaulPhase = HaulPhase.ToSite;
+                task.Spot = _buildings.GetDoorstep(siteId) ?? task.Spot;
+                return;
+            }
+
+            // ToSite: deliver the whole load, or return it to the stockpile if the site vanished first.
+            if (!_buildings.TryGetBuilding(siteId, out BuildingState targetSite) || targetSite.Construction == null)
+            {
+                ReturnCarriedGoodsToStorehouseIfPossible(task);
+                ClearHaulTask(personId, task, "the site finished or no longer exists before delivery");
+                return;
+            }
+
+            _buildings.TryDepositCarriedGoods(siteId, task.HaulGoodId, task.HaulAmount, out _);
+            ClearHaulTask(personId, task, "delivered - ready for a new task");
+        }
+
+        private void ReturnCarriedGoodsToStorehouseIfPossible(GatherTaskState task)
+        {
+            if (task.HaulAmount > 0 && task.HaulGoodId != null && _buildings.TryFindCrownStorehouse(out EntityId storehouseId))
+            {
+                _inventory.Add(storehouseId, task.HaulGoodId, task.HaulAmount);
+            }
+        }
+
+        private void ClearHaulTask(EntityId personId, GatherTaskState task, string reason)
+        {
+            PostTaskChanged(personId, task.Kind, GatherTaskKind.None, reason);
+            task.Kind = GatherTaskKind.None;
+            task.TargetSite = null;
+            task.HaulGoodId = null;
+            task.HaulAmount = 0;
         }
 
         /// <summary>
@@ -1315,6 +1824,9 @@ namespace TheEmptying.Modules.Gathering
                 writer.WriteBool(task.Planted);
                 writer.WriteLong(task.ReadyAtTick);
                 writer.WriteString(task.NoResourceReason ?? "");
+                writer.WriteInt((int)task.HaulPhase);
+                writer.WriteString(task.HaulGoodId ?? "");
+                writer.WriteInt(task.HaulAmount);
             }
         }
 
@@ -1342,6 +1854,10 @@ namespace TheEmptying.Modules.Gathering
                 task.ReadyAtTick = reader.ReadLong();
                 string noResourceReason = reader.ReadString();
                 task.NoResourceReason = string.IsNullOrEmpty(noResourceReason) ? null : noResourceReason;
+                task.HaulPhase = (HaulPhase)reader.ReadInt();
+                string haulGoodId = reader.ReadString();
+                task.HaulGoodId = string.IsNullOrEmpty(haulGoodId) ? null : haulGoodId;
+                task.HaulAmount = reader.ReadInt();
 
                 _tasks.Add(id, task);
             }
@@ -1362,6 +1878,11 @@ namespace TheEmptying.Modules.Gathering
             {
                 case GatherTaskKind.Build:
                     yield return $"gathering: building {task.TargetSite} by hand";
+                    break;
+                case GatherTaskKind.Haul:
+                    yield return task.HaulAmount > 0
+                        ? $"gathering: hauling {task.HaulAmount} {GoodDisplayName(task.HaulGoodId)} to {task.TargetSite}"
+                        : $"gathering: hauling to {task.TargetSite}, walking to the stockpile to pick up";
                     break;
                 case GatherTaskKind.Farm:
                     yield return task.Planted

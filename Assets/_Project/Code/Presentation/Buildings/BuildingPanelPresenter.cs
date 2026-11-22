@@ -1,7 +1,9 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Gathering;
 using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Market;
@@ -29,6 +31,7 @@ namespace TheEmptying.Presentation.Buildings
         private JobsModule _jobs;
         private MarketModule _market;
         private InventoryModule _inventory;
+        private GatheringModule _gathering;
         private Action<string> _executeCommand;
 
         private VisualElement _root;
@@ -46,12 +49,17 @@ namespace TheEmptying.Presentation.Buildings
         /// <summary>For tests: how many rows the panel's main content area currently lists.</summary>
         public int SlotsChildCountForTesting => _slotsContainer?.childCount ?? 0;
 
-        public void Initialize(BuildingsModule buildings, JobsModule jobs, MarketModule market, InventoryModule inventory, VisualElement uiRoot, Action<string> executeCommand)
+        /// <summary>For tests: every label's text currently shown in the panel's main content area, in order - e.g. to confirm a construction site's panel actually lists its builders and haulers by name.</summary>
+        public IEnumerable<string> SlotLabelTextsForTesting =>
+            _slotsContainer?.Children().OfType<Label>().Select(l => l.text) ?? Enumerable.Empty<string>();
+
+        public void Initialize(BuildingsModule buildings, JobsModule jobs, MarketModule market, InventoryModule inventory, GatheringModule gathering, VisualElement uiRoot, Action<string> executeCommand)
         {
             _buildings = buildings;
             _jobs = jobs;
             _market = market;
             _inventory = inventory;
+            _gathering = gathering;
             _executeCommand = executeCommand;
 
             var asset = Resources.Load<VisualTreeAsset>("BuildingPanel");
@@ -72,12 +80,13 @@ namespace TheEmptying.Presentation.Buildings
             _root.style.display = DisplayStyle.None;
         }
 
-        public void Rebind(BuildingsModule buildings, JobsModule jobs, MarketModule market, InventoryModule inventory)
+        public void Rebind(BuildingsModule buildings, JobsModule jobs, MarketModule market, InventoryModule inventory, GatheringModule gathering)
         {
             _buildings = buildings;
             _jobs = jobs;
             _market = market;
             _inventory = inventory;
+            _gathering = gathering;
             Hide();
         }
 
@@ -180,19 +189,46 @@ namespace TheEmptying.Presentation.Buildings
             foreach (GoodAmount cost in type.ConstructionCost)
             {
                 int delivered = site.Construction.DeliveredGoods.TryGetValue(cost.Good.Id, out int d) ? d : 0;
+                int carried = _gathering != null ? _gathering.GetCarriedTowardSite(siteId, cost.Good.Id) : 0;
                 int onOrder = _market != null ? _market.GetOnOrder(siteId, cost.Good.Id) : 0;
-                _slotsContainer.Add(new Label($"{cost.Good.Id}: {delivered}/{cost.Amount} delivered" + (onOrder > 0 ? $", {onOrder} on order" : "")));
+                string line = $"{cost.Good.Id}: {delivered}/{cost.Amount} delivered";
+                if (carried > 0)
+                {
+                    line += $", {carried} carried";
+                }
+
+                if (onOrder > 0)
+                {
+                    line += $", {onOrder} on order";
+                }
+
+                _slotsContainer.Add(new Label(line));
             }
 
-            int builderCount = 0;
+            // 3.10b3: founders build and haul by hand (GatheringModule), entirely separate from any
+            // hired Jobs builder slot - both count, so a site worked only by founders never shows "no
+            // builders" just because nobody occupies a paid slot.
+            int hiredBuilderCount = 0;
             if (_jobs != null && _jobs.TryGetJobs(siteId, out JobsState jobs) && jobs.Builder != null)
             {
-                builderCount = jobs.Builder.Occupants.Count(o => o.HasValue);
+                hiredBuilderCount = jobs.Builder.Occupants.Count(o => o.HasValue);
             }
 
-            _slotsContainer.Add(new Label($"Labor: {site.Construction.LaborHoursDone:F0}/{laborNeeded:F0} hours, {builderCount} builder(s) working"));
+            int founderBuilderCount = _gathering?.GetBuilderCountAtSite(siteId) ?? 0;
+            int haulerCount = _gathering?.GetHaulerCountAtSite(siteId) ?? 0;
+            int totalBuilderCount = hiredBuilderCount + founderBuilderCount;
 
-            string reason = DescribeWhatIsStuck(siteId, site, type, builderCount);
+            _slotsContainer.Add(new Label($"Labor: {site.Construction.LaborHoursDone:F0}/{laborNeeded:F0} hours, {totalBuilderCount} builder(s), {haulerCount} hauler(s)"));
+
+            if (_gathering != null)
+            {
+                foreach ((EntityId person, string description) in _gathering.GetWorkersAtSite(siteId))
+                {
+                    _slotsContainer.Add(new Label($"  {person}: {description}") { style = { color = new Color(0.75f, 0.75f, 0.75f), fontSize = 11 } });
+                }
+            }
+
+            string reason = DescribeWhatIsStuck(siteId, site, type, totalBuilderCount, haulerCount);
             if (reason != null)
             {
                 _slotsContainer.Add(new Label(reason) { style = { color = new Color(0.9f, 0.7f, 0.2f) } });
@@ -200,7 +236,7 @@ namespace TheEmptying.Presentation.Buildings
         }
 
         /// <summary>A plain reason the player can act on, or null if the site is simply progressing normally.</summary>
-        private string DescribeWhatIsStuck(EntityId siteId, BuildingState site, BuildingType type, int builderCount)
+        private string DescribeWhatIsStuck(EntityId siteId, BuildingState site, BuildingType type, int builderCount, int haulerCount)
         {
             foreach (GoodAmount cost in type.ConstructionCost)
             {
@@ -213,19 +249,25 @@ namespace TheEmptying.Presentation.Buildings
                 int onOrder = _market != null ? _market.GetOnOrder(siteId, cost.Good.Id) : 0;
                 if (onOrder > 0)
                 {
-                    continue; // already on its way
+                    continue; // already on its way, bought from a seller
+                }
+
+                int carried = _gathering != null ? _gathering.GetCarriedTowardSite(siteId, cost.Good.Id) : 0;
+                if (carried > 0)
+                {
+                    continue; // already on its way, in a hauler's hands
                 }
 
                 int available = _market != null ? _market.GetAvailableStockForSite(siteId, cost.Good.Id) : 0;
                 if (available <= 0)
                 {
-                    return $"Waiting for {cost.Good.Id}: none for sale.";
+                    return $"Waiting for {cost.Good.Id}: none available.";
                 }
             }
 
-            if (builderCount == 0)
+            if (builderCount == 0 && haulerCount == 0)
             {
-                return "No builders.";
+                return "No one building or hauling for it.";
             }
 
             return null;

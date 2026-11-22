@@ -4,6 +4,7 @@ using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
 using TheEmptying.Core.Console;
+using TheEmptying.Core.Content;
 using TheEmptying.Core.Economy;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
@@ -27,6 +28,22 @@ namespace TheEmptying.Tests.EditMode.Gathering
     /// <summary>3.9b: hand gathering - founders build crown sites and gather by hand, anyone jobless may gather and sell to the crown.</summary>
     public class GatheringModuleTests
     {
+        /// <summary>
+        /// 3.10b3: fully delivers a site's whole construction cost straight from BuildingsModule's own
+        /// test-only API (TryDeliverGoods), so a test about labor/reassignment timing isn't also, now
+        /// that materials have to be hauled over by hand, implicitly a test of hauling - these tests
+        /// seed abundant storehouse stock specifically so materials are never the point.
+        /// </summary>
+        private static void FullyDeliverConstructionCost(BuildingsModule buildings, EntityId siteId)
+        {
+            buildings.TryGetBuilding(siteId, out BuildingState site);
+            BuildingType type = buildings.GetBuildingType(site.BuildingTypeId);
+            foreach (GoodAmount cost in type.ConstructionCost)
+            {
+                Assert.IsTrue(buildings.TryDeliverGoods(siteId, cost.Good.Id, cost.Amount, out string error), error);
+            }
+        }
+
         private static (Simulation Simulation, GatheringModule Gathering, BuildingsModule Buildings, InventoryModule Inventory, WealthModule Wealth, MarketModule Market, PeopleModule People, JobsModule Jobs) Build(TempCoreContentCopy core)
         {
             var mapMovement = new MapMovementModule();
@@ -572,11 +589,13 @@ namespace TheEmptying.Tests.EditMode.Gathering
         }
 
         /// <summary>
-        /// 3.10b2: the gap the other TrueDefaultNewGame_* tests above left open - each of them drains
-        /// the stockpile's planks first "since the true default stockpile already holds more planks
-        /// than the lodging alone needs", so none of them actually proves the literal default case (a
-        /// true new game, nothing placed but the stockpile and one crown lodging, left running with no
-        /// console help and no draining at all) ever completes. This is the user's exact hand test.
+        /// 3.10b2/3.10b3: the gap the other TrueDefaultNewGame_* tests above left open - each of them
+        /// drains the stockpile's planks first "since the true default stockpile already holds more
+        /// planks than the lodging alone needs", so none of them actually proves the literal default
+        /// case (a true new game, nothing placed but the stockpile and one crown lodging, left running
+        /// with no console help and no draining at all) ever completes. This is the user's exact hand
+        /// test. 3.10b3: materials now travel by hauler, not instantly, so this no longer expects them
+        /// within the first day - just that they do arrive, and the lodging does finish.
         /// </summary>
         [Test]
         public void TrueDefaultNewGame_CrownLodging_DrawsFromTheStockpileAndCompletes_WithNoHelp()
@@ -620,8 +639,8 @@ namespace TheEmptying.Tests.EditMode.Gathering
                 lastProgress = progress;
             }
 
-            Assert.IsTrue(deliveredByTick >= 0 && deliveredByTick <= CalendarConstants.TicksPerDay,
-                "Expected both planks and stone to be fully drawn from the stockpile within the first in-game day, with no transit delay (a crown site draws its own storehouse first).");
+            Assert.IsTrue(deliveredByTick >= 0 && deliveredByTick < maxTicks,
+                "Expected both planks and stone to eventually be fully hauled over from the stockpile (3.10b3: a founder carries them by hand now, not an instant draw).");
             Assert.IsTrue(completedAtTick >= 0,
                 $"Expected the crown lodging to complete within {maxTicks / CalendarConstants.TicksPerDay} days, from the true default stockpile alone, with no console help.");
         }
@@ -899,6 +918,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
             Assert.IsTrue(inventory.TryRemove(storehouseId, "good.loaf", loavesNow));
 
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+            FullyDeliverConstructionCost(buildings, siteId); // this test is about the farm/build split, not hauling - materials are already fully on site
 
             sim.Step(); // deliver the construction-site-started event so AssignTasks runs immediately
 
@@ -922,6 +942,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
             inventory.Add(storehouseId, "good.loaf", 10000); // plenty of bread: food isn't short
 
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+            FullyDeliverConstructionCost(buildings, siteId); // this test is about the farm/build split, not hauling - materials are already fully on site
 
             sim.Step();
 
@@ -944,6 +965,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
             inventory.Add(storehouseId, "good.loaf", 10000); // plenty of bread: food isn't short, so every founder builds
 
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+            FullyDeliverConstructionCost(buildings, siteId); // this test is about spreading around the site's edge, not hauling - materials are already fully on site
 
             sim.Step();
 
@@ -974,6 +996,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
             Assert.AreNotEqual(GatherTaskKind.Build, gathering.GetTaskKind(someFounder), "Before any site exists, no founder should be building.");
 
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+            FullyDeliverConstructionCost(buildings, siteId); // this test is about reassignment timing, not hauling - materials are already fully on site
 
             // Well under a day: the reassignment should come from the construction-site-started event
             // firing immediately, not from waiting for the next morning's NewDayEvent.
@@ -1006,6 +1029,7 @@ namespace TheEmptying.Tests.EditMode.Gathering
             // single day's shift and there's plenty of real/simulated time left before the next
             // morning to prove the reassignment didn't wait for it.
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_storehouse", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+            FullyDeliverConstructionCost(buildings, siteId); // this test is about reassignment timing, not hauling - materials are already fully on site
 
             bool completed = false;
             for (long i = 0; i < CalendarConstants.TicksPerDay && !completed; i++)
@@ -1109,6 +1133,293 @@ namespace TheEmptying.Tests.EditMode.Gathering
             Assert.Greater(wealth.GetBalance(AccountId.Person(gatherer)).HundredthsOfCopper, 0,
                 "The gatherer should have been paid at the market price for what the crown bought.");
         }
+
+        #region Hauling (3.10b3)
+
+        /// <summary>The new rule: goods never move on their own - with nobody at all to haul them, a well-stocked stockpile's goods must never reach a crown site by themselves.</summary>
+        [Test]
+        public void NoGoodsReachACrownSite_WithoutAHaulerWalkingThemThere()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+
+            // Nobody exists to haul anything - the stockpile's own planks and stone should just sit there.
+            foreach (KeyValuePair<EntityId, PersonState> row in people.People.ToList())
+            {
+                sim.Entities.Destroy(row.Key);
+            }
+
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 5; i++)
+            {
+                sim.Step();
+            }
+
+            Assert.IsTrue(buildings.TryGetBuilding(siteId, out BuildingState site));
+            Assert.IsNotNull(site.Construction, "Expected the site to still be waiting - nobody exists to haul its materials.");
+            int totalDelivered = site.Construction.DeliveredGoods.Values.Sum();
+            Assert.AreEqual(0, totalDelivered, "Expected zero goods delivered - the stockpile has plenty, but nothing moves without a hauler.");
+        }
+
+        /// <summary>No hauler ever carries more than the carry limit, and the site never ends up with more delivered-plus-carried than it actually needs - no two haulers fetch what the site doesn't need.</summary>
+        [Test]
+        public void Hauling_RespectsTheCarryLimit_AndNeverOverFetchesBeyondWhatTheSiteStillNeeds()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, _) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+
+            int carryLimit = (int)sim.Settings.Get(GatheringModule.HaulCarryLimitSettingId);
+            BuildingType type = buildings.GetBuildingType("building.crown_lodging");
+
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 10; i++)
+            {
+                sim.Step();
+
+                foreach (KeyValuePair<EntityId, PersonState> row in people.People)
+                {
+                    if (!people.IsFounder(row.Key))
+                    {
+                        continue;
+                    }
+
+                    Assert.LessOrEqual(gathering.GetHaulAmount(row.Key), carryLimit,
+                        $"Expected nobody to ever carry more than the {carryLimit}-unit limit (tick {i}).");
+                }
+
+                if (!buildings.TryGetBuilding(siteId, out BuildingState site) || site.Construction == null)
+                {
+                    break;
+                }
+
+                foreach (GoodAmount cost in type.ConstructionCost)
+                {
+                    int delivered = site.Construction.DeliveredGoods.TryGetValue(cost.Good.Id, out int d) ? d : 0;
+                    int carried = gathering.GetCarriedTowardSite(siteId, cost.Good.Id);
+                    Assert.LessOrEqual(delivered + carried, cost.Amount,
+                        $"Expected delivered+carried for {cost.Good.Id} to never exceed what the site needs - no two haulers should ever fetch more than it needs (tick {i}).");
+                }
+            }
+        }
+
+        /// <summary>An interrupted hauler (end of shift) finishes the trip and drops the load at the site first, rather than freezing mid-walk with the goods stuck in their hands.</summary>
+        [Test]
+        public void InterruptedHauler_FinishesTheTrip_EvenPastShiftEnd()
+        {
+            using var core = new TempCoreContentCopy();
+            var mapMovement = new MapMovementModule();
+            var inventory = new InventoryModule();
+            var people = new PeopleModule(mapMovement, inventory);
+            var wealth = new WealthModule(people);
+            var land = new LandModule(mapMovement, wealth);
+            var buildings = new BuildingsModule(mapMovement, land, wealth, inventory, people);
+            var jobs = new JobsModule(buildings, wealth, people, mapMovement);
+            var market = new MarketModule(buildings, wealth, inventory, people, mapMovement);
+            var mapResources = new MapResourcesModule(mapMovement, land);
+            var gathering = new GatheringModule(people, buildings, jobs, inventory, market, mapMovement, mapResources);
+            (Simulation sim, _) = SimulationBuilder.Build(1, new[] { core.FolderPath },
+                new IModule[] { mapMovement, inventory, people, wealth, land, buildings, jobs, market, mapResources, gathering },
+                contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(220, 220), out EntityId siteId, out string placeError), placeError);
+
+            // Find the first founder to actually pick up a load, however long that takes.
+            EntityId? hauler = null;
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 10 && hauler == null; i++)
+            {
+                sim.Step();
+                foreach (KeyValuePair<EntityId, PersonState> row in people.People)
+                {
+                    if (people.IsFounder(row.Key) && gathering.GetHaulAmount(row.Key) > 0)
+                    {
+                        hauler = row.Key;
+                        break;
+                    }
+                }
+            }
+
+            Assert.IsNotNull(hauler, "Setup: expected a founder to pick up a load at some point.");
+            int carriedAmount = gathering.GetHaulAmount(hauler.Value);
+            Assert.Greater(carriedAmount, 0);
+
+            // Jump straight to the next shift-end boundary, computed from settings rather than hoped
+            // for, so this test doesn't depend on however fast movement happens to be.
+            int dayEnd = (int)sim.Settings.Get(JobsModule.DayShiftEndHourSettingId);
+            long currentTick = sim.Clock.CurrentTick;
+            GameDate now = GameDate.FromTick(currentTick);
+            long ticksIntoToday = currentTick % CalendarConstants.TicksPerDay;
+            long shiftEndTickToday = (long)dayEnd * CalendarConstants.TicksPerHour;
+            long ticksUntilShiftEnd = shiftEndTickToday > ticksIntoToday
+                ? shiftEndTickToday - ticksIntoToday
+                : CalendarConstants.TicksPerDay - ticksIntoToday + shiftEndTickToday;
+
+            for (long i = 0; i < ticksUntilShiftEnd + CalendarConstants.TicksPerHour * 3; i++)
+            {
+                sim.Step();
+            }
+
+            // Confirm this tick really is now off-shift, then keep stepping through it - a founder
+            // who's still carrying must still be getting processed (moving, or already delivered),
+            // never frozen just because the clock crossed into off-shift hours.
+            int dayStart = (int)sim.Settings.Get(JobsModule.DayShiftStartHourSettingId);
+            int hourNow = GameDate.FromTick(sim.Clock.CurrentTick).Hour;
+            bool onShiftNow = dayStart > dayEnd ? hourNow >= dayStart || hourNow < dayEnd : hourNow >= dayStart && hourNow < dayEnd;
+            Assert.IsFalse(onShiftNow, $"Setup: expected to have landed on an off-shift hour by now (hour {hourNow}).");
+
+            bool stillCarrying = gathering.GetHaulAmount(hauler.Value) > 0;
+            bool delivered = !stillCarrying;
+
+            if (stillCarrying)
+            {
+                (double X, double Y) positionBefore = mapMovement.TryGetPosition(hauler.Value, out double x0, out double y0) ? (x0, y0) : default;
+
+                for (long i = 0; i < CalendarConstants.TicksPerHour * 6 && stillCarrying; i++)
+                {
+                    sim.Step();
+                    stillCarrying = gathering.GetHaulAmount(hauler.Value) > 0;
+                }
+
+                delivered = !stillCarrying;
+                bool stillMoved = mapMovement.TryGetPosition(hauler.Value, out double x1, out double y1) &&
+                    (System.Math.Abs(x1 - positionBefore.X) > 0.01 || System.Math.Abs(y1 - positionBefore.Y) > 0.01);
+
+                Assert.IsTrue(delivered || stillMoved,
+                    "Expected the hauler to still be getting processed (moving toward the site, or already delivered) well past shift end, not frozen in place with the load stuck in their hands.");
+            }
+
+            Assert.IsTrue(delivered, "Expected the load to eventually be delivered despite the shift ending mid-trip.");
+        }
+
+        /// <summary>A founder labeled "Building" must actually be adding labor every on-shift hour they stay labeled that way, not stand there with nothing to work with.</summary>
+        [Test]
+        public void FounderLabeledBuilder_AddsLabor_EveryOnShiftHourTheyStayBuildLabeled()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, _, _, PeopleModule people, JobsModule jobs) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId siteId, out string placeError), placeError);
+
+            int dayStart = (int)sim.Settings.Get(JobsModule.DayShiftStartHourSettingId);
+            int dayEnd = (int)sim.Settings.Get(JobsModule.DayShiftEndHourSettingId);
+            double lastLabor = 0;
+            bool checkedAtLeastOnce = false;
+            var consecutiveOnShiftBuildHours = new Dictionary<EntityId, int>();
+
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 10; i++)
+            {
+                sim.Step();
+
+                if (i % CalendarConstants.TicksPerHour != 0)
+                {
+                    continue;
+                }
+
+                if (!buildings.TryGetBuilding(siteId, out BuildingState site) || site.Construction == null)
+                {
+                    break;
+                }
+
+                long currentTick = sim.Clock.CurrentTick;
+                int hourOfDay = GameDate.FromTick(currentTick).Hour;
+                bool onShift = dayStart > dayEnd ? hourOfDay >= dayStart || hourOfDay < dayEnd : hourOfDay >= dayStart && hourOfDay < dayEnd;
+
+                double laborNow = site.Construction.LaborHoursDone;
+                bool laborGrewThisHour = laborNow > lastLabor + 1e-9;
+                // The one other exception: the exact hour labor reaches its own cap, with goods
+                // still short - the redirect away from Build (see ProcessBuild) only takes effect
+                // the *next* time this founder is checked, not retroactively within the capping hour.
+                bool laborAlreadyFullyDone = laborNow >= buildings.GetLaborHoursNeeded(siteId) - 1e-6;
+
+                foreach (KeyValuePair<EntityId, PersonState> row in people.People)
+                {
+                    EntityId id = row.Key;
+                    bool isBuilderOnShiftHere = onShift && people.IsFounder(id) && gathering.GetTaskKind(id) == GatherTaskKind.Build && gathering.GetTargetSite(id) == siteId;
+
+                    if (!isBuilderOnShiftHere)
+                    {
+                        consecutiveOnShiftBuildHours[id] = 0;
+                        continue;
+                    }
+
+                    // The first on-shift hour might still be the commute there - from the second
+                    // straight such hour on, they must actually be contributing.
+                    int streak = consecutiveOnShiftBuildHours.TryGetValue(id, out int s) ? s + 1 : 1;
+                    consecutiveOnShiftBuildHours[id] = streak;
+
+                    if (streak >= 2 && !laborAlreadyFullyDone)
+                    {
+                        checkedAtLeastOnce = true;
+                        Assert.IsTrue(laborGrewThisHour,
+                            $"Expected labor to grow this hour (tick {currentTick}) since {id} has been labeled Building, on shift, for {streak} straight hours - never labeled builder while adding no labor.");
+                    }
+                }
+
+                lastLabor = laborNow;
+            }
+
+            Assert.IsTrue(checkedAtLeastOnce, "Setup: expected at least one founder to stay Build-labeled through 2+ consecutive on-shift hours during this run.");
+        }
+
+        /// <summary>Carried goods and an in-progress trip survive a save/load round trip, and the loaded run still delivers the load.</summary>
+        [Test]
+        public void SaveAndLoad_MidHaul_PreservesTheCarriedLoad_AndStillDelivers()
+        {
+            using var core = new TempCoreContentCopy();
+            const ulong seed = 777;
+
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, WealthModule wealth, MarketModule market, PeopleModule people) = BuildWithSeed(core, seed);
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(150, 150), out EntityId siteId, out string placeError), placeError);
+
+            EntityId? hauler = null;
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 10 && hauler == null; i++)
+            {
+                sim.Step();
+
+                foreach (KeyValuePair<EntityId, PersonState> row in people.People)
+                {
+                    if (people.IsFounder(row.Key) && gathering.GetHaulAmount(row.Key) > 0)
+                    {
+                        hauler = row.Key;
+                        break;
+                    }
+                }
+            }
+
+            Assert.IsNotNull(hauler, "Setup: expected a founder to be mid-haul at some point.");
+            int carriedBeforeSave = gathering.GetHaulAmount(hauler.Value);
+            Assert.Greater(carriedBeforeSave, 0);
+
+            using var stream = new MemoryStream();
+            GameSave.Save(sim, new SaveHeaderInfo { KingdomName = "K", Population = 9 }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModulesWithSeed(out _, out _, out _, out _, out BuildingsModule loadedBuildings, out _, out GatheringModule loadedGathering);
+            (Simulation loaded, _) = GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+
+            Assert.AreEqual(carriedBeforeSave, loadedGathering.GetHaulAmount(hauler.Value), "Expected the carried load to survive the save/load round trip.");
+
+            loadedBuildings.TryGetBuilding(siteId, out BuildingState siteBefore);
+            int deliveredBefore = siteBefore.Construction?.DeliveredGoods.Values.Sum() ?? 0;
+
+            for (long i = 0; i < CalendarConstants.TicksPerDay * 10 && loadedGathering.GetHaulAmount(hauler.Value) > 0; i++)
+            {
+                loaded.Step();
+            }
+
+            Assert.AreEqual(0, loadedGathering.GetHaulAmount(hauler.Value), "Expected the loaded hauler to eventually deliver their load.");
+            loadedBuildings.TryGetBuilding(siteId, out BuildingState siteAfter);
+            int deliveredAfter = siteAfter.Construction?.DeliveredGoods.Values.Sum() ?? 0;
+            Assert.Greater(deliveredAfter, deliveredBefore, "Expected the loaded run's delivered total to have grown once the carried load landed.");
+        }
+
+        #endregion
 
         [Test]
         public void SaveAndLoad_MidGathering_MatchesAnUnbrokenRun()

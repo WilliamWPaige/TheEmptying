@@ -123,8 +123,15 @@ namespace TheEmptying.Tests.EditMode.Market
             Assert.IsNull(siteFinal.Construction, "With materials bought and labor supplied, the cottage should complete.");
         }
 
+        /// <summary>
+        /// 3.10b3: a crown site's own storehouse stock no longer moves on its own at all - only a
+        /// founder hauling it (GatheringModule) can use it, and this test has none (see Build()). The
+        /// bulk-order pass still buys the full shortfall from a private seller for any site, crown
+        /// included, exactly as before; the storehouse's own pre-existing stock just sits there,
+        /// untouched, waiting for a hauler that never comes in this founder-less test.
+        /// </summary>
         [Test]
-        public void ACrownSite_DrawsFromTheStorehouseFirst_ThenBuysTheRest()
+        public void ACrownSite_NeverDrawsFromTheStorehouseItself_ButStillBuysTheRestFromASeller()
         {
             using var core = new TempCoreContentCopy();
             (Simulation sim, MarketModule market, BuildingsModule buildings, WealthModule wealth, LandModule land, InventoryModule inventory, PeopleModule people) = Build(core);
@@ -132,23 +139,23 @@ namespace TheEmptying.Tests.EditMode.Market
             Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(90, 90), out EntityId storehouseId, out string storehouseError), storehouseError);
 
             // Building the seller below (also a crown site) draws its own 20 plank + 10 stone from this
-            // same storehouse first, so the test's intended leftover stock is only added afterward.
+            // same storehouse first (via the test-only TryDeliverGoods shortcut, not a hauler), so the
+            // test's intended leftover stock is only added afterward.
             EntityId seller = PlaceStockedSeller(buildings, inventory, new GridPoint(20, 20), 1000, 1000);
-            inventory.Add(storehouseId, "good.plank", 10); // only enough for a sixth of the lodging's plank need
-            inventory.Add(storehouseId, "good.stone", 20); // enough for all of its stone need
+            inventory.Add(storehouseId, "good.plank", 10);
+            inventory.Add(storehouseId, "good.stone", 20);
             wealth.Grant(AccountId.Crown, Money.FromCopper(5000));
 
             Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(150, 150), out EntityId lodgingId, out string placeError), placeError);
 
-            StepDays(sim, 1);
-            buildings.TryGetBuilding(lodgingId, out BuildingState afterOrder);
-            int stoneSoFar = afterOrder.Construction.DeliveredGoods.TryGetValue("good.stone", out int s0) ? s0 : 0;
-            Assert.AreEqual(20, stoneSoFar, "All the stone the storehouse had should be drawn immediately, with no transit delay.");
-
-            StepDays(sim, 3);
+            StepDays(sim, 4);
             buildings.TryGetBuilding(lodgingId, out BuildingState afterDelay);
-            int plankSoFar = afterDelay.Construction.DeliveredGoods.TryGetValue("good.plank", out int p0) ? p0 : 0;
-            Assert.Greater(plankSoFar, 10, "The storehouse's 10 planks plus the bought remainder should both be credited by now.");
+            int stoneDelivered = afterDelay.Construction.DeliveredGoods.TryGetValue("good.stone", out int s1) ? s1 : 0;
+            int plankDelivered = afterDelay.Construction.DeliveredGoods.TryGetValue("good.plank", out int p1) ? p1 : 0;
+            Assert.AreEqual(20, stoneDelivered, "Expected all 20 stone to have come from the seller (bought and delivered after the distance delay) - the storehouse's own stone was never touched.");
+            Assert.Greater(plankDelivered, 0, "Expected planks to have arrived from the seller too.");
+            Assert.AreEqual(10, inventory.GetCount(storehouseId, "good.plank"), "Expected the storehouse's own 10 planks to sit untouched - only a hauler could move them, and none exists in this test.");
+            Assert.AreEqual(20, inventory.GetCount(storehouseId, "good.stone"), "Expected the storehouse's own 20 stone to sit untouched too.");
         }
 
         /// <summary>3.10b2: the "stalled" check (and the building panel's "stuck" diagnostic) must count the crown storehouse only for a site that can actually draw on it.</summary>

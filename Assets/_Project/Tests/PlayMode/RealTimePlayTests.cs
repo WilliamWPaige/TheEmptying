@@ -1,5 +1,6 @@
 using System.Collections;
 using System.Collections.Generic;
+using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Gathering;
@@ -207,6 +208,97 @@ namespace TheEmptying.Tests.PlayMode
                 Assert.AreNotEqual(GatherTaskKind.None, kind,
                     $"Expected founder {id} to have a gathering task during work hours, not sit idle (tick={bootstrap.CurrentTick}).");
             }
+        }
+
+        /// <summary>
+        /// 3.10b3: the user's hand test - a true new game, the stockpile and a crown lodging placed
+        /// through the real build menu path, driven at real game speed. Confirms the actual fix for
+        /// the 7% stall: progress passes 7% within the first in-game day (not stuck there forever),
+        /// never stalls longer than about a haul trip's worth of time, and the lodging finishes - and
+        /// the building panel actually lists the founders building and hauling for it (not "no
+        /// builders" while every founder's own label says otherwise).
+        /// </summary>
+        [UnityTest]
+        [Timeout(300000)]
+        public IEnumerator CrownLodging_HaulsMaterialsAndBuilds_NeverStallsForLong_AndFinishes_WithWorkersShownInThePanel()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null; // let the initial layout settle
+
+            Assert.IsTrue(bootstrap.PlaceInitialStockpileForTesting(new GridPoint(100, 100)), "Setup: placing the stockpile should succeed.");
+            yield return null;
+
+            EntityId? siteId = bootstrap.SimulatePlacementClickForTesting("building.crown_lodging", new GridPoint(115, 115), new Vector2(Screen.width - 5f, 5f));
+            Assert.IsTrue(siteId.HasValue, "Setup: placing the crown lodging site should succeed.");
+            bootstrap.CloseBuildMenuForTesting();
+
+            yield return null; // let the site's cube actually appear this frame
+            yield return null;
+
+            bootstrap.SetSpeed(3);
+            bootstrap.SetPaused(false);
+            bootstrap.SetTestTimeMultiplierForTesting(TestFastForwardMultiplier);
+
+            double cellSize = bootstrap.CellSizeMetersForTesting;
+            var worldCenter = new Vector3((float)((115 + 4 * 0.5) * cellSize), 1f, (float)((115 + 4 * 0.5) * cellSize));
+            Camera camera = bootstrap.CameraForTesting;
+            Vector3 screenPoint = camera.WorldToScreenPoint(worldCenter);
+            bootstrap.ClickAtForTesting(new Vector2(screenPoint.x, screenPoint.y));
+            yield return null;
+
+            Assert.IsTrue(bootstrap.IsBuildingPanelOpenForTesting, "Setup: expected the building panel to actually open on the crown lodging.");
+
+            long startTick = bootstrap.CurrentTick;
+            long passedSevenPercentAtTick = -1;
+            double lastProgress = 0.0;
+            long lastProgressChangeTick = startTick;
+            long longestStallTicks = 0;
+            double progress = 0.0;
+            bool sawWorkersInPanel = false;
+
+            // A crown lodging needs roughly 1.5-2 in-game days of hauling and building to finish;
+            // at 10x fast-forward that's well under a minute and a half of real time, but give it
+            // generous headroom rather than cutting it close.
+            float deadline = Time.realtimeSinceStartup + 1500f / (float)TestFastForwardMultiplier;
+            while (progress < 100.0 && Time.realtimeSinceStartup < deadline)
+            {
+                yield return new WaitForSecondsRealtime(1f);
+                progress = bootstrap.ConstructionProgressPercentForTesting(siteId.Value);
+                long tick = bootstrap.CurrentTick;
+
+                if (passedSevenPercentAtTick < 0 && progress > 7.0)
+                {
+                    passedSevenPercentAtTick = tick;
+                }
+
+                if (progress > lastProgress + 0.01)
+                {
+                    longestStallTicks = System.Math.Max(longestStallTicks, tick - lastProgressChangeTick);
+                    lastProgress = progress;
+                    lastProgressChangeTick = tick;
+                }
+
+                if (!sawWorkersInPanel && bootstrap.BuildingPanelSlotLabelTextsForTesting.Any(l => l.Contains("building") || l.Contains("hauling")))
+                {
+                    sawWorkersInPanel = true;
+                }
+            }
+
+            Assert.AreEqual(100.0, progress, 0.01,
+                $"Expected the crown lodging to finish, not stall. Last progress={progress}, tick={bootstrap.CurrentTick}.");
+
+            Assert.IsTrue(passedSevenPercentAtTick >= 0 && passedSevenPercentAtTick - startTick <= CalendarConstants.TicksPerDay * 2,
+                $"Expected progress to pass 7% within about the first in-game day or two, not stay stuck there - passed at tick {passedSevenPercentAtTick}, started at {startTick}.");
+
+            Assert.Less(longestStallTicks, CalendarConstants.TicksPerDay * 3,
+                $"Expected no stall longer than about a haul trip (plus a night's rest) would take, not {longestStallTicks} ticks.");
+
+            Assert.IsTrue(sawWorkersInPanel,
+                $"Expected the building panel to list at least one founder building or hauling for the lodging while it was still under construction. Last seen labels: [{string.Join(" | ", bootstrap.BuildingPanelSlotLabelTextsForTesting)}]");
         }
     }
 }
