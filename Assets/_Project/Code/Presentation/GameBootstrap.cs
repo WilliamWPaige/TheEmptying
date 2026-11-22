@@ -13,6 +13,7 @@ using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Gathering;
+using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
@@ -121,12 +122,14 @@ namespace TheEmptying.Presentation
         private JobsModule _jobsModule;
         private MarketModule _marketModule;
         private GatheringModule _gatheringModule;
+        private InventoryModule _inventoryModule;
         private MapMovementPresenter _mapPresenter;
         private LandPresenter _landPresenter;
         private TheEmptying.Presentation.MapResources.MapResourcesPresenter _mapResourcesPresenter;
         private BuildingsPresenter _buildingsPresenter;
         private BuildingPanelPresenter _buildingPanelPresenter;
         private PeoplePanelPresenter _peoplePanelPresenter;
+        private StockpilePanelPresenter _stockpilePanelPresenter;
         private StrategyCameraController _cameraController;
 
         public bool IsPaused => _paused;
@@ -222,6 +225,9 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: a building type's button inside the (opened) build menu, by panel position (see BuildingsPresenter.MenuTypeButtonPositionForTesting).</summary>
         public Vector2? MenuTypeButtonPositionForTesting(string typeId) => _buildingsPresenter?.MenuTypeButtonPositionForTesting(typeId);
 
+        /// <summary>For tests: a building type's cost label text, as currently shown in the build menu (see BuildingsPresenter.MenuTypeCostTextForTesting).</summary>
+        public string MenuTypeCostTextForTesting(string typeId) => _buildingsPresenter?.MenuTypeCostTextForTesting(typeId);
+
         /// <summary>For tests: whether the build menu panel is currently showing (see BuildingsPresenter.IsBuildMenuOpenForTesting).</summary>
         public bool IsBuildMenuOpenForTesting => _buildingsPresenter != null && _buildingsPresenter.IsBuildMenuOpenForTesting;
 
@@ -236,6 +242,9 @@ namespace TheEmptying.Presentation
 
         /// <summary>For tests: runs the exact guarded click-to-inspect decision a real left-click at screenPosition would.</summary>
         public void ClickAtForTesting(Vector2 screenPosition) => _buildingsPresenter?.ClickAtForTesting(screenPosition);
+
+        /// <summary>For tests: runs the exact guarded click-to-select decision a real left-click on a person's capsule at screenPosition would.</summary>
+        public void ClickOnPersonCapsuleForTesting(Vector2 screenPosition) => _mapPresenter?.ClickAtForTesting(screenPosition);
 
         /// <summary>For tests: opens the tool with a type already selected, without simulating the clicks that would normally get there (see BuildingsPresenter.OpenBuildMenuWithTypeSelectedForTesting).</summary>
         public void OpenBuildMenuWithTypeSelectedForTesting(string typeId) => _buildingsPresenter?.OpenBuildMenuWithTypeSelectedForTesting(typeId);
@@ -264,18 +273,28 @@ namespace TheEmptying.Presentation
         /// <summary>For tests: whether the building panel is currently shown, and which building.</summary>
         public bool IsBuildingPanelOpenForTesting => _buildingPanelPresenter?.IsShowingForTesting ?? false;
         public EntityId BuildingPanelShownIdForTesting => _buildingPanelPresenter?.ShownBuildingIdForTesting ?? EntityId.None;
+        public int BuildingPanelSlotsChildCountForTesting => _buildingPanelPresenter?.SlotsChildCountForTesting ?? 0;
 
         /// <summary>For tests: whether the people panel is currently shown, and how many rows it lists.</summary>
         public bool IsPeoplePanelOpenForTesting => _peoplePanelPresenter?.IsShowingForTesting ?? false;
         public int PeoplePanelRowCountForTesting => _peoplePanelPresenter?.RowCountForTesting ?? 0;
         public EntityId? PeoplePanelSelectedPersonIdForTesting => _peoplePanelPresenter?.SelectedPersonIdForTesting;
         public bool IsPeoplePanelSelectionLineVisibleForTesting => _peoplePanelPresenter?.IsSelectionLineVisibleForTesting ?? false;
+        public float PeoplePanelRootWidthForTesting => _peoplePanelPresenter?.RootWidthForTesting ?? 0f;
+        public bool PeoplePanelRowsWrapForTesting => _peoplePanelPresenter?.RowsWrapForTesting ?? false;
 
         /// <summary>For tests: opens the people panel (see PeoplePanelPresenter.Show).</summary>
         public void ShowPeoplePanelForTesting() => _peoplePanelPresenter?.Show();
 
         /// <summary>For tests: runs the exact row-click decision a real click on this person's row would (see PeoplePanelPresenter.SelectPersonForTesting).</summary>
         public void SelectPersonInPeoplePanelForTesting(EntityId id) => _peoplePanelPresenter?.SelectPersonForTesting(id);
+
+        /// <summary>For tests: whether the stockpile panel is currently shown, and how many goods it lists.</summary>
+        public bool IsStockpilePanelOpenForTesting => _stockpilePanelPresenter?.IsShowingForTesting ?? false;
+        public int StockpilePanelGoodRowCountForTesting => _stockpilePanelPresenter?.GoodRowCountForTesting ?? 0;
+
+        /// <summary>For tests: opens the stockpile panel (see StockpilePanelPresenter.Show).</summary>
+        public void ShowStockpilePanelForTesting() => _stockpilePanelPresenter?.Show();
 
         /// <summary>For tests: the main camera presenting the world, for projecting a known world position to a screen position.</summary>
         public Camera CameraForTesting => Camera.main;
@@ -493,6 +512,7 @@ namespace TheEmptying.Presentation
             _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
             _mapResourcesModule = modules.OfType<MapResourcesModule>().FirstOrDefault();
             _gatheringModule = modules.OfType<GatheringModule>().FirstOrDefault();
+            _inventoryModule = modules.OfType<InventoryModule>().FirstOrDefault();
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
@@ -535,7 +555,7 @@ namespace TheEmptying.Presentation
 
             var presenterObject = new GameObject("MapMovementPresenter");
             _mapPresenter = presenterObject.AddComponent<MapMovementPresenter>();
-            _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
+            _mapPresenter.Initialize(_mapMovementModule, camera, gameplayMap, _uiDocument.rootVisualElement, OnPersonSelected);
             _mapPresenter.SetPeopleModule(_peopleModule);
             _mapPresenter.SetWealthModule(_wealthModule);
             _mapPresenter.SetGatheringModule(_gatheringModule);
@@ -551,7 +571,7 @@ namespace TheEmptying.Presentation
             InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
             var presenterObject = new GameObject("LandPresenter");
             _landPresenter = presenterObject.AddComponent<LandPresenter>();
-            _landPresenter.Initialize(_landModule, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
+            _landPresenter.Initialize(_landModule, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnWorldEntitySelected);
             _landPresenter.SetPeopleModule(_peopleModule);
         }
 
@@ -564,7 +584,7 @@ namespace TheEmptying.Presentation
 
             var presenterObject = new GameObject("MapResourcesPresenter");
             _mapResourcesPresenter = presenterObject.AddComponent<TheEmptying.Presentation.MapResources.MapResourcesPresenter>();
-            _mapResourcesPresenter.Initialize(_mapResourcesModule, _mapMovementModule.Grid, Camera.main, _uiDocument.rootVisualElement, OnMoverCapsuleSelected);
+            _mapResourcesPresenter.Initialize(_mapResourcesModule, _mapMovementModule.Grid, Camera.main, _uiDocument.rootVisualElement, OnWorldEntitySelected);
         }
 
         private void BuildBuildingsPresentation()
@@ -577,11 +597,15 @@ namespace TheEmptying.Presentation
             InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
             var presenterObject = new GameObject("BuildingsPresenter");
             _buildingsPresenter = presenterObject.AddComponent<BuildingsPresenter>();
-            _buildingsPresenter.Initialize(_buildingsModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnBuildingSelected, OnInitialStockpilePlaced, _simulation.Settings);
+            _buildingsPresenter.Initialize(_buildingsModule, _inventoryModule, _simulation.Content, _mapMovementModule.Grid, Camera.main, gameplayMap, _uiDocument.rootVisualElement, OnBuildingSelected, OnInitialStockpilePlaced, _simulation.Settings);
 
             var panelObject = new GameObject("BuildingPanelPresenter");
             _buildingPanelPresenter = panelObject.AddComponent<BuildingPanelPresenter>();
-            _buildingPanelPresenter.Initialize(_buildingsModule, _jobsModule, _marketModule, _uiDocument.rootVisualElement, command => _simulation.Commands.Execute(command));
+            _buildingPanelPresenter.Initialize(_buildingsModule, _jobsModule, _marketModule, _inventoryModule, _uiDocument.rootVisualElement, command => _simulation.Commands.Execute(command));
+
+            var stockpilePanelObject = new GameObject("StockpilePanelPresenter");
+            _stockpilePanelPresenter = stockpilePanelObject.AddComponent<StockpilePanelPresenter>();
+            _stockpilePanelPresenter.Initialize(_buildingsModule, _inventoryModule, _uiDocument.rootVisualElement);
 
             if (_buildingsModule.NeedsInitialStockpilePlacement)
             {
@@ -607,22 +631,26 @@ namespace TheEmptying.Presentation
             SetPaused(false);
         }
 
-        /// <summary>Clicking a capsule or a plot shows its entity in the existing inspector: the console's own "inspect" command.</summary>
-        private void OnMoverCapsuleSelected(EntityId id)
+        /// <summary>
+        /// 3.10b2: a land plot or resource node clicked in the world - neither has its own panel yet,
+        /// so this just records the inspection to the console's log for later, without popping the
+        /// console open (world clicks must never do that - see OnPersonSelected and OnBuildingSelected).
+        /// </summary>
+        private void OnWorldEntitySelected(EntityId id)
         {
-            if (!_consoleOpen)
-            {
-                SetConsoleOpen(true);
-            }
-
             AppendLog($"> inspect {id}");
             AppendLog(_simulation.Commands.Execute($"inspect {id}"));
         }
 
-        /// <summary>Clicking a building shows the same text inspector, and - for a building with job slots - the building panel on top of it.</summary>
+        /// <summary>3.10b2: clicking a person in the world opens the People panel with them selected and the camera moved to them, exactly like a row click - never the debug console.</summary>
+        private void OnPersonSelected(EntityId id)
+        {
+            _peoplePanelPresenter?.ShowWithPersonSelected(id);
+        }
+
+        /// <summary>3.10b2: clicking a building opens only the building panel - never the debug console.</summary>
         private void OnBuildingSelected(EntityId id)
         {
-            OnMoverCapsuleSelected(id);
             _buildingPanelPresenter?.Show(id);
         }
 
@@ -1227,6 +1255,7 @@ namespace TheEmptying.Presentation
                 _marketModule = modules.OfType<MarketModule>().FirstOrDefault();
                 _mapResourcesModule = modules.OfType<MapResourcesModule>().FirstOrDefault();
                 _gatheringModule = modules.OfType<GatheringModule>().FirstOrDefault();
+                _inventoryModule = modules.OfType<InventoryModule>().FirstOrDefault();
 
                 using var stream = File.OpenRead(path);
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions());
@@ -1241,8 +1270,9 @@ namespace TheEmptying.Presentation
                 _mapPresenter?.SetGatheringModule(_gatheringModule);
                 _landPresenter?.Rebind(_landModule, _mapMovementModule.Grid);
                 _buildingsPresenter?.Rebind(_buildingsModule, _mapMovementModule.Grid);
-                _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule, _marketModule);
+                _buildingPanelPresenter?.Rebind(_buildingsModule, _jobsModule, _marketModule, _inventoryModule);
                 _peoplePanelPresenter?.Rebind(_peopleModule, _gatheringModule, _jobsModule, _buildingsModule, _mapMovementModule);
+                _stockpilePanelPresenter?.Rebind(_buildingsModule, _inventoryModule);
 
                 if (_buildingsModule != null && _buildingsModule.NeedsInitialStockpilePlacement)
                 {

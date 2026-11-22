@@ -73,6 +73,72 @@ namespace TheEmptying.Tests.PlayMode
             Assert.AreNotEqual(cameraPositionBefore, camera.transform.position, "Expected selecting a person to move the camera toward them.");
         }
 
+        /// <summary>3.10b2: clicking a person in the world opens the People panel with them selected and moves the camera, exactly like a row click - and never pops the debug console.</summary>
+        [UnityTest]
+        public IEnumerator ClickingAPersonInTheWorld_OpensThePeoplePanelWithThemSelected_AndNeverTheConsole()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null;
+
+            Assert.IsTrue(bootstrap.PlaceInitialStockpileForTesting(new GridPoint(100, 100)), "Setup: placing the stockpile should succeed.");
+
+            string peopleList = bootstrap.RunConsoleCommandForTesting("people");
+            string firstLine = peopleList.Split('\n')[0];
+            Assert.IsTrue(EntityId.TryParse(firstLine.Split(':')[0].Trim(), out EntityId founder), $"Expected to parse a founder id from: {firstLine}");
+
+            Assert.IsFalse(bootstrap.IsConsoleOpen, "Setup: the console should start closed.");
+
+            // Placing the stockpile unpauses the game, but at normal speed a frame or two isn't
+            // necessarily enough real time for even one tick to run yet - and a founder's capsule
+            // only renders once MapMovementPresenter has synced at least one real position for them.
+            Vector3? renderedPos = null;
+            float deadline = Time.realtimeSinceStartup + 5f;
+            while (!renderedPos.HasValue && Time.realtimeSinceStartup < deadline)
+            {
+                yield return null;
+                renderedPos = bootstrap.MoverRenderedPositionForTesting(founder);
+            }
+
+            Assert.IsTrue(renderedPos.HasValue, $"Expected {founder} to have a rendered capsule position.");
+
+            Camera camera = bootstrap.CameraForTesting;
+            Assert.IsNotNull(camera, "Expected a main camera.");
+            Vector3 screenPoint = camera.WorldToScreenPoint(renderedPos.Value);
+            Assert.Greater(screenPoint.z, 0f, "Sanity check: the person should be in front of the camera.");
+
+            bootstrap.ClickOnPersonCapsuleForTesting(new Vector2(screenPoint.x, screenPoint.y));
+            yield return null;
+
+            Assert.IsTrue(bootstrap.IsPeoplePanelOpenForTesting, "Expected clicking a person in the world to open the People panel.");
+            Assert.AreEqual(founder, bootstrap.PeoplePanelSelectedPersonIdForTesting, "Expected the clicked person to become selected.");
+            Assert.IsFalse(bootstrap.IsConsoleOpen, "A world click must never open the debug console.");
+        }
+
+        /// <summary>3.10b2: a hand test found the panel too narrow, with long rows cut off.</summary>
+        [UnityTest]
+        public IEnumerator PeoplePanel_IsWideEnough_AndWrapsLongRows_SoNothingIsCutOff()
+        {
+            yield return SceneManager.LoadSceneAsync("Game", LoadSceneMode.Single);
+
+            var bootstrap = Object.FindFirstObjectByType<GameBootstrap>();
+            Assert.IsNotNull(bootstrap, "Expected a GameBootstrap in the Game scene.");
+
+            yield return null;
+
+            Assert.IsTrue(bootstrap.PlaceInitialStockpileForTesting(new GridPoint(100, 100)), "Setup: placing the stockpile should succeed.");
+            yield return null;
+
+            bootstrap.ShowPeoplePanelForTesting();
+            yield return null; // let layout resolve
+
+            Assert.Greater(bootstrap.PeoplePanelRootWidthForTesting, 500f, "Expected the widened People panel to be well over the old 420px width.");
+            Assert.IsTrue(bootstrap.PeoplePanelRowsWrapForTesting, "Expected a row's detail text to wrap rather than clip, regardless of panel width.");
+        }
+
         [UnityTest]
         public IEnumerator PeoplePanel_SelectingABuilder_DrawsALineToTheirConstructionSite()
         {

@@ -133,8 +133,31 @@ namespace TheEmptying.Modules.Market
 
         public Money GetPrice(string goodId) => _prices.TryGetValue(goodId, out MarketPriceState state) ? state.CurrentPrice : Money.Zero;
 
-        /// <summary>How much of a good is currently for sale anywhere (a shop's own inventory or a stall) - the building panel's "none for sale" diagnostic for a stalled site.</summary>
+        /// <summary>How much of a good is currently for sale anywhere (a shop's own inventory or a stall) - never counts the crown storehouse, since that's never sold to a private buyer.</summary>
         public int GetTotalStockForSale(string goodId) => TotalStockOf(goodId);
+
+        /// <summary>
+        /// 3.10b2: how much of a good a specific construction site could actually draw on next - the
+        /// ordinary for-sale stock everyone can buy from, plus (for a crown site only) the crown
+        /// storehouse's own stock, which TryDrawFromStorehouse delivers to a crown site directly and
+        /// immediately but which a privately-owned site can never buy (FindSellers and TotalStockOf
+        /// both skip the storehouse). A site's own "stalled" check and the building panel's "stuck"
+        /// diagnostic both use this, instead of TotalStockOf/GetTotalStockForSale alone, so a crown
+        /// site with stock sitting in its own storehouse never looks stalled when it isn't, and a
+        /// private site waiting on stock only the crown holds never looks healthy when it can't
+        /// actually get it.
+        /// </summary>
+        public int GetAvailableStockForSite(EntityId siteId, string goodId)
+        {
+            int stock = TotalStockOf(goodId);
+
+            if (_buildings.TryGetBuilding(siteId, out BuildingState site) && !site.Owner.HasValue && _buildings.TryFindCrownStorehouse(out EntityId storehouseId))
+            {
+                stock += _inventory.GetCount(storehouseId, goodId);
+            }
+
+            return stock;
+        }
 
         /// <summary>How much of a good is already on order (paid for, in transit) for a construction site - the building panel's materials-on-order line.</summary>
         public int GetOnOrder(EntityId siteId, string goodId) => _onOrderForSite.TryGetValue((siteId, goodId), out int amount) ? amount : 0;

@@ -571,6 +571,61 @@ namespace TheEmptying.Tests.EditMode.Gathering
             Assert.IsTrue(planksArrivedAtTick >= 0, "Expected planks to start appearing again once logs arrived.");
         }
 
+        /// <summary>
+        /// 3.10b2: the gap the other TrueDefaultNewGame_* tests above left open - each of them drains
+        /// the stockpile's planks first "since the true default stockpile already holds more planks
+        /// than the lodging alone needs", so none of them actually proves the literal default case (a
+        /// true new game, nothing placed but the stockpile and one crown lodging, left running with no
+        /// console help and no draining at all) ever completes. This is the user's exact hand test.
+        /// </summary>
+        [Test]
+        public void TrueDefaultNewGame_CrownLodging_DrawsFromTheStockpileAndCompletes_WithNoHelp()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, GatheringModule gathering, BuildingsModule buildings, InventoryModule inventory, WealthModule wealth, MarketModule market, PeopleModule people, JobsModule jobs) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(10, 10), out EntityId storehouseId, out string error), error);
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(50, 50), out EntityId lodgingId, out string placeError), placeError);
+
+            int planksNeeded = buildings.GetBuildingType("building.crown_lodging").ConstructionCost.First(c => c.Good.Id == "good.plank").Amount;
+            int stoneNeeded = buildings.GetBuildingType("building.crown_lodging").ConstructionCost.First(c => c.Good.Id == "good.stone").Amount;
+            Assert.LessOrEqual(planksNeeded, inventory.GetCount(storehouseId, "good.plank"), "Setup: expected the true default stockpile to already hold enough planks on its own.");
+            Assert.LessOrEqual(stoneNeeded, inventory.GetCount(storehouseId, "good.stone"), "Setup: expected the true default stockpile to already hold enough stone on its own.");
+
+            const long maxTicks = CalendarConstants.TicksPerDay * 10;
+            long deliveredByTick = -1;
+            long completedAtTick = -1;
+            double lastProgress = 0.0;
+
+            for (long i = 0; i < maxTicks; i++)
+            {
+                sim.Step();
+
+                buildings.TryGetBuilding(lodgingId, out BuildingState site);
+                if (site.Construction == null)
+                {
+                    completedAtTick = i;
+                    break;
+                }
+
+                int plankDelivered = site.Construction.DeliveredGoods.TryGetValue("good.plank", out int pd) ? pd : 0;
+                int stoneDelivered = site.Construction.DeliveredGoods.TryGetValue("good.stone", out int sd) ? sd : 0;
+                if (deliveredByTick < 0 && plankDelivered >= planksNeeded && stoneDelivered >= stoneNeeded)
+                {
+                    deliveredByTick = i;
+                }
+
+                double progress = buildings.GetConstructionProgressPercent(lodgingId);
+                Assert.GreaterOrEqual(progress, lastProgress - 0.001, $"Expected progress to never go backwards (tick {i}).");
+                lastProgress = progress;
+            }
+
+            Assert.IsTrue(deliveredByTick >= 0 && deliveredByTick <= CalendarConstants.TicksPerDay,
+                "Expected both planks and stone to be fully drawn from the stockpile within the first in-game day, with no transit delay (a crown site draws its own storehouse first).");
+            Assert.IsTrue(completedAtTick >= 0,
+                $"Expected the crown lodging to complete within {maxTicks / CalendarConstants.TicksPerDay} days, from the true default stockpile alone, with no console help.");
+        }
+
         /// <summary>The user's actual case: the stockpile plus one building placed, from a true default start.</summary>
         [Test]
         public void Founders_WorkSteadilyThroughTheWholeShift_TrueDefaultStart_OneBuildingPlaced()

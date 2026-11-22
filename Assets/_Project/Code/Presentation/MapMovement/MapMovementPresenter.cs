@@ -348,11 +348,20 @@ namespace TheEmptying.Presentation.MapMovement
                 return;
             }
 
-            Vector2 screenPos = Mouse.current.position.ReadValue();
-            if (UiInputUtility.IsPointerOverUi(_uiRoot, screenPos))
+            SelectAt(Mouse.current.position.ReadValue());
+        }
+
+        private void SelectAt(Vector2 screenPos)
+        {
+            if (_camera == null || UiInputUtility.IsPointerOverUi(_uiRoot, screenPos))
             {
                 return;
             }
+
+            // A capsule just moved this same frame doesn't update the physics engine's own
+            // broadphase data until the next sync point - without forcing it here, a click can
+            // silently miss a mover that only just arrived at this screen position.
+            Physics.SyncTransforms();
 
             Ray ray = _camera.ScreenPointToRay(screenPos);
 
@@ -365,6 +374,9 @@ namespace TheEmptying.Presentation.MapMovement
                 }
             }
         }
+
+        /// <summary>For tests: runs the exact guarded click-to-select decision a real click at screenPosition would.</summary>
+        public void ClickAtForTesting(Vector2 screenPosition) => SelectAt(screenPosition);
 
         private void BuildGround()
         {

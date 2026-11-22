@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using TheEmptying.Core.Content;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Land;
 using TheEmptying.Modules.MapMovement;
 using TheEmptying.Presentation;
@@ -23,7 +24,11 @@ namespace TheEmptying.Presentation.Buildings
     {
         private const float SiteAlpha = 0.35f;
 
+        private static readonly Color InsufficientMaterialColor = new Color(0.9f, 0.4f, 0.3f);
+        private static readonly Color SufficientMaterialColor = new Color(0.75f, 0.75f, 0.75f);
+
         private BuildingsModule _buildings;
+        private InventoryModule _inventory;
         private ContentDatabase _content;
         private MapGrid _grid;
         private Camera _camera;
@@ -36,6 +41,7 @@ namespace TheEmptying.Presentation.Buildings
         private VisualElement _menuPanel;
         private Button _buildMenuToggleButton;
         private readonly Dictionary<string, Button> _menuTypeButtons = new Dictionary<string, Button>();
+        private readonly Dictionary<string, Label> _menuTypeCostLabels = new Dictionary<string, Label>();
         private string _selectedTypeId;
         private bool _toolActive;
         private bool _placingInitialStockpile;
@@ -44,9 +50,10 @@ namespace TheEmptying.Presentation.Buildings
         private GameObject _previewCube;
         private readonly Dictionary<EntityId, GameObject> _buildingCubes = new Dictionary<EntityId, GameObject>();
 
-        public void Initialize(BuildingsModule buildings, ContentDatabase content, MapGrid grid, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onBuildingSelected, Action onInitialStockpilePlaced = null, SettingsRegistry settings = null)
+        public void Initialize(BuildingsModule buildings, InventoryModule inventory, ContentDatabase content, MapGrid grid, Camera camera, InputActionMap gameplayMap, VisualElement uiRoot, Action<EntityId> onBuildingSelected, Action onInitialStockpilePlaced = null, SettingsRegistry settings = null)
         {
             _buildings = buildings;
+            _inventory = inventory;
             _content = content;
             _grid = grid;
             _camera = camera;
@@ -85,6 +92,11 @@ namespace TheEmptying.Presentation.Buildings
             HandlePreviewAndPlacement();
             HandleBuildingClick();
             LogReleaseForDebugging();
+
+            if (_toolActive)
+            {
+                RefreshMenuCosts();
+            }
         }
 
         /// <summary>
@@ -135,7 +147,11 @@ namespace TheEmptying.Presentation.Buildings
             {
                 _toolActive = !_toolActive;
                 _menuPanel.style.display = _toolActive ? DisplayStyle.Flex : DisplayStyle.None;
-                if (!_toolActive)
+                if (_toolActive)
+                {
+                    RefreshMenuCosts();
+                }
+                else
                 {
                     _selectedTypeId = null;
                 }
@@ -171,14 +187,54 @@ namespace TheEmptying.Presentation.Buildings
                     continue;
                 }
 
+                var row = new VisualElement { style = { marginBottom = 4 } };
+
                 var button = new Button { text = type.Name };
                 string typeId = type.Id;
                 button.clicked += () => _selectedTypeId = typeId;
-                _menuPanel.Add(button);
+                row.Add(button);
+
+                var costLabel = new Label { style = { fontSize = 10, marginLeft = 2, whiteSpace = WhiteSpace.Normal, maxWidth = 160 } };
+                row.Add(costLabel);
+                _menuTypeCostLabels[typeId] = costLabel;
+
+                _menuPanel.Add(row);
                 _menuTypeButtons[typeId] = button;
             }
 
             root.Add(_menuPanel);
+        }
+
+        /// <summary>
+        /// 3.10b2: a hand test found the build menu gave no idea what a building would cost, or
+        /// whether the stockpile could already cover it. Refreshed live (not just once) since the
+        /// stockpile's own amounts change while the menu stays open. Placement itself still never
+        /// requires having the materials on hand - founders gather the rest - so a shortfall only
+        /// changes the label's color, never whether the entry is clickable.
+        /// </summary>
+        private void RefreshMenuCosts()
+        {
+            bool hasStorehouse = _buildings.TryFindCrownStorehouse(out EntityId storehouseId);
+
+            foreach (KeyValuePair<string, Label> entry in _menuTypeCostLabels)
+            {
+                BuildingType type = FindType(entry.Key);
+                if (type == null)
+                {
+                    continue;
+                }
+
+                var parts = new List<string>();
+                foreach (GoodAmount cost in type.ConstructionCost)
+                {
+                    int have = hasStorehouse && _inventory != null ? _inventory.GetCount(storehouseId, cost.Good.Id) : 0;
+                    Color color = have >= cost.Amount ? SufficientMaterialColor : InsufficientMaterialColor;
+                    string goodName = FindGood(cost.Good.Id)?.Name ?? cost.Good.Id;
+                    parts.Add($"<color=#{ColorUtility.ToHtmlStringRGB(color)}>{goodName} {cost.Amount} (have {have})</color>");
+                }
+
+                entry.Value.text = parts.Count > 0 ? string.Join(", ", parts) : "No cost.";
+            }
         }
 
         #endregion
@@ -316,6 +372,19 @@ namespace TheEmptying.Presentation.Buildings
                 if (entry.Definition.Id == typeId)
                 {
                     return (BuildingType)entry.Definition;
+                }
+            }
+
+            return null;
+        }
+
+        private Good FindGood(string goodId)
+        {
+            foreach (ContentEntry entry in _content.ListByType(BuiltInContentTypes.GoodTypeName))
+            {
+                if (entry.Definition.Id == goodId)
+                {
+                    return (Good)entry.Definition;
                 }
             }
 
@@ -531,6 +600,10 @@ namespace TheEmptying.Presentation.Buildings
         /// <summary>For tests: a building type's button inside the (opened) build menu, by panel position - null if that type has no button (menu closed, or not a government type).</summary>
         public Vector2? MenuTypeButtonPositionForTesting(string typeId) =>
             _menuTypeButtons.TryGetValue(typeId, out Button button) ? button.worldBound.center : (Vector2?)null;
+
+        /// <summary>For tests: a building type's cost label text, as currently shown in the build menu - null if that type has no entry.</summary>
+        public string MenuTypeCostTextForTesting(string typeId) =>
+            _menuTypeCostLabels.TryGetValue(typeId, out Label label) ? label.text : null;
 
         /// <summary>For tests: whether the build menu panel is currently showing (a real click on the toggle button takes a frame or two for UI Toolkit to actually dispatch, so a test should poll this rather than assume a fixed frame count).</summary>
         public bool IsBuildMenuOpenForTesting => _menuPanel.style.display == DisplayStyle.Flex;

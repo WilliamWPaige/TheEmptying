@@ -121,11 +121,14 @@ namespace TheEmptying.Tests.PlayMode
             Assert.That(screenPoint.x, Is.InRange(0f, Screen.width), "Sanity check: the site's screen X should be on-screen.");
             Assert.That(screenPoint.y, Is.InRange(0f, Screen.height), "Sanity check: the site's screen Y should be on-screen.");
 
+            Assert.IsFalse(bootstrap.IsConsoleOpen, "Setup: the console should start closed.");
+
             bootstrap.ClickAtForTesting(new Vector2(screenPoint.x, screenPoint.y));
             yield return null;
 
             Assert.IsTrue(bootstrap.IsBuildingPanelOpenForTesting, "Expected the building panel to open when clicking a construction site, not just a finished building.");
             Assert.AreEqual(siteId.Value, bootstrap.BuildingPanelShownIdForTesting);
+            Assert.IsFalse(bootstrap.IsConsoleOpen, "3.10b2: clicking a building must never also pop the debug console.");
         }
     }
 }

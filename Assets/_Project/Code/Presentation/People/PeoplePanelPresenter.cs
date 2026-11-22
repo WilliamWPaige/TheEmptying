@@ -57,8 +57,23 @@ namespace TheEmptying.Presentation.People
         /// <summary>For tests: whether the selection line is currently drawn.</summary>
         public bool IsSelectionLineVisibleForTesting => _selectionLine != null && _selectionLine.enabled;
 
+        /// <summary>For tests: the panel's own resolved width in pixels (3.10b2: widened so long rows don't get cut off).</summary>
+        public float RootWidthForTesting => _root?.resolvedStyle.width ?? 0f;
+
+        /// <summary>For tests: whether a row's detail text wraps instead of clipping, regardless of how wide the panel ends up (3.10b2).</summary>
+        public bool RowsWrapForTesting =>
+            _rowsContainer != null &&
+            _rowsContainer.Query<Label>(className: "people-panel-row-detail").First()?.resolvedStyle.whiteSpace == WhiteSpace.Normal;
+
         /// <summary>For tests: runs the exact row-click decision a real click on this person's row would (selects them, moves the camera) - a UI Toolkit ClickEvent can't be driven by simulated input (see RealInputClickTests).</summary>
         public void SelectPersonForTesting(EntityId id) => SelectPerson(id);
+
+        /// <summary>3.10b2: clicking a person's capsule in the world opens this panel (if not already open) with them selected and the camera moved to them - exactly like clicking their row.</summary>
+        public void ShowWithPersonSelected(EntityId id)
+        {
+            Show();
+            SelectPerson(id);
+        }
 
         public void Initialize(
             PeopleModule people,

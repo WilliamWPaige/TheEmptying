@@ -2,6 +2,7 @@ using System;
 using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Inventory;
 using TheEmptying.Modules.Jobs;
 using TheEmptying.Modules.Market;
 using UnityEngine;
@@ -27,6 +28,7 @@ namespace TheEmptying.Presentation.Buildings
         private BuildingsModule _buildings;
         private JobsModule _jobs;
         private MarketModule _market;
+        private InventoryModule _inventory;
         private Action<string> _executeCommand;
 
         private VisualElement _root;
@@ -41,11 +43,15 @@ namespace TheEmptying.Presentation.Buildings
         public bool IsShowingForTesting => _isShowing;
         public EntityId ShownBuildingIdForTesting => _shownBuildingId;
 
-        public void Initialize(BuildingsModule buildings, JobsModule jobs, MarketModule market, VisualElement uiRoot, Action<string> executeCommand)
+        /// <summary>For tests: how many rows the panel's main content area currently lists.</summary>
+        public int SlotsChildCountForTesting => _slotsContainer?.childCount ?? 0;
+
+        public void Initialize(BuildingsModule buildings, JobsModule jobs, MarketModule market, InventoryModule inventory, VisualElement uiRoot, Action<string> executeCommand)
         {
             _buildings = buildings;
             _jobs = jobs;
             _market = market;
+            _inventory = inventory;
             _executeCommand = executeCommand;
 
             var asset = Resources.Load<VisualTreeAsset>("BuildingPanel");
@@ -66,11 +72,12 @@ namespace TheEmptying.Presentation.Buildings
             _root.style.display = DisplayStyle.None;
         }
 
-        public void Rebind(BuildingsModule buildings, JobsModule jobs, MarketModule market)
+        public void Rebind(BuildingsModule buildings, JobsModule jobs, MarketModule market, InventoryModule inventory)
         {
             _buildings = buildings;
             _jobs = jobs;
             _market = market;
+            _inventory = inventory;
             Hide();
         }
 
@@ -121,6 +128,17 @@ namespace TheEmptying.Presentation.Buildings
             if (building.Construction != null)
             {
                 PopulateConstructionSite(buildingId, building, type);
+                return;
+            }
+
+            if (building.BuildingTypeId == BuildingsModule.CrownStorehouseTypeId)
+            {
+                _slotsContainer.Add(new Label("Contents") { style = { unityFontStyleAndWeight = FontStyle.Bold, marginBottom = 4 } });
+                if (_inventory != null)
+                {
+                    StockpileContentsFormatter.AppendGoodsRows(_slotsContainer, buildingId, _inventory);
+                }
+
                 return;
             }
 
@@ -198,8 +216,8 @@ namespace TheEmptying.Presentation.Buildings
                     continue; // already on its way
                 }
 
-                int forSale = _market != null ? _market.GetTotalStockForSale(cost.Good.Id) : 0;
-                if (forSale <= 0)
+                int available = _market != null ? _market.GetAvailableStockForSite(siteId, cost.Good.Id) : 0;
+                if (available <= 0)
                 {
                     return $"Waiting for {cost.Good.Id}: none for sale.";
                 }

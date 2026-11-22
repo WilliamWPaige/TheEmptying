@@ -151,6 +151,31 @@ namespace TheEmptying.Tests.EditMode.Market
             Assert.Greater(plankSoFar, 10, "The storehouse's 10 planks plus the bought remainder should both be credited by now.");
         }
 
+        /// <summary>3.10b2: the "stalled" check (and the building panel's "stuck" diagnostic) must count the crown storehouse only for a site that can actually draw on it.</summary>
+        [Test]
+        public void GetAvailableStockForSite_CountsTheStorehouseOnlyForACrownSite()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation sim, MarketModule market, BuildingsModule buildings, WealthModule wealth, LandModule land, InventoryModule inventory, PeopleModule people) = Build(core);
+
+            Assert.IsTrue(buildings.TryPlaceInitialStockpile(new GridPoint(90, 90), out EntityId storehouseId, out string storehouseError), storehouseError);
+            inventory.Add(storehouseId, "good.plank", 50);
+
+            Assert.IsTrue(buildings.TryPlaceGovernmentBuilding("building.crown_lodging", new GridPoint(150, 150), out EntityId lodgingId, out string placeError), placeError);
+
+            EntityId owner = people.SpawnPerson(30, 30);
+            wealth.Grant(AccountId.Person(owner), Money.FromCopper(5000));
+            land.RequestSetZone(new CellRect(40, 40, 4, 4), "zone.residential_low");
+            sim.Step();
+            Assert.IsTrue(land.TryBuyPlot(owner, "zone.residential_low", new GridPoint(40, 40), out _, out string buyError), buyError);
+            Assert.IsTrue(buildings.TryRequestPrivateBuilding(owner, "building.cottage", out EntityId cottageId, out string requestError), requestError);
+
+            Assert.AreEqual(50, market.GetAvailableStockForSite(lodgingId, "good.plank"),
+                "The crown storehouse's own stock should count as available to a crown site - TryDeliverGoods draws it directly.");
+            Assert.AreEqual(0, market.GetAvailableStockForSite(cottageId, "good.plank"),
+                "The crown storehouse's stock should never count as available to a privately-owned site - it's never sold to a private buyer.");
+        }
+
         [Test]
         public void ACrownSite_WithNoGoodsAndNoMoney_Stalls()
         {

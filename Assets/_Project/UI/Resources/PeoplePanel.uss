@@ -2,7 +2,8 @@
     position: absolute;
     top: 48px;
     left: 8px;
-    width: 420px;
+    width: 640px;
+    max-width: 90%;
     max-height: 80%;
     background-color: rgb(20, 20, 24);
     border-radius: 6px;
@@ -55,15 +56,18 @@
     color: rgb(230, 230, 230);
     font-size: 12px;
     -unity-font-style: bold;
+    white-space: normal;
 }
 
 .people-panel-row-detail {
     color: rgb(190, 190, 190);
     font-size: 11px;
+    white-space: normal;
 }
 
 .people-panel-row-idle-reason {
     color: rgb(230, 190, 90);
     font-size: 11px;
     -unity-font-style: italic;
+    white-space: normal;
 }

@@ -974,7 +974,14 @@ namespace TheEmptying.Modules.Gathering
             _buildings.TryAddLaborHours(task.TargetSite.Value, speed, out _);
         }
 
-        /// <summary>The first construction-cost good this crown site still needs that's neither in the crown storehouse nor already on order; null if the site can still make progress.</summary>
+        /// <summary>
+        /// The first construction-cost good this site still needs that isn't already on order and
+        /// isn't actually available to IT - a crown site's own storehouse stock for a crown site, or
+        /// ordinary for-sale stock for a privately-owned one (3.10b2: MarketModule.GetAvailableStockForSite,
+        /// not just whether the crown storehouse happens to be non-empty - stock that can never reach
+        /// this particular site must never make it look like it can still progress). Null if the site
+        /// can still make progress.
+        /// </summary>
         private string GetStalledMissingGood(EntityId siteId, BuildingState site)
         {
             BuildingType type = _buildings.GetBuildingType(site.BuildingTypeId);
@@ -982,8 +989,6 @@ namespace TheEmptying.Modules.Gathering
             {
                 return null;
             }
-
-            bool hasStorehouse = _buildings.TryFindCrownStorehouse(out EntityId storehouseId);
 
             foreach (GoodAmount cost in type.ConstructionCost)
             {
@@ -998,8 +1003,7 @@ namespace TheEmptying.Modules.Gathering
                     continue; // already on its way
                 }
 
-                int stock = hasStorehouse ? _inventory.GetCount(storehouseId, cost.Good.Id) : 0;
-                if (stock > 0)
+                if (_market.GetAvailableStockForSite(siteId, cost.Good.Id) > 0)
                 {
                     continue; // the daily bulk-order pass will draw it down to the site
                 }
