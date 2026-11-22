@@ -9,6 +9,7 @@ namespace TheEmptying.Modules.Map
     public enum PlacementKind
     {
         Tree,
-        Stone
+        Stone,
+        GrubMound
     }
 }

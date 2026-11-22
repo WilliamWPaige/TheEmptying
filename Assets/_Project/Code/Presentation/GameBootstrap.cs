@@ -12,9 +12,11 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Map;
+using TheEmptying.Modules.People;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.DevTools;
 using TheEmptying.Presentation.Menus;
+using TheEmptying.Presentation.People;
 using TheEmptying.Presentation.Startup;
 using TheEmptying.Presentation.World;
 using UnityEngine;
@@ -80,6 +82,8 @@ namespace TheEmptying.Presentation
         private MapModule _mapModule;
         private WorldMapView _worldMapView;
         private MapCursorPresenter _mapCursor;
+        private PeopleModule _peopleModule;
+        private PersonPresenter _personPresenter;
 
         private readonly CheatMenuRegistry _cheatMenu = new CheatMenuRegistry();
         private DebugWindowPresenter _debugWindow;
@@ -311,6 +315,7 @@ namespace TheEmptying.Presentation
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets, contentAssetProblems: contentAssetProblems);
             _simulation = simulation;
             _mapModule = modules.OfType<MapModule>().First();
+            _peopleModule = modules.OfType<PeopleModule>().First();
 
             // The closure reads _simulation live, so it keeps working after a load swaps the field.
             ErrorCatcher.InGameTimestampProvider = () =>
@@ -338,8 +343,7 @@ namespace TheEmptying.Presentation
             return ContentAssetConverter.BuildDefinitions(catalog, problems);
         }
 
-        /// <summary>TEMPORARY (R1): the placeholder ground and the strategy camera that looks at it. Replace once the real map system exists.</summary>
-        /// <summary>R6: the full-size chunked world map, its camera, and the mouse-cell test helper. Replaces the R1 TemporaryGround.</summary>
+        /// <summary>R6/R7: the full-size chunked world map, its camera, the mouse-cell test helper, and the people presenter. Replaces the R1 TemporaryGround.</summary>
         private void BuildWorld()
         {
             Camera camera = Camera.main;
@@ -364,6 +368,9 @@ namespace TheEmptying.Presentation
 
             _mapCursor = gameObject.AddComponent<MapCursorPresenter>();
             _mapCursor.Initialize(_mapModule, _floatingOrigin, camera, _uiDocument.rootVisualElement);
+
+            _personPresenter = gameObject.AddComponent<PersonPresenter>();
+            _personPresenter.Initialize(_peopleModule, _mapModule, _floatingOrigin, _worldMapView, camera, _uiDocument.rootVisualElement);
         }
 
         /// <summary>
@@ -422,6 +429,7 @@ namespace TheEmptying.Presentation
 
             // Rebuilt fresh every time (unlike SpawnCheat): it must always hold the current MapModule, which a Load replaces.
             new MapCheat(_mapModule, _worldMapView, _cameraController).BuildSections(_cheatMenu);
+            new PeopleCheat(_peopleModule, _cameraController, _personPresenter).BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()
@@ -816,9 +824,11 @@ namespace TheEmptying.Presentation
 
                 _simulation = loaded;
                 _mapModule = modules.OfType<MapModule>().First();
+                _peopleModule = modules.OfType<PeopleModule>().First();
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
                 _worldMapView?.Rebind(_mapModule, _simulation.Settings);
+                _personPresenter?.Rebind(_peopleModule, _mapModule);
                 BuildCheatMenu();
                 _debugWindow?.RebuildCheatsStructure();
 

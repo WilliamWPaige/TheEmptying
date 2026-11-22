@@ -20,12 +20,15 @@ namespace TheEmptying.Modules.Map
     /// </summary>
     public sealed class MapModule : IModule
     {
+        public const string ModuleId = "module.map";
+
         public const string WorldWidthSettingId = "setting.map.world_width_meters";
         public const string WorldDepthSettingId = "setting.map.world_depth_meters";
         public const string CellSizeSettingId = "setting.map.cell_size_meters";
         public const string ChunkSizeSettingId = "setting.map.chunk_size_meters";
         public const string TreesPerChunkSettingId = "setting.map.trees_per_chunk";
         public const string StonesPerChunkSettingId = "setting.map.stones_per_chunk";
+        public const string GrubMoundsPerChunkSettingId = "setting.map.grub_mounds_per_chunk";
 
         private const int MaxPlacementAttempts = 50;
 
@@ -34,7 +37,7 @@ namespace TheEmptying.Modules.Map
         private SettingsRegistry _settings;
         private RandomService _randomService;
 
-        public string Id => "module.map";
+        public string Id => ModuleId;
         public int Version => 1;
         public IReadOnlyList<string> Dependencies => Array.Empty<string>();
 
@@ -88,6 +91,24 @@ namespace TheEmptying.Modules.Map
 
         public bool TryGetChunk(ChunkCoord coord, out ChunkData chunk) => _chunks.TryGetValue(coord, out chunk);
 
+        /// <summary>Whether a cell is free of any placement (tree, stone or grub mound) in its chunk - creating that chunk if it doesn't exist yet.</summary>
+        public bool IsCellFree(CellCoord cell)
+        {
+            ChunkData chunk = GetOrCreateChunk(CellToChunk(cell));
+
+            foreach (ChunkPlacement placement in chunk.Placements)
+            {
+                int footprint = FootprintCellsFor(placement.Kind);
+                if (cell.X >= placement.Cell.X && cell.X < placement.Cell.X + footprint &&
+                    cell.Z >= placement.Cell.Z && cell.Z < placement.Cell.Z + footprint)
+                {
+                    return false;
+                }
+            }
+
+            return true;
+        }
+
         /// <summary>Creates the chunk's data (and its one-time random placements) the first time it's asked for; returns the same instance on every later call.</summary>
         public ChunkData GetOrCreateChunk(ChunkCoord coord)
         {
@@ -100,12 +121,15 @@ namespace TheEmptying.Modules.Map
             return chunk;
         }
 
+        /// <summary>The footprint (in cells per side) a placement of this kind occupies - resource.stone is 2x2, everything else here is 1x1.</summary>
+        private static int FootprintCellsFor(PlacementKind kind) => kind == PlacementKind.Stone ? 2 : 1;
+
         /// <summary>
-        /// TEMPORARY (R6b): trees and stones scattered at random cells, a
-        /// stand-in until the real map design exists. Uses a stream named
-        /// for this exact chunk, so the result depends only on the world
-        /// seed and the chunk's own coordinates - never on when, or in
-        /// what order, chunks happen to be visited.
+        /// TEMPORARY (R6b/R7): trees, stones and grub mounds scattered at
+        /// random cells, a stand-in until the real map design exists. Uses
+        /// a stream named for this exact chunk, so the result depends only
+        /// on the world seed and the chunk's own coordinates - never on
+        /// when, or in what order, chunks happen to be visited.
         /// </summary>
         private List<ChunkPlacement> GeneratePlacements(ChunkCoord coord)
         {
@@ -113,13 +137,15 @@ namespace TheEmptying.Modules.Map
             int cellsPerSide = (int)Math.Round(ChunkSizeMeters / CellSizeMeters);
             int treeCount = (int)_settings.Get(TreesPerChunkSettingId);
             int stoneCount = (int)_settings.Get(StonesPerChunkSettingId);
+            int grubMoundCount = (int)_settings.Get(GrubMoundsPerChunkSettingId);
 
             var occupied = new HashSet<CellCoord>();
             var placements = new List<ChunkPlacement>();
 
             // Stones (the bigger footprint) first, while the chunk is still empty.
-            PlaceKind(PlacementKind.Stone, stoneCount, footprintCells: 2, coord, cellsPerSide, random, occupied, placements);
-            PlaceKind(PlacementKind.Tree, treeCount, footprintCells: 1, coord, cellsPerSide, random, occupied, placements);
+            PlaceKind(PlacementKind.Stone, stoneCount, FootprintCellsFor(PlacementKind.Stone), coord, cellsPerSide, random, occupied, placements);
+            PlaceKind(PlacementKind.Tree, treeCount, FootprintCellsFor(PlacementKind.Tree), coord, cellsPerSide, random, occupied, placements);
+            PlaceKind(PlacementKind.GrubMound, grubMoundCount, FootprintCellsFor(PlacementKind.GrubMound), coord, cellsPerSide, random, occupied, placements);
 
             return placements;
         }

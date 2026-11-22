@@ -1,5 +1,6 @@
 using TheEmptying.Core.Modules;
 using TheEmptying.Modules.Map;
+using TheEmptying.Modules.People;
 
 namespace TheEmptying.Presentation
 {
@@ -14,7 +15,8 @@ namespace TheEmptying.Presentation
     {
         public static IModule[] CreateModules()
         {
-            return new IModule[] { new MapModule() };
+            var map = new MapModule();
+            return new IModule[] { map, new PeopleModule(map) };
         }
     }
 }

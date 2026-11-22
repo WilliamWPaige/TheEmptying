@@ -72,6 +72,15 @@
             "maximum": 500,
             "category": "Map",
             "description": "TEMPORARY placeholder (R6b), until the real map design exists. How many stones are randomly placed in a chunk when it's first created."
+        },
+        {
+            "id": "setting.map.grub_mounds_per_chunk",
+            "valueType": "Integer",
+            "default": 2,
+            "minimum": 0,
+            "maximum": 500,
+            "category": "Map",
+            "description": "TEMPORARY placeholder (R7), until the real map design exists. How many grub mounds are randomly placed in a chunk when it's first created."
         }
     ]
 }

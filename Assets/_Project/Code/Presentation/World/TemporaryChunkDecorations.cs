@@ -6,40 +6,50 @@ using UnityEngine;
 namespace TheEmptying.Presentation.World
 {
     /// <summary>
-    /// TEMPORARY (R6b): draws each chunk's randomly-placed trees and
-    /// stones (resource.example_tree / resource.example_stone) while that
-    /// chunk is loaded, sized to their footprint, through the floating
-    /// origin like everything else. A stand-in until the real map design
-    /// exists - delete this whole class then.
+    /// TEMPORARY (R6b/R7): draws each chunk's randomly-placed trees,
+    /// stones and grub mounds while that chunk is loaded, sized to their
+    /// footprint, through the floating origin like everything else. A
+    /// stand-in until the real map design exists - delete this whole
+    /// class then.
     /// </summary>
     public sealed class TemporaryChunkDecorations
     {
-        private const string TreeContentId = "resource.example_tree";
-        private const string StoneContentId = "resource.example_stone";
+        private const string TreeContentId = "resource.tree";
+        private const string StoneContentId = "resource.stone";
+
+        /// <summary>
+        /// Grub mounds are the basic food source and never run out - that
+        /// rule isn't built yet (gathering adds it later); this is just
+        /// where they're placed on the ground.
+        /// </summary>
+        private const string GrubMoundContentId = "resource.grub_mound";
 
         private MapModule _mapModule;
         private readonly FloatingOrigin _floatingOrigin;
         private readonly Transform _root;
-        private readonly ResourceAsset _treeAsset;
-        private readonly ResourceAsset _stoneAsset;
+        private readonly Dictionary<PlacementKind, ResourceAsset> _assetsByKind = new Dictionary<PlacementKind, ResourceAsset>();
+        private readonly Dictionary<PlacementKind, Stack<GameObject>> _poolsByKind = new Dictionary<PlacementKind, Stack<GameObject>>();
 
         private readonly Dictionary<ChunkCoord, List<(PlacementKind Kind, GameObject GameObject)>> _activeByChunk =
             new Dictionary<ChunkCoord, List<(PlacementKind Kind, GameObject GameObject)>>();
-
-        private readonly Stack<GameObject> _treePool = new Stack<GameObject>();
-        private readonly Stack<GameObject> _stonePool = new Stack<GameObject>();
 
         public TemporaryChunkDecorations(MapModule mapModule, FloatingOrigin floatingOrigin)
         {
             _mapModule = mapModule;
             _floatingOrigin = floatingOrigin;
 
-            _root = new GameObject("Chunk Decorations (TEMPORARY, R6b)").transform;
+            _root = new GameObject("Chunk Decorations (TEMPORARY, R6b/R7)").transform;
             _floatingOrigin.Shifted += delta => _root.position -= delta;
 
             var catalog = Resources.Load<ContentCatalog>("ContentCatalog");
-            _treeAsset = FindAsset(catalog?.ResourceNodes, TreeContentId);
-            _stoneAsset = FindAsset(catalog?.ResourceNodes, StoneContentId);
+            _assetsByKind[PlacementKind.Tree] = FindAsset(catalog?.ResourceNodes, TreeContentId);
+            _assetsByKind[PlacementKind.Stone] = FindAsset(catalog?.ResourceNodes, StoneContentId);
+            _assetsByKind[PlacementKind.GrubMound] = FindAsset(catalog?.ResourceNodes, GrubMoundContentId);
+
+            foreach (PlacementKind kind in (PlacementKind[])System.Enum.GetValues(typeof(PlacementKind)))
+            {
+                _poolsByKind[kind] = new Stack<GameObject>();
+            }
         }
 
         private static ResourceAsset FindAsset(IReadOnlyList<ResourceAsset> assets, string id)
@@ -84,8 +94,7 @@ namespace TheEmptying.Presentation.World
 
             foreach (ChunkPlacement placement in chunk.Placements)
             {
-                ResourceAsset asset = placement.Kind == PlacementKind.Tree ? _treeAsset : _stoneAsset;
-                if (asset == null || asset.Model == null)
+                if (!_assetsByKind.TryGetValue(placement.Kind, out ResourceAsset asset) || asset == null || asset.Model == null)
                 {
                     continue;
                 }
@@ -113,7 +122,7 @@ namespace TheEmptying.Presentation.World
             foreach ((PlacementKind kind, GameObject instance) in instances)
             {
                 instance.SetActive(false);
-                (kind == PlacementKind.Tree ? _treePool : _stonePool).Push(instance);
+                _poolsByKind[kind].Push(instance);
             }
 
             _activeByChunk.Remove(coord);
@@ -121,7 +130,7 @@ namespace TheEmptying.Presentation.World
 
         private GameObject Spawn(PlacementKind kind, ResourceAsset asset)
         {
-            Stack<GameObject> pool = kind == PlacementKind.Tree ? _treePool : _stonePool;
+            Stack<GameObject> pool = _poolsByKind[kind];
             if (pool.Count > 0)
             {
                 GameObject reused = pool.Pop();

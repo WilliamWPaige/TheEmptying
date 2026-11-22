@@ -35,6 +35,7 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(WorldMapView.LowDetailHeightSettingId, SettingValueType.Number, 400.0, 10.0, 5000.0, "Map")]
         [TestCase(MapModule.TreesPerChunkSettingId, SettingValueType.Integer, 20.0, 0.0, 500.0, "Map")]
         [TestCase(MapModule.StonesPerChunkSettingId, SettingValueType.Integer, 3.0, 0.0, 500.0, "Map")]
+        [TestCase(MapModule.GrubMoundsPerChunkSettingId, SettingValueType.Integer, 2.0, 0.0, 500.0, "Map")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
@@ -164,13 +165,46 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void GetOrCreateChunk_PlacesTheRequestedNumberOfTreesAndStones()
+        public void GetOrCreateChunk_PlacesTheRequestedNumberOfTreesStonesAndGrubMounds()
         {
             MapModule map = BuildFromRealContent();
             ChunkData chunk = map.GetOrCreateChunk(new ChunkCoord(1, 1));
 
             Assert.AreEqual(20, chunk.Placements.Count(p => p.Kind == PlacementKind.Tree));
             Assert.AreEqual(3, chunk.Placements.Count(p => p.Kind == PlacementKind.Stone));
+            Assert.AreEqual(2, chunk.Placements.Count(p => p.Kind == PlacementKind.GrubMound));
+        }
+
+        [Test]
+        public void IsCellFree_ReturnsFalseOnlyForCellsAPlacementCovers()
+        {
+            MapModule map = BuildFromRealContent();
+            ChunkData chunk = map.GetOrCreateChunk(new ChunkCoord(2, 2));
+
+            var occupied = new HashSet<CellCoord>();
+            foreach (ChunkPlacement placement in chunk.Placements)
+            {
+                int footprint = placement.Kind == PlacementKind.Stone ? 2 : 1;
+                for (int dx = 0; dx < footprint; dx++)
+                {
+                    for (int dz = 0; dz < footprint; dz++)
+                    {
+                        occupied.Add(new CellCoord(placement.Cell.X + dx, placement.Cell.Z + dz));
+                    }
+                }
+            }
+
+            foreach (CellCoord cell in occupied)
+            {
+                Assert.IsFalse(map.IsCellFree(cell), $"Expected {cell} to be occupied.");
+            }
+
+            // The chunk's own origin corner is vanishingly unlikely to be covered by any of the handful of placements above.
+            var chunkOriginCell = new CellCoord(2 * 256, 2 * 256);
+            if (!occupied.Contains(chunkOriginCell))
+            {
+                Assert.IsTrue(map.IsCellFree(chunkOriginCell));
+            }
         }
 
         [Test]

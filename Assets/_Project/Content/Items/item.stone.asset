@@ -10,8 +10,8 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: f5a2e71829e67c74799f2970a62a4581, type: 3}
-  m_Name: item.example_log
+  m_Name: item.stone
   m_EditorClassIdentifier: TheEmptying.Presentation::TheEmptying.Presentation.Content.ItemAsset
-  id: item.example_log
-  displayName: Example Log
-  model: {fileID: 5193927720120574332, guid: 308027be556d271488da302a1df06c5b, type: 3}
+  id: item.stone
+  displayName: Stone
+  model: {fileID: 8617133818384658377, guid: 74926732fcdcdb04ca3fb061f13f70a5, type: 3}

@@ -45,6 +45,9 @@ namespace TheEmptying.Presentation.World
         /// <summary>The Map cheat's grid on/off toggle. The low-detail zoom view always hides the grid regardless of this.</summary>
         public bool GridEnabledByPlayer { get; set; } = true;
 
+        /// <summary>Whether this chunk currently has a built, visible ground tile - the same "loaded" every other per-chunk drawing (decorations, people) goes by.</summary>
+        public bool IsChunkLoaded(ChunkCoord coord) => _activeTiles.ContainsKey(coord);
+
         public void Initialize(MapModule mapModule, SettingsRegistry settings, FloatingOrigin floatingOrigin, StrategyCameraController cameraController)
         {
             _mapModule = mapModule;

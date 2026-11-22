@@ -13,11 +13,13 @@ MonoBehaviour:
   m_Name: ContentCatalog
   m_EditorClassIdentifier: TheEmptying.Presentation::TheEmptying.Presentation.Content.ContentCatalog
   units:
-  - {fileID: 11400000, guid: 2960ced6d0fcb7e49a00ca58146147a7, type: 2}
+  - {fileID: 11400000, guid: 7d1d798c20dd81f43af0a8c77af7ada6, type: 2}
   resourceNodes:
-  - {fileID: 11400000, guid: 1205d199650aa4849827382130ec8148, type: 2}
-  - {fileID: 11400000, guid: b7b2beac156a3a14e9d600ee9d88c9b0, type: 2}
-  buildings:
-  - {fileID: 11400000, guid: 14359b9ffb389f842af7211d0aaa1534, type: 2}
+  - {fileID: 11400000, guid: ef1e360b11b98074facb9c90f2eef80f, type: 2}
+  - {fileID: 11400000, guid: dc07297568609f54399d6fc74dae05c7, type: 2}
+  - {fileID: 11400000, guid: a487ead54e5aa16488b24b85b9ee2b55, type: 2}
+  buildings: []
   items:
-  - {fileID: 11400000, guid: b6025762e0166ea428a609cff273fe53, type: 2}
+  - {fileID: 11400000, guid: 6e0c34117d40d1240b572c19da285a51, type: 2}
+  - {fileID: 11400000, guid: 466963fdf9abbd54aaf71b29bb28f7f0, type: 2}
+  - {fileID: 11400000, guid: 95e336abb20688944b2fba2b3f5da97b, type: 2}

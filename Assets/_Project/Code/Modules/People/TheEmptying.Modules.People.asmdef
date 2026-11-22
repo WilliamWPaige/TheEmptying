@@ -1,0 +1,17 @@
+{
+    "name": "TheEmptying.Modules.People",
+    "rootNamespace": "TheEmptying.Modules.People",
+    "references": [
+        "TheEmptying.Core",
+        "TheEmptying.Modules.Map"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

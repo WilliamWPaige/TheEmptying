@@ -30,11 +30,16 @@ namespace TheEmptying.Tests.EditMode.EditorTools
         {
             // Every module ModuleCatalog.CreateModules() returns needs a manifest
             // entry for RuleTestSession.Build's real SimulationBuilder.Build call
-            // to succeed - R6's MapModule is the one it returns now. The same
-            // manifest also feeds EditorContext.Build below, so both calls agree.
+            // to succeed - Map and People (R7) are the ones it returns now. The
+            // same manifest also feeds EditorContext.Build below, so both calls
+            // agree.
             source.WriteDataFile("map_manifest.json", @"{
                 ""type"": ""module_manifest"",
                 ""items"": [ { ""id"": ""module.map"", ""version"": 1, ""dependencies"": [], ""enabled"": true } ]
+            }");
+            source.WriteDataFile("people_manifest.json", @"{
+                ""type"": ""module_manifest"",
+                ""items"": [ { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map""], ""enabled"": true } ]
             }");
             source.WriteDataFile("events.json", @"{
                 ""type"": ""event_definition"",
@@ -44,7 +49,15 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                 ""type"": ""setting_definition"",
                 ""items"": [
                     { ""id"": ""setting.rules.max_fires_per_tick"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" },
-                    { ""id"": ""setting.rules.questions_pause_game"", ""valueType"": ""Boolean"", ""default"": 1, ""minimum"": 0, ""maximum"": 1, ""category"": ""Rules"", ""description"": ""x"" }
+                    { ""id"": ""setting.rules.questions_pause_game"", ""valueType"": ""Boolean"", ""default"": 1, ""minimum"": 0, ""maximum"": 1, ""category"": ""Rules"", ""description"": ""x"" },
+                    { ""id"": ""setting.map.world_width_meters"", ""valueType"": ""Number"", ""default"": 256, ""minimum"": 256, ""maximum"": 100000, ""category"": ""Map"", ""description"": ""x"" },
+                    { ""id"": ""setting.map.world_depth_meters"", ""valueType"": ""Number"", ""default"": 256, ""minimum"": 256, ""maximum"": 100000, ""category"": ""Map"", ""description"": ""x"" },
+                    { ""id"": ""setting.map.cell_size_meters"", ""valueType"": ""Number"", ""default"": 1, ""minimum"": 0.1, ""maximum"": 100, ""category"": ""Map"", ""description"": ""x"" },
+                    { ""id"": ""setting.map.chunk_size_meters"", ""valueType"": ""Number"", ""default"": 256, ""minimum"": 8, ""maximum"": 4096, ""category"": ""Map"", ""description"": ""x"" },
+                    { ""id"": ""setting.map.trees_per_chunk"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 500, ""category"": ""Map"", ""description"": ""x"" },
+                    { ""id"": ""setting.map.stones_per_chunk"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 500, ""category"": ""Map"", ""description"": ""x"" },
+                    { ""id"": ""setting.map.grub_mounds_per_chunk"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 500, ""category"": ""Map"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_count"", ""valueType"": ""Integer"", ""default"": 1, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" }
                 ]
             }");
         }

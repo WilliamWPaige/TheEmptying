@@ -10,10 +10,10 @@ MonoBehaviour:
   m_Enabled: 1
   m_EditorHideFlags: 0
   m_Script: {fileID: 11500000, guid: 67755d76348b21b489ec5c10f7b71a18, type: 3}
-  m_Name: resource.example_stone
+  m_Name: resource.tree
   m_EditorClassIdentifier: TheEmptying.Presentation::TheEmptying.Presentation.Content.ResourceAsset
-  id: resource.example_stone
-  displayName: Example Stone
-  model: {fileID: 6140264018679013057, guid: fa041bec13ac1f84d9d36d728bc5bc73, type: 3}
-  footprintWidth: 2
-  footprintDepth: 2
+  id: resource.tree
+  displayName: Tree
+  model: {fileID: 2191414695415055525, guid: 95a1554cf099753468fb10a22dc40634, type: 3}
+  footprintWidth: 1
+  footprintDepth: 1

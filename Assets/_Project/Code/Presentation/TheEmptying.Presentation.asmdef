@@ -4,6 +4,7 @@
     "references": [
         "TheEmptying.Core",
         "TheEmptying.Modules.Map",
+        "TheEmptying.Modules.People",
         "Unity.InputSystem",
         "Newtonsoft.Json"
     ],
