@@ -76,6 +76,15 @@
                     "processors": "",
                     "interactions": "",
                     "initialStateCheck": false
+                },
+                {
+                    "name": "ToggleDebugWindow",
+                    "type": "Button",
+                    "id": "c9a1e100-0000-4000-8000-000000000019",
+                    "expectedControlType": "Button",
+                    "processors": "",
+                    "interactions": "",
+                    "initialStateCheck": false
                 }
             ],
             "bindings": [
@@ -285,6 +294,17 @@
                     "processors": "",
                     "groups": "Keyboard&Mouse",
                     "action": "RotateDrag",
+                    "isComposite": false,
+                    "isPartOfComposite": false
+                },
+                {
+                    "name": "",
+                    "id": "c9a1e100-0000-4000-8000-000000000114",
+                    "path": "<Keyboard>/f1",
+                    "interactions": "",
+                    "processors": "",
+                    "groups": "Keyboard&Mouse",
+                    "action": "ToggleDebugWindow",
                     "isComposite": false,
                     "isPartOfComposite": false
                 }

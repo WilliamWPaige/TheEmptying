@@ -1,0 +1,400 @@
+using System;
+using System.Collections.Generic;
+using System.IO;
+using System.Linq;
+using TheEmptying.Presentation;
+using UnityEngine;
+using UnityEngine.UIElements;
+
+namespace TheEmptying.Presentation.DevTools
+{
+    /// <summary>
+    /// The debug window: an Errors tab (every collected Unity warning, error
+    /// and exception) and a Cheats tab (built from CheatMenuRegistry's
+    /// sections). F1 toggles it; it starts hidden in the Editor and in
+    /// builds alike. Never blocks gameplay keys except while one of its own
+    /// text fields is actively focused for typing (see UiInputUtility).
+    /// </summary>
+    public sealed class DebugWindowPresenter : MonoBehaviour
+    {
+        private enum ErrorFilter
+        {
+            All,
+            ErrorsOnly,
+            WarningsOnly
+        }
+
+        private VisualElement _uiRoot;
+        private CheatMenuRegistry _cheatMenu;
+
+        private VisualElement _windowRoot;
+        private Button _errorsTabButton;
+        private Button _cheatsTabButton;
+        private VisualElement _errorsPanel;
+        private VisualElement _cheatsPanel;
+        private Button _filterAllButton;
+        private Button _filterErrorsButton;
+        private Button _filterWarningsButton;
+        private Button _clearButton;
+        private Button _saveButton;
+        private Label _saveResultLabel;
+        private ScrollView _errorsList;
+        private ScrollView _cheatsList;
+
+        private ErrorFilter _filter = ErrorFilter.All;
+        private readonly HashSet<DebugLogEntry> _expandedEntries = new HashSet<DebugLogEntry>();
+
+        public bool IsOpen => _windowRoot != null && _windowRoot.style.display == DisplayStyle.Flex;
+
+        public void Initialize(VisualElement uiRoot, CheatMenuRegistry cheatMenu)
+        {
+            _uiRoot = uiRoot;
+            _cheatMenu = cheatMenu;
+            BuildUi();
+
+            ErrorCatcher.Changed += OnErrorsChanged;
+        }
+
+        private void OnDestroy()
+        {
+            ErrorCatcher.Changed -= OnErrorsChanged;
+        }
+
+        private void Update()
+        {
+            if (IsOpen && _cheatsPanel.style.display == DisplayStyle.Flex && !UiInputUtility.IsTextFieldFocused(_uiRoot))
+            {
+                RefreshCheatsList();
+            }
+        }
+
+        public void ToggleWindow()
+        {
+            if (IsOpen)
+            {
+                Close();
+            }
+            else
+            {
+                Open(showErrorsTab: true);
+            }
+        }
+
+        /// <summary>The HUD badge opens the window on the Errors tab; new errors never do this on their own.</summary>
+        public void OpenOnErrorsTab()
+        {
+            Open(showErrorsTab: true);
+        }
+
+        private void Open(bool showErrorsTab)
+        {
+            _windowRoot.style.display = DisplayStyle.Flex;
+            SwitchTab(showErrorsTab);
+            RefreshErrorsList();
+            RefreshCheatsList();
+        }
+
+        private void Close()
+        {
+            _windowRoot.style.display = DisplayStyle.None;
+            _uiRoot.panel?.focusController?.focusedElement?.Blur();
+        }
+
+        private void OnErrorsChanged()
+        {
+            if (IsOpen && _errorsPanel.style.display == DisplayStyle.Flex)
+            {
+                RefreshErrorsList();
+            }
+        }
+
+        #region Building the shell
+
+        private void BuildUi()
+        {
+            var asset = Resources.Load<VisualTreeAsset>("DebugWindow");
+            if (asset == null)
+            {
+                UnityEngine.Debug.LogError("[TheEmptying] Could not load DebugWindow from Resources. The debug window will not render.");
+                return;
+            }
+
+            asset.CloneTree(_uiRoot);
+
+            _windowRoot = _uiRoot.Q<VisualElement>("debug-window-root");
+            _errorsTabButton = _uiRoot.Q<Button>("debug-tab-errors-button");
+            _cheatsTabButton = _uiRoot.Q<Button>("debug-tab-cheats-button");
+            _errorsPanel = _uiRoot.Q<VisualElement>("debug-errors-panel");
+            _cheatsPanel = _uiRoot.Q<VisualElement>("debug-cheats-panel");
+            _filterAllButton = _uiRoot.Q<Button>("debug-errors-filter-all");
+            _filterErrorsButton = _uiRoot.Q<Button>("debug-errors-filter-errors");
+            _filterWarningsButton = _uiRoot.Q<Button>("debug-errors-filter-warnings");
+            _clearButton = _uiRoot.Q<Button>("debug-errors-clear");
+            _saveButton = _uiRoot.Q<Button>("debug-errors-save");
+            _saveResultLabel = _uiRoot.Q<Label>("debug-errors-save-result");
+            _errorsList = _uiRoot.Q<ScrollView>("debug-errors-list");
+            _cheatsList = _uiRoot.Q<ScrollView>("debug-cheats-list");
+
+            _errorsTabButton.clicked += () => SwitchTab(true);
+            _cheatsTabButton.clicked += () => SwitchTab(false);
+
+            _filterAllButton.clicked += () => SetFilter(ErrorFilter.All);
+            _filterErrorsButton.clicked += () => SetFilter(ErrorFilter.ErrorsOnly);
+            _filterWarningsButton.clicked += () => SetFilter(ErrorFilter.WarningsOnly);
+            _clearButton.clicked += () =>
+            {
+                ErrorCatcher.Clear();
+                RefreshErrorsList();
+            };
+            _saveButton.clicked += SaveToFile;
+
+            _windowRoot.style.display = DisplayStyle.None;
+            SwitchTab(true);
+        }
+
+        private void SwitchTab(bool showErrors)
+        {
+            _errorsPanel.style.display = showErrors ? DisplayStyle.Flex : DisplayStyle.None;
+            _cheatsPanel.style.display = showErrors ? DisplayStyle.None : DisplayStyle.Flex;
+            _errorsTabButton.EnableInClassList("debug-tab-button-active", showErrors);
+            _cheatsTabButton.EnableInClassList("debug-tab-button-active", !showErrors);
+
+            if (showErrors)
+            {
+                RefreshErrorsList();
+            }
+            else
+            {
+                RefreshCheatsList();
+            }
+        }
+
+        private void SetFilter(ErrorFilter filter)
+        {
+            _filter = filter;
+            _filterAllButton.EnableInClassList("debug-tab-button-active", filter == ErrorFilter.All);
+            _filterErrorsButton.EnableInClassList("debug-tab-button-active", filter == ErrorFilter.ErrorsOnly);
+            _filterWarningsButton.EnableInClassList("debug-tab-button-active", filter == ErrorFilter.WarningsOnly);
+            RefreshErrorsList();
+        }
+
+        #endregion
+
+        #region Errors tab
+
+        private void RefreshErrorsList()
+        {
+            if (_errorsList == null)
+            {
+                return;
+            }
+
+            _errorsList.Clear();
+
+            IEnumerable<DebugLogEntry> entries = ErrorCatcher.Entries;
+            entries = _filter switch
+            {
+                ErrorFilter.ErrorsOnly => entries.Where(e => e.Type != DebugLogType.Warning),
+                ErrorFilter.WarningsOnly => entries.Where(e => e.Type == DebugLogType.Warning),
+                _ => entries
+            };
+
+            foreach (DebugLogEntry entry in entries)
+            {
+                _errorsList.Add(BuildErrorRow(entry));
+            }
+        }
+
+        private VisualElement BuildErrorRow(DebugLogEntry entry)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("debug-log-entry");
+
+            var header = new VisualElement();
+            header.AddToClassList("debug-log-entry-header");
+            if (entry.Type != DebugLogType.Warning)
+            {
+                header.AddToClassList("debug-log-entry-error");
+            }
+            else
+            {
+                header.AddToClassList("debug-log-entry-warning");
+            }
+
+            string countSuffix = entry.Count > 1 ? $" (x{entry.Count})" : string.Empty;
+            var headerLabel = new Label($"{entry.RealTimestamp:HH:mm:ss} | {entry.InGameTimestamp} | {entry.Type.ToString().ToUpperInvariant()} | {entry.Message}{countSuffix}");
+            headerLabel.style.whiteSpace = WhiteSpace.Normal;
+            header.Add(headerLabel);
+
+            var stackLabel = new Label(entry.FullStackTrace);
+            stackLabel.AddToClassList("debug-log-entry-stack");
+
+            header.RegisterCallback<ClickEvent>(_ =>
+            {
+                bool expanded = _expandedEntries.Contains(entry);
+                if (expanded)
+                {
+                    _expandedEntries.Remove(entry);
+                }
+                else
+                {
+                    _expandedEntries.Add(entry);
+                }
+
+                stackLabel.EnableInClassList("debug-log-entry-stack-visible", !expanded);
+            });
+
+            stackLabel.EnableInClassList("debug-log-entry-stack-visible", _expandedEntries.Contains(entry));
+
+            row.Add(header);
+            row.Add(stackLabel);
+            return row;
+        }
+
+        private void SaveToFile()
+        {
+            try
+            {
+                var sb = new System.Text.StringBuilder();
+                foreach (DebugLogEntry entry in ErrorCatcher.Entries)
+                {
+                    string countSuffix = entry.Count > 1 ? $" (x{entry.Count})" : string.Empty;
+                    sb.AppendLine($"{entry.RealTimestamp:yyyy-MM-dd HH:mm:ss} | {entry.InGameTimestamp} | {entry.Type}{countSuffix}");
+                    sb.AppendLine(entry.Message);
+                    if (!string.IsNullOrEmpty(entry.FullStackTrace))
+                    {
+                        sb.AppendLine(entry.FullStackTrace);
+                    }
+
+                    sb.AppendLine();
+                }
+
+                string fileName = $"errors_{DateTime.Now:yyyy-MM-dd}_{DateTime.Now:HH-mm-ss}.txt";
+                string logsFolder = Path.Combine(Application.dataPath, "..", "Logs");
+                Directory.CreateDirectory(logsFolder);
+                File.WriteAllText(Path.Combine(logsFolder, fileName), sb.ToString());
+
+                _saveResultLabel.text = $"Saved to {fileName}";
+            }
+            catch (Exception ex)
+            {
+                _saveResultLabel.text = $"Save failed: {ex.Message}";
+            }
+        }
+
+        #endregion
+
+        #region Cheats tab
+
+        private void RefreshCheatsList()
+        {
+            if (_cheatsList == null || _cheatMenu == null)
+            {
+                return;
+            }
+
+            _cheatsList.Clear();
+
+            foreach (CheatSection section in _cheatMenu.Sections)
+            {
+                var titleLabel = new Label(section.Title);
+                titleLabel.AddToClassList("debug-cheat-section-title");
+                _cheatsList.Add(titleLabel);
+
+                foreach (CheatControl control in section.Controls)
+                {
+                    _cheatsList.Add(BuildCheatRow(control));
+                }
+            }
+        }
+
+        private VisualElement BuildCheatRow(CheatControl control)
+        {
+            var row = new VisualElement();
+            row.AddToClassList("debug-cheat-row");
+
+            switch (control.Kind)
+            {
+                case CheatControlKind.Button:
+                    row.Add(new Button(control.OnClick) { text = control.Label });
+                    break;
+
+                case CheatControlKind.Toggle:
+                {
+                    var toggle = new Toggle(control.Label) { value = control.GetToggleValue() };
+                    toggle.RegisterValueChangedCallback(evt => control.SetToggleValue(evt.newValue));
+                    row.Add(toggle);
+                    AddResetButtonIfAny(row, control);
+                    break;
+                }
+
+                case CheatControlKind.Number:
+                {
+                    var label = new Label(control.Label);
+                    label.AddToClassList("debug-cheat-label");
+                    row.Add(label);
+
+                    var field = new FloatField { value = (float)control.GetNumberValue() };
+                    field.RegisterCallback<FocusOutEvent>(_ => CommitNumber(control, field));
+                    field.RegisterCallback<KeyDownEvent>(evt =>
+                    {
+                        if (evt.keyCode == KeyCode.Return || evt.keyCode == KeyCode.KeypadEnter)
+                        {
+                            CommitNumber(control, field);
+                            field.Blur();
+                        }
+                        else if (evt.keyCode == KeyCode.Escape)
+                        {
+                            field.SetValueWithoutNotify((float)control.GetNumberValue());
+                            field.Blur();
+                        }
+                    });
+                    row.Add(field);
+
+                    if (control.Minimum.HasValue || control.Maximum.HasValue)
+                    {
+                        var caption = new Label($"({control.Minimum ?? double.NegativeInfinity}..{control.Maximum ?? double.PositiveInfinity})");
+                        caption.AddToClassList("debug-cheat-caption");
+                        row.Add(caption);
+                    }
+
+                    AddResetButtonIfAny(row, control);
+                    break;
+                }
+            }
+
+            return row;
+        }
+
+        private static void CommitNumber(CheatControl control, FloatField field)
+        {
+            double value = field.value;
+            if (control.Minimum.HasValue)
+            {
+                value = Math.Max(value, control.Minimum.Value);
+            }
+
+            if (control.Maximum.HasValue)
+            {
+                value = Math.Min(value, control.Maximum.Value);
+            }
+
+            field.SetValueWithoutNotify((float)value);
+            control.SetNumberValue(value);
+        }
+
+        private static void AddResetButtonIfAny(VisualElement row, CheatControl control)
+        {
+            if (control.OnReset == null)
+            {
+                return;
+            }
+
+            var resetButton = new Button(control.OnReset) { text = "Reset" };
+            resetButton.AddToClassList("debug-cheat-reset-button");
+            row.Add(resetButton);
+        }
+
+        #endregion
+    }
+}

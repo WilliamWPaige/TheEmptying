@@ -1,0 +1,23 @@
+<ui:UXML xmlns:ui="UnityEngine.UIElements" xmlns:uie="UnityEditor.UIElements" editor-extension-mode="False">
+    <Style src="DebugWindow.uss" />
+    <ui:VisualElement name="debug-window-root" class="debug-window-root">
+        <ui:VisualElement name="debug-window-tabs" class="debug-window-tabs">
+            <ui:Button name="debug-tab-errors-button" text="Errors" class="debug-tab-button" />
+            <ui:Button name="debug-tab-cheats-button" text="Cheats" class="debug-tab-button" />
+        </ui:VisualElement>
+        <ui:VisualElement name="debug-errors-panel" class="debug-panel">
+            <ui:VisualElement name="debug-errors-toolbar" class="debug-toolbar">
+                <ui:Button name="debug-errors-filter-all" text="All" class="debug-toolbar-button" />
+                <ui:Button name="debug-errors-filter-errors" text="Errors only" class="debug-toolbar-button" />
+                <ui:Button name="debug-errors-filter-warnings" text="Warnings only" class="debug-toolbar-button" />
+                <ui:Button name="debug-errors-clear" text="Clear" class="debug-toolbar-button" />
+                <ui:Button name="debug-errors-save" text="Save to file" class="debug-toolbar-button" />
+            </ui:VisualElement>
+            <ui:Label name="debug-errors-save-result" class="debug-save-result" />
+            <ui:ScrollView name="debug-errors-list" class="debug-list" />
+        </ui:VisualElement>
+        <ui:VisualElement name="debug-cheats-panel" class="debug-panel">
+            <ui:ScrollView name="debug-cheats-list" class="debug-list" />
+        </ui:VisualElement>
+    </ui:VisualElement>
+</ui:UXML>

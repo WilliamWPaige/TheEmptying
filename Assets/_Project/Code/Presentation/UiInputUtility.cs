@@ -18,15 +18,17 @@ namespace TheEmptying.Presentation
             return uiRoot.panel.Pick(panelPosition) != null;
         }
 
-        /// <summary>Whether the currently focused UI control is a text field actively accepting typed input - gameplay keys must yield to it.</summary>
+        /// <summary>
+        /// Whether the currently focused UI control is a text field actively
+        /// accepting typed input - gameplay keys must yield to it. Every
+        /// text-entry control (TextField, IntegerField, FloatField and so
+        /// on) shares the same inner focusable element, named
+        /// "unity-text-input", regardless of the field's own value type.
+        /// </summary>
         public static bool IsTextFieldFocused(VisualElement uiRoot)
         {
-            if (!(uiRoot?.panel?.focusController?.focusedElement is VisualElement focused))
-            {
-                return false;
-            }
-
-            return focused is TextField || focused.GetFirstAncestorOfType<TextField>() != null;
+            Focusable focused = uiRoot?.panel?.focusController?.focusedElement;
+            return focused is VisualElement element && element.name == "unity-text-input";
         }
     }
 }

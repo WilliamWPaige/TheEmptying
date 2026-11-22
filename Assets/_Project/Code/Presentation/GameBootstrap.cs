@@ -12,6 +12,7 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Presentation.Content;
+using TheEmptying.Presentation.DevTools;
 using TheEmptying.Presentation.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
@@ -72,6 +73,12 @@ namespace TheEmptying.Presentation
         private InputActionAsset _actions;
         private StrategyCameraController _cameraController;
 
+        private readonly CheatMenuRegistry _cheatMenu = new CheatMenuRegistry();
+        private DebugWindowPresenter _debugWindow;
+        private VisualElement _errorBadge;
+        private Label _errorBadgeErrorsLabel;
+        private Label _errorBadgeWarningsLabel;
+
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
 
@@ -127,6 +134,8 @@ namespace TheEmptying.Presentation
             BuildUi();
             WireInput();
             BuildWorld();
+            BuildCheatMenu();
+            BuildDebugWindow();
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
         }
 
@@ -139,6 +148,7 @@ namespace TheEmptying.Presentation
         {
             ClearUiFocusOnEmptyGameViewClick();
             RefreshQuestionPopup();
+            RefreshErrorBadge();
 
             if (_paused || IsBlockedByPendingQuestion())
             {
@@ -212,6 +222,13 @@ namespace TheEmptying.Presentation
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets);
             _simulation = simulation;
 
+            // The closure reads _simulation live, so it keeps working after a load swaps the field.
+            ErrorCatcher.InGameTimestampProvider = () =>
+            {
+                GameDate date = _simulation.Clock.CurrentDate;
+                return $"{date}, {date.ToClockString(false)}";
+            };
+
             BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
 
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
@@ -254,6 +271,60 @@ namespace TheEmptying.Presentation
             _cameraController.Initialize(gameplayMap, _simulation.Settings, _uiDocument.rootVisualElement, TemporaryGround.WidthMeters, TemporaryGround.DepthMeters);
         }
 
+        /// <summary>
+        /// The Cheats tab's sections. Rebuilt whenever the simulation is
+        /// rebuilt (here, and again after Load) since every control closes
+        /// over _simulation - rebuilding keeps the section list itself (not
+        /// just each control's live value) in sync with the current content.
+        /// </summary>
+        private void BuildCheatMenu()
+        {
+            _cheatMenu.Clear();
+
+            CheatSection time = _cheatMenu.AddSection("Time");
+            time.AddToggle("Pause", () => _paused, _ => _simulation.Commands.Execute("pause"));
+            time.AddButton("1x", () => _simulation.Commands.Execute("speed 1"));
+            time.AddButton("2x", () => _simulation.Commands.Execute("speed 2"));
+            time.AddButton("3x", () => _simulation.Commands.Execute("speed 3"));
+            time.AddButton("Skip 1 hour", () => _simulation.Commands.Execute("skip 1 h"));
+            time.AddButton("Skip 1 day", () => _simulation.Commands.Execute("skip 1 d"));
+
+            foreach (IGrouping<string, SettingDefinition> group in _simulation.Settings.ExportAll().GroupBy(d => d.Category).OrderBy(g => g.Key, StringComparer.Ordinal))
+            {
+                CheatSection section = _cheatMenu.AddSection(group.Key);
+                foreach (SettingDefinition definition in group.OrderBy(d => d.Id, StringComparer.Ordinal))
+                {
+                    string id = definition.Id;
+                    double defaultValue = definition.Default;
+
+                    if (definition.ValueType == SettingValueType.Boolean)
+                    {
+                        section.AddToggle(
+                            id,
+                            () => _simulation.Settings.Get(id) != 0,
+                            value => _simulation.Commands.Execute($"set {id} {(value ? 1 : 0)}"),
+                            onReset: () => _simulation.Commands.Execute($"set {id} {defaultValue}"));
+                    }
+                    else
+                    {
+                        section.AddNumber(
+                            id,
+                            () => _simulation.Settings.Get(id),
+                            value => _simulation.Commands.Execute($"set {id} {value}"),
+                            definition.Minimum,
+                            definition.Maximum,
+                            onReset: () => _simulation.Commands.Execute($"set {id} {defaultValue}"));
+                    }
+                }
+            }
+        }
+
+        private void BuildDebugWindow()
+        {
+            _debugWindow = gameObject.AddComponent<DebugWindowPresenter>();
+            _debugWindow.Initialize(_uiDocument.rootVisualElement, _cheatMenu);
+        }
+
         #endregion
 
         #region Input
@@ -274,6 +345,7 @@ namespace TheEmptying.Presentation
             gameplayMap.FindAction("SetSpeed1").performed += _ => HandleSetSpeed(1);
             gameplayMap.FindAction("SetSpeed2").performed += _ => HandleSetSpeed(2);
             gameplayMap.FindAction("SetSpeed3").performed += _ => HandleSetSpeed(3);
+            gameplayMap.FindAction("ToggleDebugWindow").performed += _ => HandleToggleDebugWindow();
 
             // Always enabled: the keyboard rule is that gameplay keys work unless a text
             // field is actively focused for typing, never that the whole map gets disabled
@@ -281,7 +353,7 @@ namespace TheEmptying.Presentation
             _actions.Enable();
         }
 
-        /// <summary>Space, and the matching HUD button, both funnel through here.</summary>
+        /// <summary>Space, and the matching HUD button, both funnel through here - and, like every cheat action, through the command system.</summary>
         private void HandleTogglePause()
         {
             if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement))
@@ -289,10 +361,10 @@ namespace TheEmptying.Presentation
                 return;
             }
 
-            SetPaused(!_paused);
+            _simulation.Commands.Execute("pause");
         }
 
-        /// <summary>1/2/3, and the matching HUD buttons, both funnel through here. Pressing a speed key while paused also unpauses.</summary>
+        /// <summary>1/2/3, and the matching HUD buttons, both funnel through here. The speed command itself also unpauses.</summary>
         private void HandleSetSpeed(int speed)
         {
             if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement))
@@ -300,8 +372,18 @@ namespace TheEmptying.Presentation
                 return;
             }
 
-            SetSpeed(speed);
-            SetPaused(false);
+            _simulation.Commands.Execute($"speed {speed}");
+        }
+
+        /// <summary>F1 toggles the debug window.</summary>
+        private void HandleToggleDebugWindow()
+        {
+            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement))
+            {
+                return;
+            }
+
+            _debugWindow.ToggleWindow();
         }
 
         /// <summary>A left click that lands on nothing in the UI always clears whatever UI control currently has focus.</summary>
@@ -472,9 +554,43 @@ namespace TheEmptying.Presentation
             _hudPanel.Add(BuildHudButton("1x", () => HandleSetSpeed(1)));
             _hudPanel.Add(BuildHudButton("2x", () => HandleSetSpeed(2)));
             _hudPanel.Add(BuildHudButton("3x", () => HandleSetSpeed(3)));
+            _hudPanel.Add(BuildErrorBadge());
             root.Add(_hudPanel);
 
             RefreshHud();
+        }
+
+        /// <summary>Hidden when there are no errors or warnings. Clicking it opens the debug window on the Errors tab; new errors never do that on their own.</summary>
+        private VisualElement BuildErrorBadge()
+        {
+            _errorBadge = new VisualElement { style = { flexDirection = FlexDirection.Row, marginLeft = 8, display = DisplayStyle.None } };
+            _errorBadge.RegisterCallback<ClickEvent>(_ => _debugWindow.OpenOnErrorsTab());
+
+            _errorBadgeErrorsLabel = new Label { style = { color = new Color(1f, 0.35f, 0.35f), marginRight = 8, display = DisplayStyle.None } };
+            _errorBadgeWarningsLabel = new Label { style = { color = Color.yellow, display = DisplayStyle.None } };
+
+            _errorBadge.Add(_errorBadgeErrorsLabel);
+            _errorBadge.Add(_errorBadgeWarningsLabel);
+            return _errorBadge;
+        }
+
+        private void RefreshErrorBadge()
+        {
+            if (_errorBadge == null)
+            {
+                return;
+            }
+
+            int errorCount = ErrorCatcher.ErrorCount;
+            int warningCount = ErrorCatcher.WarningCount;
+
+            _errorBadge.style.display = errorCount == 0 && warningCount == 0 ? DisplayStyle.None : DisplayStyle.Flex;
+
+            _errorBadgeErrorsLabel.style.display = errorCount > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            _errorBadgeErrorsLabel.text = $"Errors: {errorCount}";
+
+            _errorBadgeWarningsLabel.style.display = warningCount > 0 ? DisplayStyle.Flex : DisplayStyle.None;
+            _errorBadgeWarningsLabel.text = $"Warnings: {warningCount}";
         }
 
         private static Button BuildHudButton(string text, Action onClick)
@@ -568,6 +684,7 @@ namespace TheEmptying.Presentation
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings);
+                BuildCheatMenu();
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

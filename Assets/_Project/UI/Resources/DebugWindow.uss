@@ -1,0 +1,123 @@
+.debug-window-root {
+    position: absolute;
+    left: 40px;
+    top: 40px;
+    width: 640px;
+    height: 480px;
+    background-color: rgb(18, 18, 20);
+    border-radius: 6px;
+    border-width: 1px;
+    border-color: rgba(255, 255, 255, 0.2);
+    flex-direction: column;
+    overflow: hidden;
+}
+
+.debug-window-tabs {
+    flex-direction: row;
+    background-color: rgb(28, 28, 32);
+    flex-shrink: 0;
+}
+
+.debug-tab-button {
+    flex-grow: 0;
+    height: 32px;
+    min-width: 90px;
+    margin: 0;
+    border-radius: 0;
+    background-color: rgb(28, 28, 32);
+    color: rgb(190, 190, 190);
+}
+
+.debug-tab-button-active {
+    background-color: rgb(45, 45, 52);
+    color: rgb(255, 255, 255);
+}
+
+.debug-panel {
+    flex-grow: 1;
+    flex-direction: column;
+    padding: 8px;
+    display: none;
+}
+
+.debug-toolbar {
+    flex-direction: row;
+    flex-shrink: 0;
+    margin-bottom: 6px;
+}
+
+.debug-toolbar-button {
+    margin: 0 4px 0 0;
+}
+
+.debug-save-result {
+    color: rgb(170, 220, 170);
+    font-size: 11px;
+    margin-bottom: 4px;
+}
+
+.debug-list {
+    flex-grow: 1;
+}
+
+.debug-log-entry {
+    flex-direction: column;
+    padding: 4px;
+    margin-bottom: 2px;
+    background-color: rgba(255, 255, 255, 0.04);
+}
+
+.debug-log-entry-header {
+    flex-direction: row;
+    white-space: normal;
+}
+
+.debug-log-entry-warning {
+    color: rgb(240, 210, 90);
+}
+
+.debug-log-entry-error {
+    color: rgb(240, 100, 100);
+}
+
+.debug-log-entry-stack {
+    display: none;
+    color: rgb(200, 200, 200);
+    font-size: 11px;
+    margin-top: 4px;
+    white-space: normal;
+}
+
+.debug-log-entry-stack-visible {
+    display: flex;
+}
+
+.debug-cheat-section-title {
+    color: rgb(255, 255, 255);
+    -unity-font-style: bold;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+
+.debug-cheat-row {
+    flex-direction: row;
+    align-items: center;
+    margin-bottom: 2px;
+}
+
+.debug-cheat-label {
+    color: rgb(220, 220, 220);
+    min-width: 220px;
+    white-space: normal;
+}
+
+.debug-cheat-caption {
+    color: rgb(150, 150, 150);
+    font-size: 10px;
+    margin-left: 6px;
+}
+
+.debug-cheat-reset-button {
+    margin-left: 6px;
+    height: 20px;
+}

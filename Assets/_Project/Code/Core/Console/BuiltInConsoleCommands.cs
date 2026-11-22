@@ -26,7 +26,7 @@ namespace TheEmptying.Core.Console
                 return presentation.IsPaused ? "Paused." : "Resumed.";
             }));
 
-            commands.Register(new ConsoleCommand("speed", "speed <1|2|3> - sets the game speed.", args =>
+            commands.Register(new ConsoleCommand("speed", "speed <1|2|3> - sets the game speed. Also unpauses.", args =>
             {
                 if (args.Length != 1 || !ConsoleArgs.TryParseInt(args[0], out int speed) || speed < 1 || speed > 3)
                 {
@@ -34,6 +34,7 @@ namespace TheEmptying.Core.Console
                 }
 
                 presentation.SetSpeed(speed);
+                presentation.SetPaused(false);
                 return $"Speed set to {speed}x.";
             }));
 
