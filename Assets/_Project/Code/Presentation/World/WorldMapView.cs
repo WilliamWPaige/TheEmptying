@@ -29,6 +29,7 @@ namespace TheEmptying.Presentation.World
         private SettingsRegistry _settings;
         private FloatingOrigin _floatingOrigin;
         private StrategyCameraController _cameraController;
+        private TemporaryChunkDecorations _decorations;
 
         private Transform _chunkRoot;
         private Mesh _tileMesh;
@@ -53,6 +54,7 @@ namespace TheEmptying.Presentation.World
 
             _chunkRoot = new GameObject("World Chunks").transform;
             _floatingOrigin.Shifted += delta => _chunkRoot.position -= delta;
+            _decorations = new TemporaryChunkDecorations(mapModule, floatingOrigin);
 
             float cellsPerSide = (float)(mapModule.ChunkSizeMeters / mapModule.CellSizeMeters);
             _tileMesh = BuildTileMesh((float)mapModule.ChunkSizeMeters);
@@ -66,6 +68,7 @@ namespace TheEmptying.Presentation.World
         {
             _mapModule = mapModule;
             _settings = settings;
+            _decorations.Rebind(mapModule);
 
             foreach (ChunkTile tile in _activeTiles.Values)
             {
@@ -145,6 +148,7 @@ namespace TheEmptying.Presentation.World
                 tile.GameObject.SetActive(false);
                 _pool.Push(tile);
                 _activeTiles.Remove(coord);
+                _decorations.HideChunk(coord);
             }
 
             foreach (ChunkCoord coord in _needed)
@@ -154,7 +158,7 @@ namespace TheEmptying.Presentation.World
                     continue;
                 }
 
-                // Lazily creates this chunk's simulation-side data the first time it's needed (R6) - never a fixed array for the whole world.
+                // Lazily creates this chunk's simulation-side data (and its one-time random placements) the first time it's needed (R6/R6b) - never a fixed array for the whole world.
                 _mapModule.GetOrCreateChunk(coord);
 
                 ChunkTile tile = _pool.Count > 0 ? _pool.Pop() : BuildTile();
@@ -164,6 +168,8 @@ namespace TheEmptying.Presentation.World
                 tile.Renderer.sharedMaterial = _currentMaterial;
                 tile.GameObject.SetActive(true);
                 _activeTiles[coord] = tile;
+
+                _decorations.ShowChunk(coord);
             }
         }
 

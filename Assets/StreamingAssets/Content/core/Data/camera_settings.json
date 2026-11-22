@@ -31,11 +31,11 @@
         {
             "id": "setting.camera.zoom_max_height",
             "valueType": "Number",
-            "default": 1500,
+            "default": 100,
             "minimum": 1,
-            "maximum": 5000,
+            "maximum": 1000,
             "category": "Camera",
-            "description": "Placeholder. The camera's highest (most zoomed-out) height above the ground, in meters. Raised in R6 so a 15 km world can be seen from far out."
+            "description": "Placeholder. The camera's highest (most zoomed-out) height above the ground, in meters. R6b: restored to the R1 value - the big map doesn't change how far the camera can zoom out."
         },
         {
             "id": "setting.camera.rotate_speed",

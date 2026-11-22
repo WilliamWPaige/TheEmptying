@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
@@ -6,6 +7,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Map;
 using TheEmptying.Presentation;
+using TheEmptying.Presentation.World;
 using TheEmptying.Tests.EditMode.Startup;
 
 namespace TheEmptying.Tests.EditMode.Modules
@@ -29,6 +31,10 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(MapModule.WorldDepthSettingId, SettingValueType.Number, 15000.0, 256.0, 100000.0, "Map")]
         [TestCase(MapModule.CellSizeSettingId, SettingValueType.Number, 1.0, 0.1, 100.0, "Map")]
         [TestCase(MapModule.ChunkSizeSettingId, SettingValueType.Number, 256.0, 8.0, 4096.0, "Map")]
+        [TestCase(WorldMapView.ViewDistanceChunksSettingId, SettingValueType.Integer, 3.0, 1.0, 20.0, "Map")]
+        [TestCase(WorldMapView.LowDetailHeightSettingId, SettingValueType.Number, 400.0, 10.0, 5000.0, "Map")]
+        [TestCase(MapModule.TreesPerChunkSettingId, SettingValueType.Integer, 20.0, 0.0, 500.0, "Map")]
+        [TestCase(MapModule.StonesPerChunkSettingId, SettingValueType.Integer, 3.0, 0.0, 500.0, "Map")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
@@ -135,6 +141,62 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreSame(first, second);
             Assert.IsTrue(map.TryGetChunk(coord, out ChunkData found));
             Assert.AreSame(first, found);
+        }
+
+        [Test]
+        public void GetOrCreateChunk_SameSeedAndChunk_AlwaysGivesTheSamePlacements()
+        {
+            MapModule first = BuildFromRealContent();
+            MapModule second = BuildFromRealContent();
+            var coord = new ChunkCoord(12, 7);
+
+            IReadOnlyList<ChunkPlacement> placementsA = first.GetOrCreateChunk(coord).Placements;
+            IReadOnlyList<ChunkPlacement> placementsB = second.GetOrCreateChunk(coord).Placements;
+
+            Assert.AreEqual(placementsA.Count, placementsB.Count);
+            Assert.Greater(placementsA.Count, 0);
+
+            for (int i = 0; i < placementsA.Count; i++)
+            {
+                Assert.AreEqual(placementsA[i].Kind, placementsB[i].Kind);
+                Assert.AreEqual(placementsA[i].Cell, placementsB[i].Cell);
+            }
+        }
+
+        [Test]
+        public void GetOrCreateChunk_PlacesTheRequestedNumberOfTreesAndStones()
+        {
+            MapModule map = BuildFromRealContent();
+            ChunkData chunk = map.GetOrCreateChunk(new ChunkCoord(1, 1));
+
+            Assert.AreEqual(20, chunk.Placements.Count(p => p.Kind == PlacementKind.Tree));
+            Assert.AreEqual(3, chunk.Placements.Count(p => p.Kind == PlacementKind.Stone));
+        }
+
+        [Test]
+        public void GetOrCreateChunk_PlacementsNeverOverlap()
+        {
+            MapModule map = BuildFromRealContent();
+
+            // Several chunks, to exercise more than one random draw.
+            foreach (ChunkCoord coord in new[] { new ChunkCoord(0, 0), new ChunkCoord(5, 9), new ChunkCoord(20, 3) })
+            {
+                ChunkData chunk = map.GetOrCreateChunk(coord);
+                var occupied = new HashSet<CellCoord>();
+
+                foreach (ChunkPlacement placement in chunk.Placements)
+                {
+                    int footprint = placement.Kind == PlacementKind.Stone ? 2 : 1;
+                    for (int dx = 0; dx < footprint; dx++)
+                    {
+                        for (int dz = 0; dz < footprint; dz++)
+                        {
+                            var cell = new CellCoord(placement.Cell.X + dx, placement.Cell.Z + dz);
+                            Assert.IsTrue(occupied.Add(cell), $"Cell {cell} in chunk {coord} is covered by more than one placement.");
+                        }
+                    }
+                }
+            }
         }
     }
 }

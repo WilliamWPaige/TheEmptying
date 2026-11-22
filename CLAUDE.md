@@ -174,6 +174,7 @@ What a new module needs, based on what the milestone-1 demo module (`module.demo
 
 - If keyboard input is dead in Play mode but the mouse works, it is the Unity Editor focus issue (Play Maximized), not code. The workaround: Run In Background on, Input System Background Behavior = Ignore Focus, Play Mode Input Behavior = All Device Input Always Goes To Game View. Check these before debugging input code.
 - A content problem (a missing or duplicate Id, a wrong prefix, an empty display name, a footprint below 1, a missing Model) stops the game from starting, by design (R5b). It is not a bug: the game shows a full-screen list of every problem instead of loading. Fix the content, not the code, unless the screen itself is wrong.
+- The camera's zoom-out is limited by design (R6b): only the area near the camera is ever rendered, so chunks past setting.map.view_distance_chunks are never built or shown. A small, closely-zoomed view of a big map is intentional, not a bug.
 
 ## How we work
 

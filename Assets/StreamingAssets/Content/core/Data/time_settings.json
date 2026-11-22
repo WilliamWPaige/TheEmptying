@@ -1,0 +1,14 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.time.real_seconds_per_day",
+            "valueType": "Number",
+            "default": 1800,
+            "minimum": 60,
+            "maximum": 7200,
+            "category": "Time",
+            "description": "Placeholder. How many real seconds one in-game day takes at 1x speed."
+        }
+    ]
+}

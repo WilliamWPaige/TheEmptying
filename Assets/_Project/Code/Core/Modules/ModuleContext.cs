@@ -31,6 +31,15 @@ namespace TheEmptying.Core.Modules
         public EntityRegistry Entities { get; }
         public EventDefinitionRegistry EventDefinitions { get; }
         public SimRandom Random { get; }
+
+        /// <summary>
+        /// The shared service behind Random, for a module that needs more than
+        /// one independently-seeded stream - for example one named stream per
+        /// map chunk, so a chunk's random placement depends only on the world
+        /// seed and its own coordinates, never on visit order.
+        /// </summary>
+        public RandomService RandomService { get; }
+
         public ConsoleCommandRegistry Commands { get; }
 
         /// <summary>Current setting values (declared from data or by a module). Read-only here; settings change through the "set" console command.</summary>
@@ -83,6 +92,7 @@ namespace TheEmptying.Core.Modules
             Entities = entities;
             EventDefinitions = eventDefinitions;
             Random = randomService.GetStream(moduleId);
+            RandomService = randomService;
             Commands = commands;
             Settings = settings;
             Content = content;

@@ -33,7 +33,7 @@ namespace TheEmptying.Presentation
     public sealed class GameBootstrap : MonoBehaviour, IPresentationCommands, ILogSink
     {
         private const ulong FixedWorldSeed = 1;
-        private const double RealSecondsPerDay = 720; // 12 real minutes per in-game day at 1x.
+        private const string RealSecondsPerDaySettingId = "setting.time.real_seconds_per_day";
         private const int MaxTicksPerFrame = 200;
 
         private Simulation _simulation;
@@ -243,7 +243,8 @@ namespace TheEmptying.Presentation
             }
 
             _accumulatedRealSeconds += Time.unscaledDeltaTime * _testTimeMultiplier;
-            double ticksPerRealSecond = TickRateCalculator.TicksPerRealSecond(RealSecondsPerDay, _speed);
+            double realSecondsPerDay = _simulation.Settings.Get(RealSecondsPerDaySettingId);
+            double ticksPerRealSecond = TickRateCalculator.TicksPerRealSecond(realSecondsPerDay, _speed);
             int ticksToRun = TickRateCalculator.TicksToRun(_accumulatedRealSeconds, ticksPerRealSecond, MaxTicksPerFrame, out double leftover);
             _accumulatedRealSeconds = leftover;
 
@@ -385,7 +386,7 @@ namespace TheEmptying.Presentation
 
             foreach (IGrouping<string, SettingDefinition> group in _simulation.Settings.ExportAll().GroupBy(d => d.Category).OrderBy(g => g.Key, StringComparer.Ordinal))
             {
-                CheatSection section = _cheatMenu.AddSection(group.Key);
+                CheatSection section = _cheatMenu.AddSection($"Settings: {group.Key}");
                 foreach (SettingDefinition definition in group.OrderBy(d => d.Id, StringComparer.Ordinal))
                 {
                     string id = definition.Id;
