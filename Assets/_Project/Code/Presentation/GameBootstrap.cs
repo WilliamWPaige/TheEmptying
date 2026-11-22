@@ -17,6 +17,7 @@ using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.DevTools;
 using TheEmptying.Presentation.Menus;
 using TheEmptying.Presentation.People;
+using TheEmptying.Presentation.Selection;
 using TheEmptying.Presentation.Startup;
 using TheEmptying.Presentation.World;
 using UnityEngine;
@@ -84,6 +85,7 @@ namespace TheEmptying.Presentation
         private MapCursorPresenter _mapCursor;
         private PeopleModule _peopleModule;
         private PersonPresenter _personPresenter;
+        private WorldSelectionPresenter _worldSelection;
 
         private readonly CheatMenuRegistry _cheatMenu = new CheatMenuRegistry();
         private DebugWindowPresenter _debugWindow;
@@ -370,7 +372,19 @@ namespace TheEmptying.Presentation
             _mapCursor.Initialize(_mapModule, _floatingOrigin, camera, _uiDocument.rootVisualElement);
 
             _personPresenter = gameObject.AddComponent<PersonPresenter>();
-            _personPresenter.Initialize(_peopleModule, _mapModule, _floatingOrigin, _worldMapView, camera, _uiDocument.rootVisualElement);
+            _personPresenter.Initialize(_peopleModule, _mapModule, _floatingOrigin, _worldMapView);
+
+            _worldSelection = gameObject.AddComponent<WorldSelectionPresenter>();
+            _worldSelection.Initialize(
+                _peopleModule,
+                _mapModule,
+                _simulation.Content,
+                _floatingOrigin,
+                _cameraController,
+                _personPresenter,
+                _worldMapView.Decorations,
+                camera,
+                _uiDocument.rootVisualElement);
         }
 
         /// <summary>
@@ -429,7 +443,7 @@ namespace TheEmptying.Presentation
 
             // Rebuilt fresh every time (unlike SpawnCheat): it must always hold the current MapModule, which a Load replaces.
             new MapCheat(_mapModule, _worldMapView, _cameraController).BuildSections(_cheatMenu);
-            new PeopleCheat(_peopleModule, _cameraController, _personPresenter).BuildSections(_cheatMenu);
+            new PeopleCheat(_peopleModule, _cameraController, _worldSelection).BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()
@@ -500,12 +514,13 @@ namespace TheEmptying.Presentation
         }
 
         /// <summary>
-        /// R4: Escape's single entry point, in strict priority order - stop
-        /// typing, then close the debug window, then hand off to the Escape
-        /// menu for going back one step or opening/closing itself. Never
-        /// gated by the text-field focus check itself (step 1 IS that
-        /// check, for every panel at once), so a stuck focus can never trap
-        /// the player, same reasoning as F1.
+        /// R4/R8: Escape's single entry point, in strict priority order -
+        /// stop typing, then close the debug window, then close the info
+        /// window, then hand off to the Escape menu for going back one
+        /// step or opening/closing itself. Never gated by the text-field
+        /// focus check itself (step 1 IS that check, for every panel at
+        /// once), so a stuck focus can never trap the player, same
+        /// reasoning as F1.
         /// </summary>
         private void HandleEscapeKeyPressed()
         {
@@ -519,6 +534,12 @@ namespace TheEmptying.Presentation
             if (_debugWindow.IsOpen)
             {
                 _debugWindow.ToggleWindow();
+                return;
+            }
+
+            if (_worldSelection != null && _worldSelection.IsOpen)
+            {
+                _worldSelection.HandleEscapePressed();
                 return;
             }
 
@@ -829,6 +850,7 @@ namespace TheEmptying.Presentation
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
                 _worldMapView?.Rebind(_mapModule, _simulation.Settings);
                 _personPresenter?.Rebind(_peopleModule, _mapModule);
+                _worldSelection?.Rebind(_peopleModule, _mapModule, _simulation.Content);
                 BuildCheatMenu();
                 _debugWindow?.RebuildCheatsStructure();
 

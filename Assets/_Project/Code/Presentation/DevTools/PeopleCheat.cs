@@ -1,5 +1,5 @@
 using TheEmptying.Modules.People;
-using TheEmptying.Presentation.People;
+using TheEmptying.Presentation.Selection;
 using TheEmptying.Presentation.World;
 using UnityEngine;
 
@@ -10,13 +10,13 @@ namespace TheEmptying.Presentation.DevTools
     {
         private readonly PeopleModule _peopleModule;
         private readonly StrategyCameraController _cameraController;
-        private readonly PersonPresenter _presenter;
+        private readonly WorldSelectionPresenter _selection;
 
-        public PeopleCheat(PeopleModule peopleModule, StrategyCameraController cameraController, PersonPresenter presenter)
+        public PeopleCheat(PeopleModule peopleModule, StrategyCameraController cameraController, WorldSelectionPresenter selection)
         {
             _peopleModule = peopleModule;
             _cameraController = cameraController;
-            _presenter = presenter;
+            _selection = selection;
         }
 
         public void BuildSections(CheatMenuRegistry registry)
@@ -34,13 +34,13 @@ namespace TheEmptying.Presentation.DevTools
 
         private void RemoveSelected()
         {
-            if (!_presenter.SelectedId.HasValue)
+            if (!_selection.SelectedPersonId.HasValue)
             {
                 return;
             }
 
-            _peopleModule.RemovePerson(_presenter.SelectedId.Value);
-            _presenter.ClearSelection();
+            _peopleModule.RemovePerson(_selection.SelectedPersonId.Value);
+            _selection.ClearSelection();
         }
     }
 }

@@ -57,7 +57,25 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                     { ""id"": ""setting.map.trees_per_chunk"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 500, ""category"": ""Map"", ""description"": ""x"" },
                     { ""id"": ""setting.map.stones_per_chunk"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 500, ""category"": ""Map"", ""description"": ""x"" },
                     { ""id"": ""setting.map.grub_mounds_per_chunk"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 500, ""category"": ""Map"", ""description"": ""x"" },
-                    { ""id"": ""setting.people.founder_count"", ""valueType"": ""Integer"", ""default"": 1, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" }
+                    { ""id"": ""setting.people.founder_count"", ""valueType"": ""Integer"", ""default"": 1, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_age_min"", ""valueType"": ""Integer"", ""default"": 20, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_age_max"", ""valueType"": ""Integer"", ""default"": 40, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_core_trade_min"", ""valueType"": ""Integer"", ""default"": 14, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_core_trade_max"", ""valueType"": ""Integer"", ""default"": 18, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_specialty_min"", ""valueType"": ""Integer"", ""default"": 19, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_specialty_max"", ""valueType"": ""Integer"", ""default"": 20, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_other_skill_min"", ""valueType"": ""Integer"", ""default"": 5, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_other_skill_max"", ""valueType"": ""Integer"", ""default"": 12, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_attribute_min"", ""valueType"": ""Integer"", ""default"": 10, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.founder_attribute_max"", ""valueType"": ""Integer"", ""default"": 16, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.monarch_age_min"", ""valueType"": ""Integer"", ""default"": 25, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.monarch_age_max"", ""valueType"": ""Integer"", ""default"": 50, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.monarch_leadership_speech_min"", ""valueType"": ""Integer"", ""default"": 8, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.monarch_leadership_speech_max"", ""valueType"": ""Integer"", ""default"": 14, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.monarch_other_skill_min"", ""valueType"": ""Integer"", ""default"": 1, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.monarch_other_skill_max"", ""valueType"": ""Integer"", ""default"": 6, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.monarch_attribute_min"", ""valueType"": ""Integer"", ""default"": 6, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.monarch_attribute_max"", ""valueType"": ""Integer"", ""default"": 14, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" }
                 ]
             }");
         }

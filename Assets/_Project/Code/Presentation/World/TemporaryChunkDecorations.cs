@@ -33,6 +33,8 @@ namespace TheEmptying.Presentation.World
         private readonly Dictionary<ChunkCoord, List<(PlacementKind Kind, GameObject GameObject)>> _activeByChunk =
             new Dictionary<ChunkCoord, List<(PlacementKind Kind, GameObject GameObject)>>();
 
+        private readonly Dictionary<GameObject, ChunkPlacement> _placementByInstance = new Dictionary<GameObject, ChunkPlacement>();
+
         public TemporaryChunkDecorations(MapModule mapModule, FloatingOrigin floatingOrigin)
         {
             _mapModule = mapModule;
@@ -107,6 +109,7 @@ namespace TheEmptying.Presentation.World
                 instance.SetActive(true);
 
                 instances.Add((placement.Kind, instance));
+                _placementByInstance[instance] = placement;
             }
 
             _activeByChunk[coord] = instances;
@@ -123,10 +126,17 @@ namespace TheEmptying.Presentation.World
             {
                 instance.SetActive(false);
                 _poolsByKind[kind].Push(instance);
+                _placementByInstance.Remove(instance);
             }
 
             _activeByChunk.Remove(coord);
         }
+
+        /// <summary>The asset (display name, model, footprint) a given placement kind draws - for the info window to show a clicked resource.</summary>
+        public ResourceAsset GetAsset(PlacementKind kind) => _assetsByKind.TryGetValue(kind, out ResourceAsset asset) ? asset : null;
+
+        /// <summary>Resolves a clicked GameObject back to the placement it's currently drawing, if any.</summary>
+        public bool TryGetPlacement(GameObject instance, out ChunkPlacement placement) => _placementByInstance.TryGetValue(instance, out placement);
 
         private GameObject Spawn(PlacementKind kind, ResourceAsset asset)
         {

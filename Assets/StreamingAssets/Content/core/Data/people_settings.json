@@ -9,6 +9,168 @@
             "maximum": 100,
             "category": "People",
             "description": "Placeholder. How many people spawn near the world center at the start of a new game."
+        },
+        {
+            "id": "setting.people.founder_age_min",
+            "valueType": "Integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "People",
+            "description": "Placeholder. A founder's (including the Advisor's) lowest possible starting age, in years."
+        },
+        {
+            "id": "setting.people.founder_age_max",
+            "valueType": "Integer",
+            "default": 40,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "People",
+            "description": "Placeholder. A founder's (including the Advisor's) highest possible starting age, in years."
+        },
+        {
+            "id": "setting.people.founder_core_trade_min",
+            "valueType": "Integer",
+            "default": 14,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. A founder's lowest possible value in a core trade skill (Logging, Quarrying, Farming, Foraging, Hauling, Construction)."
+        },
+        {
+            "id": "setting.people.founder_core_trade_max",
+            "valueType": "Integer",
+            "default": 18,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. A founder's highest possible value in a core trade skill."
+        },
+        {
+            "id": "setting.people.founder_specialty_min",
+            "valueType": "Integer",
+            "default": 19,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. A founder's lowest possible value in their one random specialty skill (picked from the non-core-trade skills)."
+        },
+        {
+            "id": "setting.people.founder_specialty_max",
+            "valueType": "Integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. A founder's highest possible value in their specialty skill."
+        },
+        {
+            "id": "setting.people.founder_other_skill_min",
+            "valueType": "Integer",
+            "default": 5,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. A founder's lowest possible value in every skill that isn't a core trade or their specialty."
+        },
+        {
+            "id": "setting.people.founder_other_skill_max",
+            "valueType": "Integer",
+            "default": 12,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. A founder's highest possible value in every skill that isn't a core trade or their specialty."
+        },
+        {
+            "id": "setting.people.founder_attribute_min",
+            "valueType": "Integer",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. A founder's lowest possible value in every attribute."
+        },
+        {
+            "id": "setting.people.founder_attribute_max",
+            "valueType": "Integer",
+            "default": 16,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. A founder's highest possible value in every attribute."
+        },
+        {
+            "id": "setting.people.monarch_age_min",
+            "valueType": "Integer",
+            "default": 25,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "People",
+            "description": "Placeholder. The Monarch's lowest possible starting age, in years."
+        },
+        {
+            "id": "setting.people.monarch_age_max",
+            "valueType": "Integer",
+            "default": 50,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "People",
+            "description": "Placeholder. The Monarch's highest possible starting age, in years."
+        },
+        {
+            "id": "setting.people.monarch_leadership_speech_min",
+            "valueType": "Integer",
+            "default": 8,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. The Monarch's lowest possible value in Leadership and Speech."
+        },
+        {
+            "id": "setting.people.monarch_leadership_speech_max",
+            "valueType": "Integer",
+            "default": 14,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. The Monarch's highest possible value in Leadership and Speech."
+        },
+        {
+            "id": "setting.people.monarch_other_skill_min",
+            "valueType": "Integer",
+            "default": 1,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. The Monarch's lowest possible value in every skill other than Leadership and Speech."
+        },
+        {
+            "id": "setting.people.monarch_other_skill_max",
+            "valueType": "Integer",
+            "default": 6,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. The Monarch's highest possible value in every skill other than Leadership and Speech."
+        },
+        {
+            "id": "setting.people.monarch_attribute_min",
+            "valueType": "Integer",
+            "default": 6,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. The Monarch's lowest possible value in every attribute."
+        },
+        {
+            "id": "setting.people.monarch_attribute_max",
+            "valueType": "Integer",
+            "default": 14,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder. The Monarch's highest possible value in every attribute."
         }
     ]
 }

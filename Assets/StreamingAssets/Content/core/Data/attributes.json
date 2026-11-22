@@ -1,0 +1,13 @@
+{
+    "type": "attribute_definition",
+    "items": [
+        { "id": "attribute.strength", "displayName": "Strength", "order": 0 },
+        { "id": "attribute.endurance", "displayName": "Endurance", "order": 1 },
+        { "id": "attribute.agility", "displayName": "Agility", "order": 2 },
+        { "id": "attribute.constitution", "displayName": "Constitution", "order": 3 },
+        { "id": "attribute.intelligence", "displayName": "Intelligence", "order": 4 },
+        { "id": "attribute.willpower", "displayName": "Willpower", "order": 5 },
+        { "id": "attribute.charisma", "displayName": "Charisma", "order": 6 },
+        { "id": "attribute.perception", "displayName": "Perception", "order": 7 }
+    ]
+}

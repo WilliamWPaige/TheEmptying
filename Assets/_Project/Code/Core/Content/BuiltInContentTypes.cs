@@ -1,10 +1,11 @@
-using System;
+using System.Collections.Generic;
+using System.Linq;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Rules;
 
 namespace TheEmptying.Core.Content
 {
-    /// <summary>The core's own content types: event definitions, module manifests, setting definitions, rules, and the asset tool's unit, resource, building and item types (R5).</summary>
+    /// <summary>The core's own content types: event definitions, module manifests, setting definitions, rules, the asset tool's unit, resource, building and item types (R5), and skills, attributes and name lists (R8).</summary>
     public static class BuiltInContentTypes
     {
         public const string EventDefinitionTypeName = "event_definition";
@@ -15,6 +16,9 @@ namespace TheEmptying.Core.Content
         public const string ResourceTypeName = "resource";
         public const string BuildingTypeName = "building";
         public const string ItemTypeName = "item";
+        public const string SkillDefinitionTypeName = "skill_definition";
+        public const string AttributeDefinitionTypeName = "attribute_definition";
+        public const string NameListTypeName = "name_list";
 
         public static void RegisterAll(ContentTypeRegistry registry)
         {
@@ -26,6 +30,42 @@ namespace TheEmptying.Core.Content
             registry.Register(new ContentTypeDefinition(ResourceTypeName, typeof(ResourceContent), ValidateResource));
             registry.Register(new ContentTypeDefinition(BuildingTypeName, typeof(BuildingContent), ValidateBuilding));
             registry.Register(new ContentTypeDefinition(ItemTypeName, typeof(ItemContent), ValidateItem));
+            registry.Register(new ContentTypeDefinition(SkillDefinitionTypeName, typeof(SkillDefinition), ValidateSkillDefinition));
+            registry.Register(new ContentTypeDefinition(AttributeDefinitionTypeName, typeof(AttributeDefinition), ValidateAttributeDefinition));
+            registry.Register(new ContentTypeDefinition(NameListTypeName, typeof(NameListDefinition), ValidateNameList));
+        }
+
+        /// <summary>Every loaded skill, in the order the data lists them (ListByType sorts by Id, so this re-sorts by the Order field instead).</summary>
+        public static List<SkillDefinition> OrderedSkills(ContentDatabase database)
+        {
+            return database.ListByType(SkillDefinitionTypeName)
+                .Select(e => (SkillDefinition)e.Definition)
+                .OrderBy(s => s.Order)
+                .ToList();
+        }
+
+        /// <summary>Every loaded attribute, in the order the data lists them.</summary>
+        public static List<AttributeDefinition> OrderedAttributes(ContentDatabase database)
+        {
+            return database.ListByType(AttributeDefinitionTypeName)
+                .Select(e => (AttributeDefinition)e.Definition)
+                .OrderBy(a => a.Order)
+                .ToList();
+        }
+
+        /// <summary>The names list for one kind (male first names, female first names, or family names); empty if none is loaded.</summary>
+        public static List<string> NamesOfKind(ContentDatabase database, NameListKind kind)
+        {
+            foreach (ContentEntry entry in database.ListByType(NameListTypeName))
+            {
+                var content = (NameListDefinition)entry.Definition;
+                if (System.Enum.TryParse(content.Kind, out NameListKind entryKind) && entryKind == kind)
+                {
+                    return content.Names;
+                }
+            }
+
+            return new List<string>();
         }
 
         /// <summary>Registers every loaded event_definition content item into the EventDefinitionRegistry. The four calendar definitions stay registered in code.</summary>
@@ -107,7 +147,7 @@ namespace TheEmptying.Core.Content
         /// </summary>
         private static void CheckIdPrefix(string id, string prefix, ContentValidationContext context)
         {
-            if (!string.IsNullOrEmpty(id) && !id.StartsWith(prefix, StringComparison.Ordinal))
+            if (!string.IsNullOrEmpty(id) && !id.StartsWith(prefix, System.StringComparison.Ordinal))
             {
                 context.ReportProblem(id, "id", $"must start with '{prefix}'.");
             }
@@ -164,6 +204,49 @@ namespace TheEmptying.Core.Content
             if (footprintDepth < 1)
             {
                 context.ReportProblem(id, "footprintDepth", "must be at least 1.");
+            }
+        }
+
+        private static void ValidateSkillDefinition(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (SkillDefinition)definition;
+            CheckIdPrefix(content.Id, "skill.", context);
+
+            if (string.IsNullOrEmpty(content.DisplayName))
+            {
+                context.ReportProblem(content.Id, "displayName", "must not be empty.");
+            }
+
+            if (string.IsNullOrEmpty(content.Group))
+            {
+                context.ReportProblem(content.Id, "group", "must not be empty.");
+            }
+        }
+
+        private static void ValidateAttributeDefinition(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (AttributeDefinition)definition;
+            CheckIdPrefix(content.Id, "attribute.", context);
+
+            if (string.IsNullOrEmpty(content.DisplayName))
+            {
+                context.ReportProblem(content.Id, "displayName", "must not be empty.");
+            }
+        }
+
+        private static void ValidateNameList(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (NameListDefinition)definition;
+            CheckIdPrefix(content.Id, "name.", context);
+
+            if (!System.Enum.TryParse(content.Kind, out NameListKind _))
+            {
+                context.ReportProblem(content.Id, "kind", $"'{content.Kind}' is not a valid kind (MaleFirstName, FemaleFirstName, FamilyName).");
+            }
+
+            if (content.Names == null || content.Names.Count == 0)
+            {
+                context.ReportProblem(content.Id, "names", "must not be empty.");
             }
         }
     }

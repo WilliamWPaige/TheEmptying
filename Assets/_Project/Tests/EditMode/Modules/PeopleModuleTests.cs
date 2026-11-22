@@ -14,9 +14,19 @@ using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Tests.EditMode.Modules
 {
-    /// <summary>R7: new-game founder placement (free cells, spaced apart) and the people save/load round trip, against the real shipped content.</summary>
+    /// <summary>
+    /// R7: new-game founder placement (free cells, spaced apart). R8:
+    /// identity and stats - deterministic by world seed, in range per
+    /// role, exactly one Monarch and one Advisor, and the save/load round
+    /// trip - all against the real shipped content.
+    /// </summary>
     public class PeopleModuleTests
     {
+        private static readonly string[] CoreTradeSkillIds =
+        {
+            "skill.logging", "skill.quarrying", "skill.farming", "skill.foraging", "skill.hauling", "skill.construction"
+        };
+
         private static (Simulation Simulation, MapModule Map, PeopleModule People) BuildNewGame(TempCoreContentCopy core, ulong seed = 1)
         {
             IModule[] modules = ModuleCatalog.CreateModules();
@@ -64,7 +74,90 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void SaveAndLoad_PeopleSurviveTheRoundTrip()
+        public void NewGame_HasExactlyOneMonarchAndOneAdvisor()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, _, PeopleModule people) = BuildNewGame(core);
+
+            List<PersonState> all = people.People.Select(r => r.Value).ToList();
+
+            Assert.AreEqual(1, all.Count(p => p.Role == PersonRole.Monarch));
+            Assert.AreEqual(1, all.Count(p => p.Role == PersonRole.Advisor));
+            Assert.AreEqual(all.Count - 2, all.Count(p => p.Role == PersonRole.Founder));
+        }
+
+        [Test]
+        public void NewGame_EveryRoll_IsInsideItsRoleRange()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, _, PeopleModule people) = BuildNewGame(core);
+
+            foreach (PersonState person in people.People.Select(r => r.Value))
+            {
+                bool isMonarch = person.Role == PersonRole.Monarch;
+
+                Assert.That(person.AgeYears, isMonarch ? Is.InRange(25, 50) : Is.InRange(20, 40), $"{person.Role} age out of range.");
+
+                foreach (KeyValuePair<string, int> kvp in person.Attributes)
+                {
+                    Assert.That(kvp.Value, isMonarch ? Is.InRange(6, 14) : Is.InRange(10, 16), $"{person.Role} attribute {kvp.Key} out of range.");
+                }
+
+                if (isMonarch)
+                {
+                    foreach (KeyValuePair<string, int> kvp in person.Skills)
+                    {
+                        bool isLeadershipOrSpeech = kvp.Key == "skill.leadership" || kvp.Key == "skill.speech";
+                        Assert.That(kvp.Value, isLeadershipOrSpeech ? Is.InRange(8, 14) : Is.InRange(1, 6), $"Monarch skill {kvp.Key} out of range.");
+                    }
+
+                    Assert.IsEmpty(person.SpecialtySkillId);
+                }
+                else
+                {
+                    Assert.IsNotEmpty(person.SpecialtySkillId);
+                    Assert.IsFalse(CoreTradeSkillIds.Contains(person.SpecialtySkillId), "The specialty must not be a core trade.");
+
+                    foreach (KeyValuePair<string, int> kvp in person.Skills)
+                    {
+                        if (CoreTradeSkillIds.Contains(kvp.Key))
+                        {
+                            Assert.That(kvp.Value, Is.InRange(14, 18), $"{person.Role} core trade {kvp.Key} out of range.");
+                        }
+                        else if (kvp.Key == person.SpecialtySkillId)
+                        {
+                            Assert.That(kvp.Value, Is.InRange(19, 20), $"{person.Role} specialty {kvp.Key} out of range.");
+                        }
+                        else
+                        {
+                            Assert.That(kvp.Value, Is.InRange(5, 12), $"{person.Role} other skill {kvp.Key} out of range.");
+                        }
+                    }
+                }
+            }
+        }
+
+        [Test]
+        public void NewGame_SameSeed_GivesTheSamePeopleAndStats()
+        {
+            using var coreA = new TempCoreContentCopy();
+            using var coreB = new TempCoreContentCopy();
+
+            (_, _, PeopleModule peopleA) = BuildNewGame(coreA, 42);
+            (_, _, PeopleModule peopleB) = BuildNewGame(coreB, 42);
+
+            List<PersonState> listA = peopleA.People.Select(r => r.Value).ToList();
+            List<PersonState> listB = peopleB.People.Select(r => r.Value).ToList();
+
+            Assert.AreEqual(listA.Count, listB.Count);
+            for (int i = 0; i < listA.Count; i++)
+            {
+                AssertSameState(listA[i], listB[i]);
+            }
+        }
+
+        [Test]
+        public void SaveAndLoad_StatsSurviveTheRoundTrip()
         {
             using var core = new TempCoreContentCopy();
             (Simulation simulation, _, PeopleModule peopleBefore) = BuildNewGame(core);
@@ -86,10 +179,22 @@ namespace TheEmptying.Tests.EditMode.Modules
             for (int i = 0; i < before.Count; i++)
             {
                 Assert.AreEqual(before[i].Id, after[i].Id);
-                Assert.AreEqual(before[i].State.UnitContentId, after[i].State.UnitContentId);
-                Assert.AreEqual(before[i].State.WorldX, after[i].State.WorldX);
-                Assert.AreEqual(before[i].State.WorldZ, after[i].State.WorldZ);
+                AssertSameState(before[i].State, after[i].State);
             }
+        }
+
+        private static void AssertSameState(PersonState a, PersonState b)
+        {
+            Assert.AreEqual(a.UnitContentId, b.UnitContentId);
+            Assert.AreEqual(a.WorldX, b.WorldX);
+            Assert.AreEqual(a.WorldZ, b.WorldZ);
+            Assert.AreEqual(a.Name, b.Name);
+            Assert.AreEqual(a.Sex, b.Sex);
+            Assert.AreEqual(a.AgeYears, b.AgeYears);
+            Assert.AreEqual(a.Role, b.Role);
+            Assert.AreEqual(a.SpecialtySkillId, b.SpecialtySkillId);
+            CollectionAssert.AreEquivalent(a.Skills, b.Skills);
+            CollectionAssert.AreEquivalent(a.Attributes, b.Attributes);
         }
     }
 }

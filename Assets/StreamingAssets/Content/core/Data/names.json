@@ -1,0 +1,32 @@
+{
+    "type": "name_list",
+    "items": [
+        {
+            "id": "name.male_first",
+            "kind": "MaleFirstName",
+            "names": [
+                "Alaric", "Bram", "Cedric", "Dagan", "Edrin", "Fenwick", "Gareth", "Hadrian",
+                "Ivor", "Jorund", "Kestrel", "Leofric", "Magnus", "Nolan", "Osric", "Padraig",
+                "Quintin", "Rowan", "Stellan", "Thane", "Ulric", "Varin", "Wystan", "Yorick"
+            ]
+        },
+        {
+            "id": "name.female_first",
+            "kind": "FemaleFirstName",
+            "names": [
+                "Adela", "Brynn", "Cora", "Dagny", "Elspeth", "Fenna", "Gwendolyn", "Hilda",
+                "Isolde", "Jora", "Katrin", "Lira", "Maren", "Nessa", "Odile", "Petra",
+                "Rhiannon", "Sable", "Thea", "Una", "Verity", "Wren", "Yseult", "Zara"
+            ]
+        },
+        {
+            "id": "name.family",
+            "kind": "FamilyName",
+            "names": [
+                "Ashford", "Blackwell", "Carrow", "Dunmore", "Elderwood", "Fenwick", "Grayson", "Hollowell",
+                "Ingram", "Juniper", "Kestering", "Larkspur", "Marrow", "Northgate", "Oakes", "Pemberton",
+                "Quarrystone", "Ravensmoor", "Stonebridge", "Thistledown", "Underhill", "Vance", "Westbrook", "Yarrow"
+            ]
+        }
+    ]
+}

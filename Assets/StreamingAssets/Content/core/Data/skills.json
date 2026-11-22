@@ -1,0 +1,40 @@
+{
+    "type": "skill_definition",
+    "items": [
+        { "id": "skill.logging", "displayName": "Logging", "group": "Gathering", "order": 0 },
+        { "id": "skill.quarrying", "displayName": "Quarrying", "group": "Gathering", "order": 1 },
+        { "id": "skill.mining", "displayName": "Mining", "group": "Gathering", "order": 2 },
+        { "id": "skill.farming", "displayName": "Farming", "group": "Gathering", "order": 3 },
+        { "id": "skill.foraging", "displayName": "Foraging", "group": "Gathering", "order": 4 },
+        { "id": "skill.hunting", "displayName": "Hunting", "group": "Gathering", "order": 5 },
+        { "id": "skill.fishing", "displayName": "Fishing", "group": "Gathering", "order": 6 },
+        { "id": "skill.animal_handling", "displayName": "Animal Handling", "group": "Gathering", "order": 7 },
+
+        { "id": "skill.construction", "displayName": "Construction", "group": "Building and crafts", "order": 8 },
+        { "id": "skill.masonry", "displayName": "Masonry", "group": "Building and crafts", "order": 9 },
+        { "id": "skill.carpentry", "displayName": "Carpentry", "group": "Building and crafts", "order": 10 },
+        { "id": "skill.smithing", "displayName": "Smithing", "group": "Building and crafts", "order": 11 },
+        { "id": "skill.tailoring", "displayName": "Tailoring", "group": "Building and crafts", "order": 12 },
+        { "id": "skill.crafting", "displayName": "Crafting", "group": "Building and crafts", "order": 13 },
+        { "id": "skill.cooking", "displayName": "Cooking", "group": "Building and crafts", "order": 14 },
+        { "id": "skill.brewing", "displayName": "Brewing", "group": "Building and crafts", "order": 15 },
+
+        { "id": "skill.hauling", "displayName": "Hauling", "group": "Labor", "order": 16 },
+
+        { "id": "skill.medicine", "displayName": "Medicine", "group": "Care", "order": 17 },
+
+        { "id": "skill.leadership", "displayName": "Leadership", "group": "Government and social", "order": 18 },
+        { "id": "skill.administration", "displayName": "Administration", "group": "Government and social", "order": 19 },
+        { "id": "skill.speech", "displayName": "Speech", "group": "Government and social", "order": 20 },
+        { "id": "skill.trading", "displayName": "Trading", "group": "Government and social", "order": 21 },
+        { "id": "skill.teaching", "displayName": "Teaching", "group": "Government and social", "order": 22 },
+        { "id": "skill.law", "displayName": "Law", "group": "Government and social", "order": 23 },
+
+        { "id": "skill.melee", "displayName": "Melee", "group": "Military", "order": 24 },
+        { "id": "skill.ranged", "displayName": "Ranged", "group": "Military", "order": 25 },
+        { "id": "skill.tactics", "displayName": "Tactics", "group": "Military", "order": 26 },
+
+        { "id": "skill.scholarship", "displayName": "Scholarship", "group": "Knowledge and faith", "order": 27 },
+        { "id": "skill.faith", "displayName": "Faith", "group": "Knowledge and faith", "order": 28 }
+    ]
+}
