@@ -1,0 +1,77 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.camera.pan_speed",
+            "valueType": "Number",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 50,
+            "category": "Camera",
+            "description": "Placeholder. Meters per second the camera pans at minimum zoom; scales up as the camera zooms out."
+        },
+        {
+            "id": "setting.camera.zoom_speed",
+            "valueType": "Number",
+            "default": 2,
+            "minimum": 0.1,
+            "maximum": 20,
+            "category": "Camera",
+            "description": "Placeholder. Meters of height change per unit of scroll wheel input."
+        },
+        {
+            "id": "setting.camera.zoom_min_height",
+            "valueType": "Number",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 500,
+            "category": "Camera",
+            "description": "Placeholder. The camera's lowest (most zoomed-in) height above the ground, in meters."
+        },
+        {
+            "id": "setting.camera.zoom_max_height",
+            "valueType": "Number",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000,
+            "category": "Camera",
+            "description": "Placeholder. The camera's highest (most zoomed-out) height above the ground, in meters."
+        },
+        {
+            "id": "setting.camera.rotate_speed",
+            "valueType": "Number",
+            "default": 90,
+            "minimum": 10,
+            "maximum": 360,
+            "category": "Camera",
+            "description": "Placeholder. Degrees per second the camera rotates while Q or E is held."
+        },
+        {
+            "id": "setting.camera.rotate_drag_sensitivity",
+            "valueType": "Number",
+            "default": 0.3,
+            "minimum": 0.01,
+            "maximum": 5,
+            "category": "Camera",
+            "description": "Placeholder. Degrees of rotation per pixel of mouse movement while dragging with the middle mouse button."
+        },
+        {
+            "id": "setting.camera.edge_scrolling",
+            "valueType": "Boolean",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1,
+            "category": "Camera",
+            "description": "Whether moving the mouse to a screen edge also pans the camera. Off by default."
+        },
+        {
+            "id": "setting.camera.edge_scroll_size",
+            "valueType": "Number",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 200,
+            "category": "Camera",
+            "description": "Placeholder. How close to a screen edge (in pixels) the mouse must be for edge scrolling to pan the camera."
+        }
+    ]
+}

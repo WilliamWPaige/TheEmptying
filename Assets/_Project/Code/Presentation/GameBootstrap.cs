@@ -12,7 +12,9 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Presentation.Content;
+using TheEmptying.Presentation.World;
 using UnityEngine;
+using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
 
 namespace TheEmptying.Presentation
@@ -67,6 +69,9 @@ namespace TheEmptying.Presentation
         private string _modsFolder;
         private string _savesFolder;
 
+        private InputActionAsset _actions;
+        private StrategyCameraController _cameraController;
+
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
 
@@ -120,11 +125,19 @@ namespace TheEmptying.Presentation
             ResolveFolders();
             StartupReport report = BuildSimulation();
             BuildUi();
+            WireInput();
+            BuildWorld();
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
+        }
+
+        private void OnDestroy()
+        {
+            _actions?.Disable();
         }
 
         private void Update()
         {
+            ClearUiFocusOnEmptyGameViewClick();
             RefreshQuestionPopup();
 
             if (_paused || IsBlockedByPendingQuestion())
@@ -216,6 +229,96 @@ namespace TheEmptying.Presentation
             }
 
             return ContentAssetConverter.BuildDefinitions(catalog);
+        }
+
+        /// <summary>TEMPORARY (R1): the placeholder ground and the strategy camera that looks at it. Replace once the real map system exists.</summary>
+        private void BuildWorld()
+        {
+            TemporaryGround.Build();
+
+            Camera camera = Camera.main;
+            if (camera == null)
+            {
+                Debug.LogError("[TheEmptying] No main camera found; the strategy camera cannot be attached.");
+                return;
+            }
+
+            InputActionMap gameplayMap = _actions?.FindActionMap("Gameplay");
+            if (gameplayMap == null)
+            {
+                Debug.LogError("[TheEmptying] No Gameplay action map found; the strategy camera will not respond to input.");
+                return;
+            }
+
+            _cameraController = camera.gameObject.AddComponent<StrategyCameraController>();
+            _cameraController.Initialize(gameplayMap, _simulation.Settings, _uiDocument.rootVisualElement, TemporaryGround.WidthMeters, TemporaryGround.DepthMeters);
+        }
+
+        #endregion
+
+        #region Input
+
+        private void WireInput()
+        {
+            var asset = Resources.Load<InputActionAsset>("TheEmptyingControls");
+            if (asset == null)
+            {
+                Debug.LogError("[TheEmptying] Could not load TheEmptyingControls input actions from Resources.");
+                return;
+            }
+
+            _actions = Instantiate(asset);
+            InputActionMap gameplayMap = _actions.FindActionMap("Gameplay");
+
+            gameplayMap.FindAction("TogglePause").performed += _ => HandleTogglePause();
+            gameplayMap.FindAction("SetSpeed1").performed += _ => HandleSetSpeed(1);
+            gameplayMap.FindAction("SetSpeed2").performed += _ => HandleSetSpeed(2);
+            gameplayMap.FindAction("SetSpeed3").performed += _ => HandleSetSpeed(3);
+
+            // Always enabled: the keyboard rule is that gameplay keys work unless a text
+            // field is actively focused for typing, never that the whole map gets disabled
+            // (that is exactly what broke every gameplay key in the old debug console).
+            _actions.Enable();
+        }
+
+        /// <summary>Space, and the matching HUD button, both funnel through here.</summary>
+        private void HandleTogglePause()
+        {
+            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement))
+            {
+                return;
+            }
+
+            SetPaused(!_paused);
+        }
+
+        /// <summary>1/2/3, and the matching HUD buttons, both funnel through here. Pressing a speed key while paused also unpauses.</summary>
+        private void HandleSetSpeed(int speed)
+        {
+            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement))
+            {
+                return;
+            }
+
+            SetSpeed(speed);
+            SetPaused(false);
+        }
+
+        /// <summary>A left click that lands on nothing in the UI always clears whatever UI control currently has focus.</summary>
+        private void ClearUiFocusOnEmptyGameViewClick()
+        {
+            if (_uiDocument == null || Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            VisualElement root = _uiDocument.rootVisualElement;
+            if (root?.panel == null || UiInputUtility.IsPointerOverUi(root, Mouse.current.position.ReadValue()))
+            {
+                return;
+            }
+
+            root.panel.focusController.focusedElement?.Blur();
         }
 
         #endregion
@@ -361,13 +464,23 @@ namespace TheEmptying.Presentation
             };
 
             _dateLabel = new Label { style = { color = Color.white, marginRight = 16 } };
-            _speedLabel = new Label { style = { color = Color.white } };
+            _speedLabel = new Label { style = { color = Color.white, marginRight = 16 } };
 
             _hudPanel.Add(_dateLabel);
             _hudPanel.Add(_speedLabel);
+            _hudPanel.Add(BuildHudButton("Pause", () => HandleTogglePause()));
+            _hudPanel.Add(BuildHudButton("1x", () => HandleSetSpeed(1)));
+            _hudPanel.Add(BuildHudButton("2x", () => HandleSetSpeed(2)));
+            _hudPanel.Add(BuildHudButton("3x", () => HandleSetSpeed(3)));
             root.Add(_hudPanel);
 
             RefreshHud();
+        }
+
+        private static Button BuildHudButton(string text, Action onClick)
+        {
+            var button = new Button(onClick) { text = text, style = { marginRight = 4 } };
+            return button;
         }
 
         private void RefreshHud()
@@ -454,6 +567,7 @@ namespace TheEmptying.Presentation
 
                 _simulation = loaded;
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
+                _cameraController?.Rebind(_simulation.Settings);
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

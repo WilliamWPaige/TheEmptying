@@ -3,6 +3,7 @@
     "rootNamespace": "TheEmptying.Presentation",
     "references": [
         "TheEmptying.Core",
+        "Unity.InputSystem",
         "Newtonsoft.Json"
     ],
     "includePlatforms": [],
