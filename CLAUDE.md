@@ -169,6 +169,10 @@ What a new module needs, based on what the milestone-1 demo module (`module.demo
 - **Events**: post through `context.Events`. A data event (`EventData`, posted by definition ID) saves itself automatically if it's still pending at save time; a typed `ISimEvent` struct needs a registered `ITypedEventSerializer` to be saveable at all.
 - **Tests**: edit-mode tests named after the module, including a save-and-load round trip. If the module reads a setting or contributes to the state hash, also test determinism: the same seed gives the same hash, and an interrupted run (save, load, continue) matches an unbroken run of the same length.
 
+## Known pitfalls
+
+- If keyboard input is dead in Play mode but the mouse works, it is the Unity Editor focus issue (Play Maximized), not code. These ProjectSettings are the workaround; check them before debugging input code.
+
 ## How we work
 
 - One thing per prompt. Do only what the prompt asks. If you notice something else that needs doing, note it under a "Noticed, not fixed" heading in your report instead of doing it.
