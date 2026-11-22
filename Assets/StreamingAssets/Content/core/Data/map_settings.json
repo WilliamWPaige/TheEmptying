@@ -1,0 +1,59 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.map.world_width_meters",
+            "valueType": "Number",
+            "default": 15000,
+            "minimum": 256,
+            "maximum": 100000,
+            "category": "Map",
+            "description": "Placeholder. The world's width, west to east, in meters."
+        },
+        {
+            "id": "setting.map.world_depth_meters",
+            "valueType": "Number",
+            "default": 15000,
+            "minimum": 256,
+            "maximum": 100000,
+            "category": "Map",
+            "description": "Placeholder. The world's depth, south to north, in meters."
+        },
+        {
+            "id": "setting.map.cell_size_meters",
+            "valueType": "Number",
+            "default": 1,
+            "minimum": 0.1,
+            "maximum": 100,
+            "category": "Map",
+            "description": "Placeholder. The size of one cell, in meters per side."
+        },
+        {
+            "id": "setting.map.chunk_size_meters",
+            "valueType": "Number",
+            "default": 256,
+            "minimum": 8,
+            "maximum": 4096,
+            "category": "Map",
+            "description": "Placeholder. The size of one chunk, in meters per side. Only chunks near the camera are built and shown."
+        },
+        {
+            "id": "setting.map.view_distance_chunks",
+            "valueType": "Integer",
+            "default": 4,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "Map",
+            "description": "Placeholder. How many chunks out from the camera's own chunk are built and shown, in every direction."
+        },
+        {
+            "id": "setting.map.low_detail_height_meters",
+            "valueType": "Number",
+            "default": 400,
+            "minimum": 10,
+            "maximum": 5000,
+            "category": "Map",
+            "description": "Placeholder. Above this camera height, chunks show a flat, low-detail view with no grid lines, so performance stays smooth when zoomed far out."
+        }
+    ]
+}

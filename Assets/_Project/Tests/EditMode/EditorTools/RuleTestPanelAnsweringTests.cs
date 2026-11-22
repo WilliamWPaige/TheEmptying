@@ -30,9 +30,12 @@ namespace TheEmptying.Tests.EditMode.EditorTools
         {
             // Every module ModuleCatalog.CreateModules() returns needs a manifest
             // entry for RuleTestSession.Build's real SimulationBuilder.Build call
-            // to succeed; ModuleCatalog returns none since R0, so there's nothing
-            // to declare here. The same manifest also feeds EditorContext.Build
-            // below, so both calls agree.
+            // to succeed - R6's MapModule is the one it returns now. The same
+            // manifest also feeds EditorContext.Build below, so both calls agree.
+            source.WriteDataFile("map_manifest.json", @"{
+                ""type"": ""module_manifest"",
+                ""items"": [ { ""id"": ""module.map"", ""version"": 1, ""dependencies"": [], ""enabled"": true } ]
+            }");
             source.WriteDataFile("events.json", @"{
                 ""type"": ""event_definition"",
                 ""items"": [ { ""id"": ""go"", ""visibility"": ""Public"", ""reportingScore"": 0, ""notabilityScore"": 0, ""description"": ""test event"" } ]

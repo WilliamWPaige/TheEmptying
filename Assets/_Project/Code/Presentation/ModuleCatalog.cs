@@ -1,4 +1,5 @@
 using TheEmptying.Core.Modules;
+using TheEmptying.Modules.Map;
 
 namespace TheEmptying.Presentation
 {
@@ -8,15 +9,12 @@ namespace TheEmptying.Presentation
     /// tools (the block catalog) both build from, so neither can drift out of
     /// sync with the other. A new instance each call, since modules hold
     /// per-game state.
-    ///
-    /// Empty since R0 removed the Milestone 3 town simulation for the
-    /// rebuild; modules are added back here as each one is rebuilt.
     /// </summary>
     public static class ModuleCatalog
     {
         public static IModule[] CreateModules()
         {
-            return System.Array.Empty<IModule>();
+            return new IModule[] { new MapModule() };
         }
     }
 }

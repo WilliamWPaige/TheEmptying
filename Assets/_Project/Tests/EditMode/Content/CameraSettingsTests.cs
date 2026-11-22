@@ -1,9 +1,9 @@
-using System;
 using NUnit.Framework;
 using TheEmptying.Core;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
+using TheEmptying.Presentation;
 using TheEmptying.Presentation.World;
 using TheEmptying.Tests.EditMode.Startup;
 
@@ -15,14 +15,15 @@ namespace TheEmptying.Tests.EditMode.Content
         private static SettingsRegistry BuildFromRealContent()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, Array.Empty<IModule>());
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules);
             return simulation.Settings;
         }
 
         [TestCase(StrategyCameraController.PanSpeedSettingId, SettingValueType.Number, 10.0, 1.0, 50.0, "Camera")]
         [TestCase(StrategyCameraController.ZoomSpeedSettingId, SettingValueType.Number, 2.0, 0.1, 20.0, "Camera")]
         [TestCase(StrategyCameraController.ZoomMinHeightSettingId, SettingValueType.Number, 10.0, 1.0, 500.0, "Camera")]
-        [TestCase(StrategyCameraController.ZoomMaxHeightSettingId, SettingValueType.Number, 100.0, 1.0, 1000.0, "Camera")]
+        [TestCase(StrategyCameraController.ZoomMaxHeightSettingId, SettingValueType.Number, 1500.0, 1.0, 5000.0, "Camera")]
         [TestCase(StrategyCameraController.RotateSpeedSettingId, SettingValueType.Number, 90.0, 10.0, 360.0, "Camera")]
         [TestCase(StrategyCameraController.RotateDragSensitivitySettingId, SettingValueType.Number, 0.3, 0.01, 5.0, "Camera")]
         [TestCase(StrategyCameraController.EdgeScrollingSettingId, SettingValueType.Boolean, 0.0, 0.0, 1.0, "Camera")]

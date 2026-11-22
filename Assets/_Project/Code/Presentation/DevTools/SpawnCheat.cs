@@ -12,20 +12,26 @@ namespace TheEmptying.Presentation.DevTools
     /// the ground at the camera's center, sized to its footprint for
     /// buildings and resources. Purely visual - it never touches the
     /// simulation, and nothing it spawns is saved. "Clear spawned" removes
-    /// everything it has placed.
+    /// everything it has placed. R6: everything it spawns goes through the
+    /// FloatingOrigin like the camera and the world chunks, so a spawned
+    /// test object never jitters or drifts out of place if the camera
+    /// later travels far enough to shift the render origin.
     /// </summary>
     public sealed class SpawnCheat
     {
         private readonly ContentCatalog _catalog;
         private readonly StrategyCameraController _cameraController;
+        private readonly FloatingOrigin _floatingOrigin;
         private readonly Transform _spawnParent;
 
-        public SpawnCheat(StrategyCameraController cameraController)
+        public SpawnCheat(StrategyCameraController cameraController, FloatingOrigin floatingOrigin)
         {
             _cameraController = cameraController;
+            _floatingOrigin = floatingOrigin;
             _catalog = Resources.Load<ContentCatalog>("ContentCatalog");
 
             _spawnParent = new GameObject("Spawned (test tool, not saved)").transform;
+            _floatingOrigin.Shifted += delta => _spawnParent.position -= delta;
         }
 
         /// <summary>Adds the "Spawn" sections to the given registry. Call again after every rebuild (e.g. after a Load), same as the Time and Settings sections.</summary>
@@ -68,8 +74,9 @@ namespace TheEmptying.Presentation.DevTools
 
         private void Spawn(ContentAssetBase asset, Vector3 footprintScale)
         {
-            Vector3 position = _cameraController != null ? _cameraController.FocusPoint : Vector3.zero;
-            GameObject instance = UnityEngine.Object.Instantiate(asset.Model, position, Quaternion.identity, _spawnParent);
+            Vector3 worldPosition = _cameraController != null ? _cameraController.FocusPoint : Vector3.zero;
+            Vector3 renderPosition = _floatingOrigin.WorldToRender(worldPosition);
+            GameObject instance = UnityEngine.Object.Instantiate(asset.Model, renderPosition, Quaternion.identity, _spawnParent);
             instance.name = asset.Id;
             instance.transform.localScale = Vector3.Scale(instance.transform.localScale, footprintScale);
         }

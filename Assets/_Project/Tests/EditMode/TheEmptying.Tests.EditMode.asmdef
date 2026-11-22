@@ -5,6 +5,7 @@
         "TheEmptying.Core",
         "TheEmptying.Presentation",
         "TheEmptying.Editor",
+        "TheEmptying.Modules.Map",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

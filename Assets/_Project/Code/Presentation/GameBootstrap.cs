@@ -11,6 +11,7 @@ using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Map;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.DevTools;
 using TheEmptying.Presentation.Menus;
@@ -74,6 +75,11 @@ namespace TheEmptying.Presentation
 
         private InputActionAsset _actions;
         private StrategyCameraController _cameraController;
+
+        private readonly FloatingOrigin _floatingOrigin = new FloatingOrigin();
+        private MapModule _mapModule;
+        private WorldMapView _worldMapView;
+        private MapCursorPresenter _mapCursor;
 
         private readonly CheatMenuRegistry _cheatMenu = new CheatMenuRegistry();
         private DebugWindowPresenter _debugWindow;
@@ -303,6 +309,7 @@ namespace TheEmptying.Presentation
 
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets, contentAssetProblems: contentAssetProblems);
             _simulation = simulation;
+            _mapModule = modules.OfType<MapModule>().First();
 
             // The closure reads _simulation live, so it keeps working after a load swaps the field.
             ErrorCatcher.InGameTimestampProvider = () =>
@@ -331,10 +338,9 @@ namespace TheEmptying.Presentation
         }
 
         /// <summary>TEMPORARY (R1): the placeholder ground and the strategy camera that looks at it. Replace once the real map system exists.</summary>
+        /// <summary>R6: the full-size chunked world map, its camera, and the mouse-cell test helper. Replaces the R1 TemporaryGround.</summary>
         private void BuildWorld()
         {
-            TemporaryGround.Build();
-
             Camera camera = Camera.main;
             if (camera == null)
             {
@@ -350,7 +356,13 @@ namespace TheEmptying.Presentation
             }
 
             _cameraController = camera.gameObject.AddComponent<StrategyCameraController>();
-            _cameraController.Initialize(gameplayMap, _simulation.Settings, _uiDocument.rootVisualElement, TemporaryGround.WidthMeters, TemporaryGround.DepthMeters);
+            _cameraController.Initialize(gameplayMap, _simulation.Settings, _uiDocument.rootVisualElement, _mapModule, _floatingOrigin);
+
+            _worldMapView = gameObject.AddComponent<WorldMapView>();
+            _worldMapView.Initialize(_mapModule, _simulation.Settings, _floatingOrigin, _cameraController);
+
+            _mapCursor = gameObject.AddComponent<MapCursorPresenter>();
+            _mapCursor.Initialize(_mapModule, _floatingOrigin, camera, _uiDocument.rootVisualElement);
         }
 
         /// <summary>
@@ -402,10 +414,13 @@ namespace TheEmptying.Presentation
 
             if (_spawnCheat == null)
             {
-                _spawnCheat = new SpawnCheat(_cameraController);
+                _spawnCheat = new SpawnCheat(_cameraController, _floatingOrigin);
             }
 
             _spawnCheat.BuildSections(_cheatMenu);
+
+            // Rebuilt fresh every time (unlike SpawnCheat): it must always hold the current MapModule, which a Load replaces.
+            new MapCheat(_mapModule, _worldMapView, _cameraController).BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()
@@ -799,8 +814,10 @@ namespace TheEmptying.Presentation
                 (Simulation loaded, LoadReport report) = GameSave.Load(stream, ResolveSourceFolders(), modules, ErrorMode.Development, logSink: this, contentAssets: LoadContentAssetDefinitions(contentAssetProblems), contentAssetProblems: contentAssetProblems);
 
                 _simulation = loaded;
+                _mapModule = modules.OfType<MapModule>().First();
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
-                _cameraController?.Rebind(_simulation.Settings);
+                _cameraController?.Rebind(_simulation.Settings, _mapModule);
+                _worldMapView?.Rebind(_mapModule, _simulation.Settings);
                 BuildCheatMenu();
                 _debugWindow?.RebuildCheatsStructure();
 

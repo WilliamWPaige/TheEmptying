@@ -1,4 +1,5 @@
 using TheEmptying.Core.Content;
+using TheEmptying.Modules.Map;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
@@ -11,6 +12,11 @@ namespace TheEmptying.Presentation.World
     /// own Update() against real (unscaled) time, so it keeps working while
     /// the game is paused or at any game speed. Reads its tunable numbers
     /// from settings every frame, since they can change mid-game.
+    ///
+    /// The focus point it tracks is always a true, unshifted world
+    /// position (R6) - the world can be clamped to by it, and other
+    /// systems (Spawn, Map cheats) can read or set it in world terms. Only
+    /// the rendered Transform itself goes through the FloatingOrigin.
     /// </summary>
     public sealed class StrategyCameraController : MonoBehaviour
     {
@@ -33,8 +39,8 @@ namespace TheEmptying.Presentation.World
 
         private SettingsRegistry _settings;
         private VisualElement _uiRoot;
-        private float _groundWidthMeters;
-        private float _groundDepthMeters;
+        private MapModule _mapModule;
+        private FloatingOrigin _floatingOrigin;
 
         private Vector3 _focusPoint;
         private float _height;
@@ -43,10 +49,13 @@ namespace TheEmptying.Presentation.World
         /// <summary>Set by the Escape menu while it (or its Options/confirm sub-panels) is open: the camera stays completely still, same as while a text field is focused.</summary>
         public bool InputSuspended { get; set; }
 
-        /// <summary>The ground point the camera is centered on (always at y = 0; panning never changes height). Used by the Spawn cheat (R5) to place a model "at the camera's center".</summary>
+        /// <summary>The ground point the camera is centered on, as a true world position (always at y = 0; panning never changes height). Used by the Spawn cheat to place a model "at the camera's center", and by the Map cheat's "go to"/corner buttons to read where it is.</summary>
         public Vector3 FocusPoint => _focusPoint;
 
-        public void Initialize(InputActionMap gameplayMap, SettingsRegistry settings, VisualElement uiRoot, float groundWidthMeters, float groundDepthMeters)
+        /// <summary>The camera's current zoom height, in meters. Used by the world map view to decide when to switch to the low-detail view.</summary>
+        public float Height => _height;
+
+        public void Initialize(InputActionMap gameplayMap, SettingsRegistry settings, VisualElement uiRoot, MapModule mapModule, FloatingOrigin floatingOrigin)
         {
             _panAction = gameplayMap.FindAction("Pan");
             _rotateAction = gameplayMap.FindAction("Rotate");
@@ -55,20 +64,33 @@ namespace TheEmptying.Presentation.World
 
             _settings = settings;
             _uiRoot = uiRoot;
-            _groundWidthMeters = groundWidthMeters;
-            _groundDepthMeters = groundDepthMeters;
+            _mapModule = mapModule;
+            _floatingOrigin = floatingOrigin;
 
-            _focusPoint = new Vector3(groundWidthMeters * 0.5f, 0f, groundDepthMeters * 0.5f);
+            // New game: the camera starts at the world center (R6).
+            _focusPoint = new Vector3((float)(mapModule.WorldWidthMeters * 0.5), 0f, (float)(mapModule.WorldDepthMeters * 0.5));
             _yaw = 0f;
             _height = (float)((settings.Get(ZoomMinHeightSettingId) + settings.Get(ZoomMaxHeightSettingId)) * 0.5);
 
             ApplyTransform();
         }
 
-        /// <summary>After a load, the simulation (and its SettingsRegistry) is a new instance; point the camera at it.</summary>
-        public void Rebind(SettingsRegistry settings)
+        /// <summary>After a load, the simulation (and its SettingsRegistry/MapModule) is a new instance; point the camera at it.</summary>
+        public void Rebind(SettingsRegistry settings, MapModule mapModule)
         {
             _settings = settings;
+            _mapModule = mapModule;
+        }
+
+        /// <summary>Moves the camera to a world position directly (the Map cheat's "go to" fields and corner/center buttons), clamped to the world's edges like any other pan.</summary>
+        public void SetFocusPoint(float worldX, float worldZ)
+        {
+            (double clampedX, double clampedZ) = _mapModule.ClampToWorld(worldX, worldZ);
+            _focusPoint.x = (float)clampedX;
+            _focusPoint.z = (float)clampedZ;
+
+            _floatingOrigin.CheckAndShift(_focusPoint);
+            ApplyTransform();
         }
 
         private void Update()
@@ -123,8 +145,12 @@ namespace TheEmptying.Presentation.World
                 _yaw += mouseDelta.x * dragSensitivity;
             }
 
-            _focusPoint.x = Mathf.Clamp(_focusPoint.x, 0f, _groundWidthMeters);
-            _focusPoint.z = Mathf.Clamp(_focusPoint.z, 0f, _groundDepthMeters);
+            (double clampedX, double clampedZ) = _mapModule.ClampToWorld(_focusPoint.x, _focusPoint.z);
+            _focusPoint.x = (float)clampedX;
+            _focusPoint.z = (float)clampedZ;
+
+            // R6: keep the camera near the rendering origin so nothing jitters anywhere on a 15 km map. _focusPoint itself is never shifted - only the Transform ApplyTransform computes below is.
+            _floatingOrigin.CheckAndShift(_focusPoint);
 
             ApplyTransform();
         }
@@ -167,9 +193,10 @@ namespace TheEmptying.Presentation.World
 
             Quaternion yawRotation = Quaternion.Euler(0f, _yaw, 0f);
             Vector3 back = yawRotation * Vector3.back;
-            Vector3 position = _focusPoint + back * horizontalDistance + Vector3.up * _height;
+            Vector3 worldPosition = _focusPoint + back * horizontalDistance + Vector3.up * _height;
+            Vector3 renderPosition = _floatingOrigin.WorldToRender(worldPosition);
 
-            transform.SetPositionAndRotation(position, Quaternion.Euler(PitchAngleDegrees, _yaw, 0f));
+            transform.SetPositionAndRotation(renderPosition, Quaternion.Euler(PitchAngleDegrees, _yaw, 0f));
         }
     }
 }
