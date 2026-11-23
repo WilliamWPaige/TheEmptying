@@ -250,6 +250,26 @@
             "maximum": 100,
             "category": "People",
             "description": "TEMPORARY placeholder (R10). How many of a person's most recent finished actions are kept for the info window."
+        },
+        {
+            "id": "setting.people.keep_exit_interval_min_seconds",
+            "label": "Keep exit interval min",
+            "valueType": "Number",
+            "default": 3,
+            "minimum": 0.1,
+            "maximum": 300,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R11). The shortest the wait between two people leaving the keep can roll, in real seconds at 1x game speed."
+        },
+        {
+            "id": "setting.people.keep_exit_interval_max_seconds",
+            "label": "Keep exit interval max",
+            "valueType": "Number",
+            "default": 5,
+            "minimum": 0.1,
+            "maximum": 300,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R11). The longest the wait between two people leaving the keep can roll, in real seconds at 1x game speed."
         }
     ]
 }

@@ -11,8 +11,10 @@ using TheEmptying.Core.Rules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
+using TheEmptying.Presentation.Buildings;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.DevTools;
 using TheEmptying.Presentation.Menus;
@@ -23,6 +25,7 @@ using TheEmptying.Presentation.World;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
+using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation
 {
@@ -86,6 +89,14 @@ namespace TheEmptying.Presentation
         private PeopleModule _peopleModule;
         private PersonPresenter _personPresenter;
         private WorldSelectionPresenter _worldSelection;
+        private BuildingsModule _buildingsModule;
+        private BuildingPresenter _buildingPresenter;
+
+        /// <summary>R11: only set before founding; destroyed for good once the kingdom is founded.</summary>
+        private StartingSiteMarkerPresenter _siteMarker;
+        private FoundingPopupPresenter _foundingPopup;
+        private double _startingSiteWorldX;
+        private double _startingSiteWorldZ;
 
         private readonly CheatMenuRegistry _cheatMenu = new CheatMenuRegistry();
         private DebugWindowPresenter _debugWindow;
@@ -170,6 +181,8 @@ namespace TheEmptying.Presentation
             BuildWorld();
             BuildDebugWindow();
             BuildEscapeMenu();
+            BuildFoundingPopup();
+            SetupNewGameBeforeFounding();
             BuildCheatMenu();
             _debugWindow.RebuildCheatsStructure();
             LogAndClearAnyStartupFocus();
@@ -327,6 +340,7 @@ namespace TheEmptying.Presentation
             (Simulation simulation, StartupReport report) = SimulationBuilder.Build(FixedWorldSeed, sources, modules, ErrorMode.Development, logSink: this, contentAssets: contentAssets, contentAssetProblems: contentAssetProblems);
             _simulation = simulation;
             _mapModule = modules.OfType<MapModule>().First();
+            _buildingsModule = modules.OfType<BuildingsModule>().First();
             _peopleModule = modules.OfType<PeopleModule>().First();
 
             // The closure reads _simulation live, so it keeps working after a load swaps the field.
@@ -384,14 +398,19 @@ namespace TheEmptying.Presentation
             _personPresenter = gameObject.AddComponent<PersonPresenter>();
             _personPresenter.Initialize(_peopleModule, _mapModule, _floatingOrigin, _worldMapView);
 
+            _buildingPresenter = gameObject.AddComponent<BuildingPresenter>();
+            _buildingPresenter.Initialize(_floatingOrigin);
+
             _worldSelection = gameObject.AddComponent<WorldSelectionPresenter>();
             _worldSelection.Initialize(
                 _peopleModule,
                 _mapModule,
+                _buildingsModule,
                 _simulation.Content,
                 _floatingOrigin,
                 _cameraController,
                 _personPresenter,
+                _buildingPresenter,
                 _worldMapView.Decorations,
                 camera,
                 _uiDocument.rootVisualElement);
@@ -478,6 +497,97 @@ namespace TheEmptying.Presentation
             _escapeMenu.Initialize(_uiDocument.rootVisualElement, this, _debugWindow, _worldSelection);
         }
 
+        /// <summary>R11: "Found your kingdom here?" - opened by clicking the starting site marker.</summary>
+        private void BuildFoundingPopup()
+        {
+            _foundingPopup = new FoundingPopupPresenter();
+            _foundingPopup.Initialize(_uiDocument.rootVisualElement, HandleFoundingYes);
+        }
+
+        /// <summary>R11: a new game always starts before founding - shows the marker at the one starting site, pauses, and centers the camera on it. Not called after a load; Load has its own equivalent (ShowSiteMarkerIfNotFounded).</summary>
+        private void SetupNewGameBeforeFounding()
+        {
+            BuildSiteMarker();
+            _paused = true;
+            RefreshHud();
+        }
+
+        private void BuildSiteMarker()
+        {
+            List<StartingSiteDefinition> sites = BuiltInContentTypes.StartingSites(_simulation.Content);
+            if (sites.Count == 0)
+            {
+                Debug.LogError("[TheEmptying] No starting site declared.");
+                return;
+            }
+
+            StartingSiteDefinition site = sites[0];
+            _startingSiteWorldX = _mapModule.WorldWidthMeters * site.FractionX;
+            _startingSiteWorldZ = _mapModule.WorldDepthMeters * site.FractionZ;
+
+            _siteMarker = new GameObject().AddComponent<StartingSiteMarkerPresenter>();
+            _siteMarker.Initialize(_floatingOrigin, _startingSiteWorldX, _startingSiteWorldZ);
+
+            _worldSelection.SiteMarker = _siteMarker;
+            _worldSelection.OnSiteMarkerClicked = () => _foundingPopup.Open();
+
+            _cameraController.SetFocusPoint((float)_startingSiteWorldX, (float)_startingSiteWorldZ);
+        }
+
+        /// <summary>Loaded games only: the marker is Presentation-only (never saved), so it's rebuilt fresh after every load whenever the loaded game hasn't been founded yet.</summary>
+        private void ShowSiteMarkerIfNotFounded()
+        {
+            if (_siteMarker != null)
+            {
+                Destroy(_siteMarker.gameObject);
+                _siteMarker = null;
+            }
+
+            _worldSelection.SiteMarker = null;
+            _worldSelection.OnSiteMarkerClicked = null;
+
+            if (!_buildingsModule.IsFounded)
+            {
+                BuildSiteMarker();
+            }
+        }
+
+        /// <summary>
+        /// R11: places the keep on the starting site, clears whatever map
+        /// placements it covers, spawns the 9 founders inside it, draws
+        /// it, removes the marker for good and unpauses.
+        /// </summary>
+        private void HandleFoundingYes()
+        {
+            if (!_simulation.Content.TryGet(BuiltInContentTypes.BuildingTypeName, BuildingsModule.KeepContentId, out ContentEntry entry) || !(entry.Definition is BuildingContent keepContent))
+            {
+                Debug.LogError("[TheEmptying] building.keep content not found; cannot found the kingdom.");
+                return;
+            }
+
+            EntityId keepId = _buildingsModule.PlaceBuilding(BuildingsModule.KeepContentId, _startingSiteWorldX, _startingSiteWorldZ, keepContent.FootprintWidth, keepContent.FootprintDepth);
+
+            if (_buildingsModule.TryGetBuilding(keepId, out BuildingState keep))
+            {
+                var maxExclusive = new CellCoord(keep.MinCell.X + keep.FootprintWidth, keep.MinCell.Z + keep.FootprintDepth);
+                _mapModule.RemovePlacementsOverlapping(keep.MinCell, maxExclusive);
+            }
+
+            _peopleModule.SpawnFoundersInside(keepId);
+            _buildingPresenter.Rebuild(_buildingsModule);
+
+            if (_siteMarker != null)
+            {
+                Destroy(_siteMarker.gameObject);
+                _siteMarker = null;
+            }
+
+            _worldSelection.SiteMarker = null;
+            _worldSelection.OnSiteMarkerClicked = null;
+
+            SetPaused(false);
+        }
+
         #endregion
 
         #region Input
@@ -556,6 +666,12 @@ namespace TheEmptying.Presentation
                 return;
             }
 
+            if (_foundingPopup != null && _foundingPopup.IsOpen)
+            {
+                _foundingPopup.HandleEscapePressed();
+                return;
+            }
+
             if (_worldSelection != null && _worldSelection.IsOpen)
             {
                 _worldSelection.HandleEscapePressed();
@@ -578,7 +694,7 @@ namespace TheEmptying.Presentation
                 return;
             }
 
-            bool shouldSuspend = (_debugWindow != null && _debugWindow.IsOpen) || (_escapeMenu != null && _escapeMenu.IsOpen);
+            bool shouldSuspend = (_debugWindow != null && _debugWindow.IsOpen) || (_escapeMenu != null && _escapeMenu.IsOpen) || (_foundingPopup != null && _foundingPopup.IsOpen);
             _cameraController.InputSuspended = shouldSuspend;
         }
 
@@ -985,12 +1101,15 @@ namespace TheEmptying.Presentation
 
                 _simulation = loaded;
                 _mapModule = modules.OfType<MapModule>().First();
+                _buildingsModule = modules.OfType<BuildingsModule>().First();
                 _peopleModule = modules.OfType<PeopleModule>().First();
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
                 _worldMapView?.Rebind(_mapModule, _simulation.Settings);
                 _personPresenter?.Rebind(_peopleModule, _mapModule);
-                _worldSelection?.Rebind(_peopleModule, _mapModule, _simulation.Content);
+                _worldSelection?.Rebind(_peopleModule, _mapModule, _buildingsModule, _simulation.Content);
+                _buildingPresenter?.Rebuild(_buildingsModule);
+                ShowSiteMarkerIfNotFounded();
                 BuildCheatMenu();
                 _debugWindow?.RebuildCheatsStructure();
 

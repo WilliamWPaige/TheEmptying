@@ -8,16 +8,20 @@ using TheEmptying.Core.Randomness;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Scheduling;
 using TheEmptying.Core.Timekeeping;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 
 namespace TheEmptying.Modules.People
 {
     /// <summary>
     /// People (R7: entity and world position; R8: identity and stats; R10:
-    /// actions, real-time walking, idle milling, thoughts and history).
-    /// Depends on Map, to find a free cell (not on a tree, stone or mound,
-    /// and not already held by another person) to stand or walk a person
-    /// on.
+    /// actions, real-time walking, idle milling, thoughts and history;
+    /// R11: nobody exists until the kingdom is founded, after which the 9
+    /// founders start inside the keep and come out one at a time).
+    /// Depends on Map (to find a free cell - not on a tree, stone, mound
+    /// or building, and not already held by another person - to stand or
+    /// walk a person on) and on Buildings (to know which cells a building
+    /// blocks, and to release people from one at its door).
     /// </summary>
     public sealed class PeopleModule : IModule, ISaveableModule
     {
@@ -62,6 +66,12 @@ namespace TheEmptying.Modules.People
         /// <summary>R10: how many of a person's most recent finished actions are kept for the info window (TEMPORARY placeholder).</summary>
         public const string ActionHistoryCountSettingId = "setting.people.action_history_count";
 
+        /// <summary>R11: the shortest the wait between two people leaving the keep can roll, in real seconds at 1x (TEMPORARY placeholder).</summary>
+        public const string KeepExitIntervalMinSecondsSettingId = "setting.people.keep_exit_interval_min_seconds";
+
+        /// <summary>R11: the longest the wait between two people leaving the keep can roll, in real seconds at 1x (TEMPORARY placeholder).</summary>
+        public const string KeepExitIntervalMaxSecondsSettingId = "setting.people.keep_exit_interval_max_seconds";
+
         /// <summary>Owned by time_settings.json, not by any module - the same real-time-to-tick conversion the presentation layer's tick rate uses.</summary>
         private const string RealSecondsPerDaySettingId = "setting.time.real_seconds_per_day";
 
@@ -85,6 +95,7 @@ namespace TheEmptying.Modules.People
         private const int WanderTargetAttempts = 20;
 
         private readonly MapModule _mapModule;
+        private readonly BuildingsModule _buildingsModule;
         private EntityRegistry _entities;
         private SettingsRegistry _settings;
         private RandomService _randomService;
@@ -92,18 +103,22 @@ namespace TheEmptying.Modules.People
         private ModuleContext _context;
         private EntityTable<PersonState> _people;
 
-        /// <summary>The one cell each reserving person currently holds - their standing cell while Idle, or the cell they're walking to while Walk. Rebuilt from each person's own ReservedCell on load.</summary>
+        /// <summary>The one cell each reserving person currently holds - their standing cell while Idle, or the cell they're walking to while Walk. People waiting InsideBuilding hold none. Rebuilt from each person's own ReservedCell on load.</summary>
         private readonly Dictionary<CellCoord, EntityId> _reservedCells = new Dictionary<CellCoord, EntityId>();
 
-        public PeopleModule(MapModule mapModule)
+        /// <summary>R11: the tick the next person waiting inside a building should try to come out. Meaningless (and never checked) while nobody is inside.</summary>
+        private long _nextExitTick;
+
+        public PeopleModule(MapModule mapModule, BuildingsModule buildingsModule)
         {
             _mapModule = mapModule ?? throw new ArgumentNullException(nameof(mapModule));
+            _buildingsModule = buildingsModule ?? throw new ArgumentNullException(nameof(buildingsModule));
         }
 
         public string Id => ModuleId;
         public int Version => 1;
-        public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId };
-        public int SectionVersion => 3;
+        public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId };
+        public int SectionVersion => 4;
 
         /// <summary>Every current person's Id and state, in ascending entity index order.</summary>
         public IEnumerable<KeyValuePair<EntityId, PersonState>> People => _people.Rows();
@@ -121,10 +136,7 @@ namespace TheEmptying.Modules.People
 
             context.RegisterSystem(new PersonActionSystem(this), interval: 1, offset: 0, order: 0);
 
-            if (!context.IsLoading)
-            {
-                SpawnFounders(context.CurrentTick);
-            }
+            // R11: a new game starts with nobody on the map - people exist only once the kingdom is founded (see SpawnFoundersInside), whether this is a new game or a load.
         }
 
         public void Shutdown()
@@ -172,19 +184,55 @@ namespace TheEmptying.Modules.People
             }
         }
 
-        private void SpawnFounders(long tick)
+        /// <summary>
+        /// R11: founding only. Rolls the 9 founders (Monarch, Advisor, then
+        /// Founders - exactly as R8 always has) and creates them all
+        /// waiting inside the given building, not drawn, with the thought
+        /// "Waiting to head out." Starts the keep-exit timer so they come
+        /// out one at a time afterward.
+        /// </summary>
+        public void SpawnFoundersInside(EntityId buildingId)
         {
-            int count = (int)_settings.Get(FounderCountSettingId);
-            CellCoord center = _mapModule.WorldToCell(_mapModule.WorldWidthMeters * 0.5, _mapModule.WorldDepthMeters * 0.5);
-            List<CellCoord> cells = FindFreeCells(center, count, FounderSpacingCells);
+            if (!_buildingsModule.TryGetBuilding(buildingId, out BuildingState building))
+            {
+                return;
+            }
 
+            long tick = _context.CurrentTick;
+            int count = (int)_settings.Get(FounderCountSettingId);
             SimRandom random = _randomService.GetStream(RollsStreamName);
 
-            for (int i = 0; i < cells.Count; i++)
+            for (int i = 0; i < count; i++)
             {
                 PersonRole role = i == 0 ? PersonRole.Monarch : i == 1 ? PersonRole.Advisor : PersonRole.Founder;
-                PersonState state = RollPerson(random, role, cells[i]);
-                SpawnPersonWithState(state, tick);
+                PersonState state = RollPerson(random, role, building.DoorCell);
+                state.ReservedCell = building.DoorCell;
+                state.CurrentAction = new PersonAction
+                {
+                    Kind = ActionKind.InsideBuilding,
+                    Thought = "Waiting to head out.",
+                    StartTick = tick,
+                    BuildingId = buildingId,
+                    CurrentTickForProgress = tick
+                };
+
+                EntityId id = _entities.Create(EntityKind.Person);
+                _people.Add(id, state);
+            }
+
+            RollNextExitTick(tick);
+        }
+
+        /// <summary>Every person currently waiting inside the given building, in ascending entity order - for the keep's info window.</summary>
+        public IEnumerable<PersonState> GetPeopleInside(EntityId buildingId)
+        {
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.Rows())
+            {
+                PersonAction action = row.Value.CurrentAction;
+                if (action != null && action.Kind == ActionKind.InsideBuilding && action.BuildingId == buildingId)
+                {
+                    yield return row.Value;
+                }
             }
         }
 
@@ -381,15 +429,21 @@ namespace TheEmptying.Modules.People
 
         #region Actions, movement and idle milling (R10)
 
-        /// <summary>Free of any map placement, and not reserved by a different person; a person's own reservation never blocks themselves.</summary>
+        /// <summary>Free of any map placement and of any building's footprint (its door cell excepted), and not reserved by a different person; a person's own reservation never blocks themselves.</summary>
         private bool IsCellFreeForPerson(CellCoord cell, EntityId? selfId = null)
         {
-            if (!_mapModule.IsCellFree(cell))
+            if (!_mapModule.IsCellFree(cell) || _buildingsModule.IsCellBlocked(cell))
             {
                 return false;
             }
 
             return !_reservedCells.TryGetValue(cell, out EntityId owner) || owner == selfId;
+        }
+
+        /// <summary>What a path may step on: free of map placements and of any building's blocking cells (its door cell excepted) - never blocked by another person, who may be passed through.</summary>
+        private bool IsWalkable(CellCoord cell)
+        {
+            return _mapModule.IsCellFree(cell) && !_buildingsModule.IsCellBlocked(cell);
         }
 
         /// <summary>How many meters a Walk action covers in one tick at 1x - a tick is always the same slice of in-game time, so running more ticks per real second (2x, 3x) is the entire "scaled by game speed" effect; this value itself never changes with speed.</summary>
@@ -415,6 +469,69 @@ namespace TheEmptying.Modules.People
             {
                 ProcessPersonAction(row.Key, row.Value, tick, metersPerTick, cellSizeMeters);
             }
+
+            UpdateKeepExits(tick);
+        }
+
+        /// <summary>
+        /// R11: once due, releases the first person still waiting inside a
+        /// building (ascending entity order - Monarch, Advisor, then
+        /// Founders), as long as that building's door cell is currently
+        /// free; otherwise tries again next tick at the same due time. A
+        /// fresh interval is rolled only once someone actually comes out.
+        /// </summary>
+        private void UpdateKeepExits(long tick)
+        {
+            if (tick < _nextExitTick)
+            {
+                return;
+            }
+
+            EntityId waitingId = default;
+            PersonState waitingPerson = null;
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.Rows())
+            {
+                if (row.Value.CurrentAction?.Kind == ActionKind.InsideBuilding)
+                {
+                    waitingId = row.Key;
+                    waitingPerson = row.Value;
+                    break;
+                }
+            }
+
+            if (waitingPerson == null)
+            {
+                return;
+            }
+
+            if (!_buildingsModule.TryGetBuilding(waitingPerson.CurrentAction.BuildingId, out BuildingState building) ||
+                !IsCellFreeForPerson(building.DoorCell, waitingId))
+            {
+                return;
+            }
+
+            PersonAction insideAction = waitingPerson.CurrentAction;
+            PushHistory(waitingPerson, new PersonActionHistoryEntry(insideAction.Kind, insideAction.Thought, insideAction.StartTick, tick - insideAction.StartTick));
+
+            _reservedCells[building.DoorCell] = waitingId;
+            waitingPerson.ReservedCell = building.DoorCell;
+            StartIdle(waitingId, waitingPerson, tick, "Outside at last.");
+
+            RollNextExitTick(tick);
+        }
+
+        private void RollNextExitTick(long tick)
+        {
+            SimRandom random = _randomService.GetStream(ActionsStreamName);
+            double minSeconds = _settings.Get(KeepExitIntervalMinSecondsSettingId);
+            double maxSeconds = _settings.Get(KeepExitIntervalMaxSecondsSettingId);
+            double realSecondsPerDay = _settings.Get(RealSecondsPerDaySettingId);
+
+            double intervalSeconds = maxSeconds <= minSeconds ? minSeconds : minSeconds + random.NextFloat() * (maxSeconds - minSeconds);
+            double ticksPerSecondAt1x = realSecondsPerDay > 0 ? CalendarConstants.TicksPerDay / realSecondsPerDay : 0;
+            long intervalTicks = Math.Max(1, (long)Math.Round(intervalSeconds * ticksPerSecondAt1x));
+
+            _nextExitTick = tick + intervalTicks;
         }
 
         private void ProcessPersonAction(EntityId id, PersonState person, long tick, double metersPerTick, double cellSizeMeters)
@@ -583,7 +700,7 @@ namespace TheEmptying.Modules.People
             double maxDistanceMeters = _settings.Get(PathfindingMaxDistanceMetersSettingId);
             double cellSize = _mapModule.CellSizeMeters;
 
-            List<CellCoord> path = CellPathFinder.FindPath(startCell, targetCell, maxDistanceMeters, cellSize, _mapModule.IsCellFree);
+            List<CellCoord> path = CellPathFinder.FindPath(startCell, targetCell, maxDistanceMeters, cellSize, IsWalkable);
             if (path == null || path.Count == 0)
             {
                 BeginFailedWalk(person, "Couldn't find a way there.", tick);
@@ -663,6 +780,8 @@ namespace TheEmptying.Modules.People
 
         public void Write(SaveWriter writer)
         {
+            writer.WriteLong(_nextExitTick);
+
             writer.WriteInt(_people.Count);
             foreach (KeyValuePair<EntityId, PersonState> row in _people.Rows())
             {
@@ -689,6 +808,8 @@ namespace TheEmptying.Modules.People
 
         public void Read(SaveReader reader, int savedVersion)
         {
+            _nextExitTick = reader.ReadLong();
+
             int count = reader.ReadInt();
             for (int i = 0; i < count; i++)
             {
@@ -713,7 +834,12 @@ namespace TheEmptying.Modules.People
                 ReadHistory(reader, state.History);
 
                 _people.Add(id, state);
-                _reservedCells[reservedCell] = id;
+
+                // A person waiting InsideBuilding holds no real reservation (see SpawnFoundersInside) - several of them share the same ReservedCell (the door), so registering it here for every one of them would hand the door's reservation to whichever was read last, blocking everyone else from ever coming out.
+                if (state.CurrentAction.Kind != ActionKind.InsideBuilding)
+                {
+                    _reservedCells[reservedCell] = id;
+                }
             }
         }
 
@@ -735,6 +861,7 @@ namespace TheEmptying.Modules.People
             writer.WriteInt(action.NextPathIndex);
             writer.WriteDouble(action.DistanceTraveledMeters);
             writer.WriteDouble(action.TotalDistanceMeters);
+            writer.WriteEntityId(action.BuildingId);
         }
 
         private static PersonAction ReadAction(SaveReader reader)
@@ -759,6 +886,7 @@ namespace TheEmptying.Modules.People
             action.NextPathIndex = reader.ReadInt();
             action.DistanceTraveledMeters = reader.ReadDouble();
             action.TotalDistanceMeters = reader.ReadDouble();
+            action.BuildingId = reader.ReadEntityId();
             return action;
         }
 

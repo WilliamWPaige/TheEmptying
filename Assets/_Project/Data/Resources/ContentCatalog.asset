@@ -18,7 +18,8 @@ MonoBehaviour:
   - {fileID: 11400000, guid: ef1e360b11b98074facb9c90f2eef80f, type: 2}
   - {fileID: 11400000, guid: dc07297568609f54399d6fc74dae05c7, type: 2}
   - {fileID: 11400000, guid: a487ead54e5aa16488b24b85b9ee2b55, type: 2}
-  buildings: []
+  buildings:
+  - {fileID: 11400000, guid: bc343edc3474e104eb796e72892e41f7, type: 2}
   items:
   - {fileID: 11400000, guid: 6e0c34117d40d1240b572c19da285a51, type: 2}
   - {fileID: 11400000, guid: 466963fdf9abbd54aaf71b29bb28f7f0, type: 2}

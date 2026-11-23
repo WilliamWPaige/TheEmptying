@@ -1,0 +1,10 @@
+{
+    "type": "starting_site",
+    "items": [
+        {
+            "id": "site.center",
+            "fractionX": 0.5,
+            "fractionZ": 0.5
+        }
+    ]
+}

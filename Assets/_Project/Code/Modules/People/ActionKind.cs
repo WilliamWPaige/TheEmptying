@@ -9,6 +9,9 @@ namespace TheEmptying.Modules.People
     public enum ActionKind
     {
         Idle,
-        Walk
+        Walk,
+
+        /// <summary>R11: waiting inside a building (the keep, at founding) for their turn to head out - not drawn, and never ends on its own; only the keep-exit timer ends it.</summary>
+        InsideBuilding
     }
 }

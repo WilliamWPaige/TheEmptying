@@ -243,6 +243,49 @@ namespace TheEmptying.Tests.EditMode.Modules
             }
         }
 
+        /// <summary>R11: founding removes whatever a building's footprint overlaps, leaves everything else untouched, and the removal (not just the surviving placements' values) stays exactly as it was after a save and load.</summary>
+        [Test]
+        public void RemovePlacementsOverlapping_RemovesOnlyTheOverlappingPlacements_AndStaysRemovedAfterSaveAndLoad()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules);
+            var map = (MapModule)modules.First(m => m is MapModule);
+
+            var coord = new ChunkCoord(5, 9);
+            List<ChunkPlacement> before = map.GetOrCreateChunk(coord).Placements.ToList();
+            Assert.Greater(before.Count, 0);
+
+            ChunkPlacement target = before[0];
+            var min = new CellCoord(target.Cell.X - 1, target.Cell.Z - 1);
+            var maxExclusive = new CellCoord(target.Cell.X + 2, target.Cell.Z + 2);
+
+            map.RemovePlacementsOverlapping(min, maxExclusive);
+
+            List<ChunkPlacement> afterRemoval = map.GetOrCreateChunk(coord).Placements.ToList();
+            Assert.IsFalse(afterRemoval.Any(p => p.Cell == target.Cell && p.Kind == target.Kind), "The overlapping placement should be gone.");
+
+            List<ChunkPlacement> expectedSurvivors = before.Where(p => !(p.Cell == target.Cell && p.Kind == target.Kind)).ToList();
+            CollectionAssert.AreEquivalent(
+                expectedSurvivors.Select(p => (p.Kind, p.Cell)),
+                afterRemoval.Select(p => (p.Kind, p.Cell)),
+                "Only the overlapping placement should have been removed.");
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = 0 }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            GameSave.Load(stream, new[] { core.FolderPath }, loadedModules);
+            var loadedMap = (MapModule)loadedModules.First(m => m is MapModule);
+
+            List<ChunkPlacement> afterLoad = loadedMap.GetOrCreateChunk(coord).Placements.ToList();
+            CollectionAssert.AreEquivalent(
+                afterRemoval.Select(p => (p.Kind, p.Cell)),
+                afterLoad.Select(p => (p.Kind, p.Cell)),
+                "The removal should still hold after a save and load.");
+        }
+
         [Test]
         public void GetOrCreateChunk_PlacementsNeverOverlap()
         {

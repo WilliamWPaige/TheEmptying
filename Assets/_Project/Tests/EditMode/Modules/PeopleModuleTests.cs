@@ -7,6 +7,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
 using TheEmptying.Presentation;
@@ -16,11 +17,12 @@ using EntityId = TheEmptying.Core.Entities.EntityId;
 namespace TheEmptying.Tests.EditMode.Modules
 {
     /// <summary>
-    /// R7: new-game founder placement (free cells, spaced apart). R8:
+    /// R7/R11: founder placement (now inside the keep, one at a time out
+    /// the door, instead of spread on the map at new-game time). R8:
     /// identity and stats - deterministic by world seed, in range per
     /// role, exactly one Monarch and one Advisor, and the save/load round
-    /// trip. R10: the new action/movement settings' defaults, that the
-    /// same seed gives the same action choices, and that action state
+    /// trip. R10: the action/movement settings' defaults, that the same
+    /// seed gives the same action choices, and that action state
     /// (including history) survives a save and load round trip - all
     /// against the real shipped content.
     /// </summary>
@@ -31,27 +33,77 @@ namespace TheEmptying.Tests.EditMode.Modules
             "skill.logging", "skill.quarrying", "skill.farming", "skill.foraging", "skill.hauling", "skill.construction"
         };
 
-        private static (Simulation Simulation, MapModule Map, PeopleModule People) BuildNewGame(TempCoreContentCopy core, ulong seed = 1)
+        private static (Simulation Simulation, MapModule Map, BuildingsModule Buildings, PeopleModule People) BuildNewGame(TempCoreContentCopy core, ulong seed = 1)
         {
             IModule[] modules = ModuleCatalog.CreateModules();
             (Simulation simulation, StartupReport _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
-            return (simulation, (MapModule)modules.First(m => m is MapModule), (PeopleModule)modules.First(m => m is PeopleModule));
+            return (
+                simulation,
+                (MapModule)modules.First(m => m is MapModule),
+                (BuildingsModule)modules.First(m => m is BuildingsModule),
+                (PeopleModule)modules.First(m => m is PeopleModule));
+        }
+
+        /// <summary>Places the keep at the map center and spawns the 9 founders inside it - the same sequence the founding popup's Yes triggers.</summary>
+        private static EntityId FoundKingdom(MapModule map, BuildingsModule buildings, PeopleModule people)
+        {
+            double centerX = map.WorldWidthMeters * 0.5;
+            double centerZ = map.WorldDepthMeters * 0.5;
+            EntityId keepId = buildings.PlaceBuilding(BuildingsModule.KeepContentId, centerX, centerZ, 12, 12);
+            people.SpawnFoundersInside(keepId);
+            return keepId;
+        }
+
+        /// <summary>Steps the simulation until nobody is left waiting inside a building, or maxTicks is reached.</summary>
+        private static void RunUntilEveryoneHasLeftTheKeep(Simulation simulation, PeopleModule people, int maxTicks = 5000)
+        {
+            for (int i = 0; i < maxTicks; i++)
+            {
+                if (people.People.All(r => r.Value.CurrentAction.Kind != ActionKind.InsideBuilding))
+                {
+                    return;
+                }
+
+                simulation.Step();
+            }
+
+            Assert.Fail("Not everyone left the keep within the tick budget.");
         }
 
         [Test]
-        public void NewGame_SpawnsTheConfiguredFounderCount()
+        public void NewGame_StartsWithNoPeople()
         {
             using var core = new TempCoreContentCopy();
-            (_, _, PeopleModule people) = BuildNewGame(core);
+            (_, _, _, PeopleModule people) = BuildNewGame(core);
+
+            Assert.AreEqual(0, people.People.Count());
+        }
+
+        [Test]
+        public void Founding_SpawnsTheConfiguredFounderCount_AllWaitingInsideTheKeep()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            EntityId keepId = FoundKingdom(map, buildings, people);
 
             Assert.AreEqual(9, people.People.Count());
+            foreach (PersonState person in people.People.Select(r => r.Value))
+            {
+                Assert.AreEqual(ActionKind.InsideBuilding, person.CurrentAction.Kind);
+                Assert.AreEqual(keepId, person.CurrentAction.BuildingId);
+                Assert.AreEqual("Waiting to head out.", person.CurrentAction.Thought);
+            }
+
+            Assert.AreEqual(9, people.GetPeopleInside(keepId).Count());
         }
 
         [Test]
-        public void NewGame_EveryFounder_IsOnAFreeCell()
+        public void AfterEveryoneLeavesTheKeep_EveryFounder_IsOnAFreeCell()
         {
             using var core = new TempCoreContentCopy();
-            (_, MapModule map, PeopleModule people) = BuildNewGame(core);
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
+            RunUntilEveryoneHasLeftTheKeep(simulation, people);
 
             foreach (KeyValuePair<EntityId, PersonState> row in people.People)
             {
@@ -60,28 +112,43 @@ namespace TheEmptying.Tests.EditMode.Modules
             }
         }
 
+        /// <summary>
+        /// Checked against ReservedCell, not instantaneous WorldX/WorldZ -
+        /// "walking people may pass through each other" (R10) means two
+        /// people's exact positions can coincide for a moment while one is
+        /// mid-step and the other has just arrived or just set off; the
+        /// real "no stacking" guarantee is that no two people ever hold
+        /// the same reservation at once.
+        /// </summary>
         [Test]
-        public void NewGame_NoTwoFoundersShareACell()
+        public void AfterEveryoneLeavesTheKeep_NoTwoPeopleEverHoldTheSameReservedCell()
         {
             using var core = new TempCoreContentCopy();
-            (_, MapModule map, PeopleModule people) = BuildNewGame(core);
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
+            RunUntilEveryoneHasLeftTheKeep(simulation, people);
 
-            List<CellCoord> cells = people.People.Select(row => map.WorldToCell(row.Value.WorldX, row.Value.WorldZ)).ToList();
-
-            for (int i = 0; i < cells.Count; i++)
+            for (int i = 0; i < 500; i++)
             {
-                for (int j = i + 1; j < cells.Count; j++)
+                simulation.Step();
+
+                List<CellCoord> reserved = people.People.Select(row => row.Value.ReservedCell).ToList();
+                for (int a = 0; a < reserved.Count; a++)
                 {
-                    Assert.AreNotEqual(cells[i], cells[j], "Two founders share the same cell.");
+                    for (int b = a + 1; b < reserved.Count; b++)
+                    {
+                        Assert.AreNotEqual(reserved[a], reserved[b], $"tick {i}: two people both reserve {reserved[a]}.");
+                    }
                 }
             }
         }
 
         [Test]
-        public void NewGame_HasExactlyOneMonarchAndOneAdvisor()
+        public void Founding_HasExactlyOneMonarchAndOneAdvisor()
         {
             using var core = new TempCoreContentCopy();
-            (_, _, PeopleModule people) = BuildNewGame(core);
+            (_, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
 
             List<PersonState> all = people.People.Select(r => r.Value).ToList();
 
@@ -91,10 +158,11 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void NewGame_EveryRoll_IsInsideItsRoleRange()
+        public void Founding_EveryRoll_IsInsideItsRoleRange()
         {
             using var core = new TempCoreContentCopy();
-            (_, _, PeopleModule people) = BuildNewGame(core);
+            (_, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
 
             foreach (PersonState person in people.People.Select(r => r.Value))
             {
@@ -142,13 +210,15 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void NewGame_SameSeed_GivesTheSamePeopleAndStats()
+        public void Founding_SameSeed_GivesTheSamePeopleAndStats()
         {
             using var coreA = new TempCoreContentCopy();
             using var coreB = new TempCoreContentCopy();
 
-            (_, _, PeopleModule peopleA) = BuildNewGame(coreA, 42);
-            (_, _, PeopleModule peopleB) = BuildNewGame(coreB, 42);
+            (_, MapModule mapA, BuildingsModule buildingsA, PeopleModule peopleA) = BuildNewGame(coreA, 42);
+            (_, MapModule mapB, BuildingsModule buildingsB, PeopleModule peopleB) = BuildNewGame(coreB, 42);
+            FoundKingdom(mapA, buildingsA, peopleA);
+            FoundKingdom(mapB, buildingsB, peopleB);
 
             List<PersonState> listA = peopleA.People.Select(r => r.Value).ToList();
             List<PersonState> listB = peopleB.People.Select(r => r.Value).ToList();
@@ -161,15 +231,17 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void NewGame_SameSeed_GivesTheSameFirstActionChoices()
+        public void Founding_SameSeed_GivesTheSameFirstActionChoices()
         {
             using var coreA = new TempCoreContentCopy();
             using var coreB = new TempCoreContentCopy();
 
-            (Simulation simA, _, PeopleModule peopleA) = BuildNewGame(coreA, 7);
-            (Simulation simB, _, PeopleModule peopleB) = BuildNewGame(coreB, 7);
+            (Simulation simA, MapModule mapA, BuildingsModule buildingsA, PeopleModule peopleA) = BuildNewGame(coreA, 7);
+            (Simulation simB, MapModule mapB, BuildingsModule buildingsB, PeopleModule peopleB) = BuildNewGame(coreB, 7);
+            FoundKingdom(mapA, buildingsA, peopleA);
+            FoundKingdom(mapB, buildingsB, peopleB);
 
-            for (int i = 0; i < 100; i++)
+            for (int i = 0; i < 2000; i++)
             {
                 simA.Step();
                 simB.Step();
@@ -193,11 +265,13 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(PeopleModule.IdleWaitMaxSecondsSettingId, SettingValueType.Number, 20.0, 0.1, 300.0, "People")]
         [TestCase(PeopleModule.IdleWanderRadiusMetersSettingId, SettingValueType.Number, 8.0, 1.0, 100.0, "People")]
         [TestCase(PeopleModule.ActionHistoryCountSettingId, SettingValueType.Integer, 10.0, 1.0, 100.0, "People")]
+        [TestCase(PeopleModule.KeepExitIntervalMinSecondsSettingId, SettingValueType.Number, 3.0, 0.1, 300.0, "People")]
+        [TestCase(PeopleModule.KeepExitIntervalMaxSecondsSettingId, SettingValueType.Number, 5.0, 0.1, 300.0, "People")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
             using var core = new TempCoreContentCopy();
-            (Simulation simulation, _, _) = BuildNewGame(core);
+            (Simulation simulation, _, _, _) = BuildNewGame(core);
 
             Assert.IsTrue(simulation.Settings.TryGetDefinition(settingId, out SettingDefinition definition), $"Expected '{settingId}' to be declared.");
             Assert.AreEqual(expectedType, definition.ValueType);
@@ -212,7 +286,8 @@ namespace TheEmptying.Tests.EditMode.Modules
         public void SaveAndLoad_StatsSurviveTheRoundTrip()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation simulation, _, PeopleModule peopleBefore) = BuildNewGame(core);
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule peopleBefore) = BuildNewGame(core);
+            FoundKingdom(map, buildings, peopleBefore);
 
             List<(EntityId Id, PersonState State)> before = peopleBefore.People.Select(r => (r.Key, r.Value)).ToList();
             Assert.Greater(before.Count, 0);
@@ -235,20 +310,22 @@ namespace TheEmptying.Tests.EditMode.Modules
             }
         }
 
-        /// <summary>R10: a person's action state (kind, thought, progress-relevant fields, path, reserved cell, history) survives a save and load round trip exactly, and continuing the loaded game afterward matches continuing the original unbroken.</summary>
+        /// <summary>R10/R11: a founded game, with people still waiting inside the keep, survives a save and load round trip exactly (action state, history and the keep-exit timer alike), and continuing the loaded game afterward matches continuing the original unbroken.</summary>
         [Test]
-        public void SaveAndLoad_ActionStateSurvivesTheRoundTripAndKeepsMatchingAfterward()
+        public void SaveAndLoad_AFoundedGameWithPeopleStillInside_SurvivesTheRoundTripAndKeepsMatchingAfterward()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation simulation, _, PeopleModule peopleBefore) = BuildNewGame(core);
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule peopleBefore) = BuildNewGame(core);
+            FoundKingdom(map, buildings, peopleBefore);
 
-            for (int i = 0; i < 200; i++)
+            for (int i = 0; i < 10; i++)
             {
                 simulation.Step();
             }
 
             List<(EntityId Id, PersonState State)> before = peopleBefore.People.Select(r => (r.Key, r.Value)).ToList();
             Assert.Greater(before.Count, 0);
+            Assert.IsTrue(before.Any(p => p.State.CurrentAction.Kind == ActionKind.InsideBuilding), "Sanity check: someone should still be inside this early.");
 
             using var stream = new MemoryStream();
             GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = before.Count }, stream);
@@ -266,8 +343,8 @@ namespace TheEmptying.Tests.EditMode.Modules
                 AssertSameActionState(before[i].State, after[i].State);
             }
 
-            // Continuing the loaded game must match continuing the original, unbroken - including the world itself (a chunk already generated before the save must never regenerate differently after a load).
-            for (int i = 0; i < 200; i++)
+            // Continuing the loaded game (through the rest of everyone leaving the keep) must match continuing the original, unbroken.
+            for (int i = 0; i < 2000; i++)
             {
                 simulation.Step();
                 loaded.Step();
@@ -289,6 +366,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(x.StartTick, y.StartTick);
             Assert.AreEqual(x.DurationTicks, y.DurationTicks);
             Assert.AreEqual(x.TargetCell, y.TargetCell);
+            Assert.AreEqual(x.BuildingId, y.BuildingId);
             CollectionAssert.AreEqual(x.Path, y.Path);
             Assert.AreEqual(x.NextPathIndex, y.NextPathIndex);
             Assert.AreEqual(x.DistanceTraveledMeters, y.DistanceTraveledMeters);

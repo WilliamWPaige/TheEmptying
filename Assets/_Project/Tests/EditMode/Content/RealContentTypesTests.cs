@@ -25,7 +25,17 @@ namespace TheEmptying.Tests.EditMode.Content
             CollectionAssert.AreEquivalent(new[] { "unit.person" }, catalog.Units.Select(a => a.Id));
             CollectionAssert.AreEquivalent(new[] { "resource.tree", "resource.stone", "resource.grub_mound" }, catalog.ResourceNodes.Select(a => a.Id));
             CollectionAssert.AreEquivalent(new[] { "item.log", "item.stone", "item.grub" }, catalog.Items.Select(a => a.Id));
-            Assert.IsEmpty(catalog.Buildings);
+            CollectionAssert.AreEquivalent(new[] { "building.keep" }, catalog.Buildings.Select(a => a.Id));
+        }
+
+        [Test]
+        public void BuildingKeep_Has12x12Footprint()
+        {
+            ContentCatalog catalog = LoadCatalog();
+            BuildingAsset keep = catalog.Buildings.Single(a => a.Id == "building.keep");
+
+            Assert.AreEqual(12, keep.FootprintWidth);
+            Assert.AreEqual(12, keep.FootprintDepth);
         }
 
         [Test]
@@ -59,7 +69,8 @@ namespace TheEmptying.Tests.EditMode.Content
 
             IEnumerable<ContentAssetBase> all = catalog.Units.Cast<ContentAssetBase>()
                 .Concat(catalog.ResourceNodes.Cast<ContentAssetBase>())
-                .Concat(catalog.Items.Cast<ContentAssetBase>());
+                .Concat(catalog.Items.Cast<ContentAssetBase>())
+                .Concat(catalog.Buildings.Cast<ContentAssetBase>());
 
             foreach (ContentAssetBase asset in all)
             {
@@ -76,7 +87,7 @@ namespace TheEmptying.Tests.EditMode.Content
             List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog, problems);
 
             Assert.IsEmpty(problems);
-            Assert.AreEqual(7, definitions.Count);
+            Assert.AreEqual(8, definitions.Count);
         }
     }
 }

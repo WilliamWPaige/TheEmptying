@@ -3,7 +3,8 @@
     "rootNamespace": "TheEmptying.Modules.People",
     "references": [
         "TheEmptying.Core",
-        "TheEmptying.Modules.Map"
+        "TheEmptying.Modules.Map",
+        "TheEmptying.Modules.Buildings"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

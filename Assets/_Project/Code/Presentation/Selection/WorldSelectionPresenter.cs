@@ -1,4 +1,6 @@
+using System;
 using TheEmptying.Core.Content;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
 using TheEmptying.Presentation.Content;
@@ -8,24 +10,29 @@ using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 using UnityEngine.UIElements;
+using BuildingPresenter = TheEmptying.Presentation.Buildings.BuildingPresenter;
 using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation.Selection
 {
     /// <summary>
-    /// R8: the single click router for the map - a person or a resource
-    /// clicked becomes the selection, shown in the docked info window
-    /// with a highlight; clicking anything else (or losing the thing
-    /// that was selected) clears it. Clicks on UI never reach this.
+    /// R8: the single click router for the map - a person, a resource or
+    /// (R11) a building clicked becomes the selection, shown in the
+    /// docked info window with a highlight; clicking anything else (or
+    /// losing the thing that was selected) clears it. Clicks on UI never
+    /// reach this. R11 also checks the starting site marker first, while
+    /// it still exists.
     /// </summary>
     public sealed class WorldSelectionPresenter : MonoBehaviour
     {
         private PeopleModule _peopleModule;
         private MapModule _mapModule;
+        private BuildingsModule _buildingsModule;
         private ContentDatabase _content;
         private FloatingOrigin _floatingOrigin;
         private StrategyCameraController _cameraController;
         private PersonPresenter _personPresenter;
+        private BuildingPresenter _buildingPresenter;
         private TemporaryChunkDecorations _decorations;
         private Camera _camera;
         private VisualElement _uiRoot;
@@ -45,23 +52,33 @@ namespace TheEmptying.Presentation.Selection
         /// <summary>TEST TOOL (R10, never gameplay): while true, clicking the ground sends the selected person there instead of clearing the selection. Off by default.</summary>
         public bool ClickToSendModeEnabled { get; set; }
 
+        /// <summary>R11: the starting site's marker, while it still exists (set by GameBootstrap; cleared once the kingdom is founded, since it's gone for good).</summary>
+        public StartingSiteMarkerPresenter SiteMarker { get; set; }
+
+        /// <summary>R11: called when the starting site marker is clicked - GameBootstrap opens the founding popup.</summary>
+        public Action OnSiteMarkerClicked { get; set; }
+
         public void Initialize(
             PeopleModule peopleModule,
             MapModule mapModule,
+            BuildingsModule buildingsModule,
             ContentDatabase content,
             FloatingOrigin floatingOrigin,
             StrategyCameraController cameraController,
             PersonPresenter personPresenter,
+            BuildingPresenter buildingPresenter,
             TemporaryChunkDecorations decorations,
             Camera camera,
             VisualElement uiRoot)
         {
             _peopleModule = peopleModule;
             _mapModule = mapModule;
+            _buildingsModule = buildingsModule;
             _content = content;
             _floatingOrigin = floatingOrigin;
             _cameraController = cameraController;
             _personPresenter = personPresenter;
+            _buildingPresenter = buildingPresenter;
             _decorations = decorations;
             _camera = camera;
             _uiRoot = uiRoot;
@@ -71,10 +88,11 @@ namespace TheEmptying.Presentation.Selection
         }
 
         /// <summary>After a load, the simulation (and its modules) are new instances; the old selection no longer means anything.</summary>
-        public void Rebind(PeopleModule peopleModule, MapModule mapModule, ContentDatabase content)
+        public void Rebind(PeopleModule peopleModule, MapModule mapModule, BuildingsModule buildingsModule, ContentDatabase content)
         {
             _peopleModule = peopleModule;
             _mapModule = mapModule;
+            _buildingsModule = buildingsModule;
             _content = content;
             ClearSelection();
         }
@@ -154,6 +172,12 @@ namespace TheEmptying.Presentation.Selection
             Ray ray = _camera.ScreenPointToRay(mousePosition);
             if (Physics.Raycast(ray, out RaycastHit hit))
             {
+                if (SiteMarker != null && SiteMarker.IsPart(hit.collider.gameObject))
+                {
+                    OnSiteMarkerClicked?.Invoke();
+                    return;
+                }
+
                 if (_personPresenter.TryGetEntityForInstance(hit.collider.gameObject, out EntityId personId))
                 {
                     Select(new PersonSelectionTarget(_peopleModule, _content, personId));
@@ -169,10 +193,19 @@ namespace TheEmptying.Presentation.Selection
                         return;
                     }
                 }
+
+                if (_buildingPresenter != null && _buildingPresenter.TryGetBuildingForInstance(hit.collider.gameObject, out EntityId buildingId))
+                {
+                    Select(new BuildingSelectionTarget(_buildingsModule, _peopleModule, _content, buildingId));
+                    return;
+                }
+
+                // R11 PART5 fix: a hit that's neither the marker, a person, a resource nor a building (every shape prefab carries its own collider, so a click near but not exactly on one of them can still register a hit) must be treated the same as missing entirely for "Click to send" - otherwise it silently falls through to ClearSelection below and the tool does nothing.
             }
-            else if (ClickToSendModeEnabled && SelectedPersonId.HasValue)
+
+            if (ClickToSendModeEnabled && SelectedPersonId.HasValue)
             {
-                // TEST TOOL (R10): the ground has no collider (it's drawn, not raycast), so a miss here means the ground - the same ground-plane math MapCursorPresenter uses for its own highlight.
+                // TEST TOOL (R10/R11): the ground has no collider (it's drawn, not raycast), so this ground-plane math - the same MapCursorPresenter uses for its own highlight - is how "the ground" is found, whether Physics.Raycast missed outright or hit something unrecognized.
                 var groundPlane = new Plane(Vector3.up, Vector3.zero);
                 if (groundPlane.Raycast(ray, out float distance))
                 {

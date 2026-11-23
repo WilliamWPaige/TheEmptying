@@ -19,6 +19,7 @@ namespace TheEmptying.Core.Content
         public const string SkillDefinitionTypeName = "skill_definition";
         public const string AttributeDefinitionTypeName = "attribute_definition";
         public const string NameListTypeName = "name_list";
+        public const string StartingSiteTypeName = "starting_site";
 
         public static void RegisterAll(ContentTypeRegistry registry)
         {
@@ -33,6 +34,7 @@ namespace TheEmptying.Core.Content
             registry.Register(new ContentTypeDefinition(SkillDefinitionTypeName, typeof(SkillDefinition), ValidateSkillDefinition));
             registry.Register(new ContentTypeDefinition(AttributeDefinitionTypeName, typeof(AttributeDefinition), ValidateAttributeDefinition));
             registry.Register(new ContentTypeDefinition(NameListTypeName, typeof(NameListDefinition), ValidateNameList));
+            registry.Register(new ContentTypeDefinition(StartingSiteTypeName, typeof(StartingSiteDefinition), ValidateStartingSite));
         }
 
         /// <summary>Every loaded skill, in the order the data lists them (ListByType sorts by Id, so this re-sorts by the Order field instead).</summary>
@@ -66,6 +68,14 @@ namespace TheEmptying.Core.Content
             }
 
             return new List<string>();
+        }
+
+        /// <summary>Every loaded starting site. For now there is exactly one; later there are 3 or 4.</summary>
+        public static List<StartingSiteDefinition> StartingSites(ContentDatabase database)
+        {
+            return database.ListByType(StartingSiteTypeName)
+                .Select(e => (StartingSiteDefinition)e.Definition)
+                .ToList();
         }
 
         /// <summary>Registers every loaded event_definition content item into the EventDefinitionRegistry. The four calendar definitions stay registered in code.</summary>
@@ -236,6 +246,22 @@ namespace TheEmptying.Core.Content
             if (string.IsNullOrEmpty(content.DisplayName))
             {
                 context.ReportProblem(content.Id, "displayName", "must not be empty.");
+            }
+        }
+
+        private static void ValidateStartingSite(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (StartingSiteDefinition)definition;
+            CheckIdPrefix(content.Id, "site.", context);
+
+            if (content.FractionX < 0.0 || content.FractionX > 1.0)
+            {
+                context.ReportProblem(content.Id, "fractionX", "must be between 0 and 1.");
+            }
+
+            if (content.FractionZ < 0.0 || content.FractionZ > 1.0)
+            {
+                context.ReportProblem(content.Id, "fractionZ", "must be between 0 and 1.");
             }
         }
 

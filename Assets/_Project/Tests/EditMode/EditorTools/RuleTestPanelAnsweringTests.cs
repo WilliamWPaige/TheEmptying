@@ -37,9 +37,13 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                 ""type"": ""module_manifest"",
                 ""items"": [ { ""id"": ""module.map"", ""version"": 1, ""dependencies"": [], ""enabled"": true } ]
             }");
+            source.WriteDataFile("buildings_manifest.json", @"{
+                ""type"": ""module_manifest"",
+                ""items"": [ { ""id"": ""module.buildings"", ""version"": 1, ""dependencies"": [""module.map""], ""enabled"": true } ]
+            }");
             source.WriteDataFile("people_manifest.json", @"{
                 ""type"": ""module_manifest"",
-                ""items"": [ { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map""], ""enabled"": true } ]
+                ""items"": [ { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map"", ""module.buildings""], ""enabled"": true } ]
             }");
             source.WriteDataFile("events.json", @"{
                 ""type"": ""event_definition"",
@@ -82,6 +86,8 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                     { ""id"": ""setting.people.idle_wait_max_seconds"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 20, ""minimum"": 0.1, ""maximum"": 300, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.idle_wander_radius_meters"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 8, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.action_history_count"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 10, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.keep_exit_interval_min_seconds"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 3, ""minimum"": 0.1, ""maximum"": 300, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.keep_exit_interval_max_seconds"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 5, ""minimum"": 0.1, ""maximum"": 300, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.time.real_seconds_per_day"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 1800, ""minimum"": 60, ""maximum"": 7200, ""category"": ""Time"", ""description"": ""x"" }
                 ]
             }");

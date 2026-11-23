@@ -1,4 +1,5 @@
 using TheEmptying.Core.Modules;
+using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
 
@@ -16,7 +17,8 @@ namespace TheEmptying.Presentation
         public static IModule[] CreateModules()
         {
             var map = new MapModule();
-            return new IModule[] { map, new PeopleModule(map) };
+            var buildings = new BuildingsModule(map);
+            return new IModule[] { map, buildings, new PeopleModule(map, buildings) };
         }
     }
 }

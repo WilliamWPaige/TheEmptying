@@ -17,7 +17,8 @@ namespace TheEmptying.Presentation.People
     /// simulation's own position every frame (Time.deltaTime, allowed
     /// here in Presentation) rather than snapping to it - ticks happen
     /// only a handful of times a second, so without this, walking would
-    /// visibly step rather than glide, at any game speed.
+    /// visibly step rather than glide, at any game speed. R11: never
+    /// drawn while waiting inside a building.
     /// </summary>
     public sealed class PersonPresenter : MonoBehaviour
     {
@@ -99,6 +100,13 @@ namespace TheEmptying.Presentation.People
                 EntityId id = row.Key;
                 PersonState person = row.Value;
                 seen.Add(id);
+
+                if (person.CurrentAction != null && person.CurrentAction.Kind == ActionKind.InsideBuilding)
+                {
+                    // R11: waiting inside a building - not drawn, regardless of chunk state.
+                    HideInstance(id);
+                    continue;
+                }
 
                 ChunkCoord chunk = _mapModule.WorldToChunk(person.WorldX, person.WorldZ);
                 if (!_worldMapView.IsChunkLoaded(chunk))

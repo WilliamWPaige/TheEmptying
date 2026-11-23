@@ -6,6 +6,7 @@
         "TheEmptying.Presentation",
         "TheEmptying.Editor",
         "TheEmptying.Modules.Map",
+        "TheEmptying.Modules.Buildings",
         "TheEmptying.Modules.People",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"

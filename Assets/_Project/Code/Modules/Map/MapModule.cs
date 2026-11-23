@@ -118,6 +118,53 @@ namespace TheEmptying.Modules.Map
             return true;
         }
 
+        /// <summary>
+        /// R11: removes any placement (tree, stone or grub mound) whose own
+        /// footprint overlaps the given cell rectangle (min inclusive, max
+        /// exclusive) - used once, when the keep is founded on top of
+        /// whatever was already there. Assumes the rectangle is smaller
+        /// than a chunk (true for any footprint used so far), so only the
+        /// chunks its four corners fall into can possibly need touching.
+        /// </summary>
+        public void RemovePlacementsOverlapping(CellCoord min, CellCoord maxExclusive)
+        {
+            var touchedChunks = new HashSet<ChunkCoord>
+            {
+                CellToChunk(min),
+                CellToChunk(new CellCoord(maxExclusive.X - 1, min.Z)),
+                CellToChunk(new CellCoord(min.X, maxExclusive.Z - 1)),
+                CellToChunk(new CellCoord(maxExclusive.X - 1, maxExclusive.Z - 1))
+            };
+
+            foreach (ChunkCoord coord in touchedChunks)
+            {
+                ChunkData chunk = GetOrCreateChunk(coord);
+                var kept = new List<ChunkPlacement>();
+                bool changed = false;
+
+                foreach (ChunkPlacement placement in chunk.Placements)
+                {
+                    int footprint = FootprintCellsFor(placement.Kind);
+                    bool overlaps = placement.Cell.X < maxExclusive.X && placement.Cell.X + footprint > min.X &&
+                                     placement.Cell.Z < maxExclusive.Z && placement.Cell.Z + footprint > min.Z;
+
+                    if (overlaps)
+                    {
+                        changed = true;
+                    }
+                    else
+                    {
+                        kept.Add(placement);
+                    }
+                }
+
+                if (changed)
+                {
+                    _chunks[coord] = new ChunkData(coord, kept);
+                }
+            }
+        }
+
         /// <summary>Creates the chunk's data (and its one-time random placements) the first time it's asked for; returns the same instance on every later call.</summary>
         public ChunkData GetOrCreateChunk(ChunkCoord coord)
         {
