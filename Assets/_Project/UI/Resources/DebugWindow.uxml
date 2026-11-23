@@ -17,6 +17,7 @@
             <ui:ScrollView name="debug-errors-list" class="debug-list" />
         </ui:VisualElement>
         <ui:VisualElement name="debug-cheats-panel" class="debug-panel">
+            <ui:TextField name="debug-cheats-search" class="debug-cheats-search" />
             <ui:ScrollView name="debug-cheats-list" class="debug-list" />
         </ui:VisualElement>
     </ui:VisualElement>

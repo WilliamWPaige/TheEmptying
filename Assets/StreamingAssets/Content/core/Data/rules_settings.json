@@ -3,6 +3,7 @@
     "items": [
         {
             "id": "setting.rules.max_fires_per_tick",
+            "label": "Max rule fires per tick",
             "valueType": "Integer",
             "default": 1000,
             "minimum": 1,
@@ -12,6 +13,7 @@
         },
         {
             "id": "setting.rules.questions_pause_game",
+            "label": "Questions pause the game",
             "valueType": "Boolean",
             "default": 1,
             "minimum": 0,

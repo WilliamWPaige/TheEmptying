@@ -364,7 +364,7 @@ namespace TheEmptying.Tests.EditMode.Rules
             source.WriteDataFile("settings.json", @"{
                 ""type"": ""setting_definition"",
                 ""items"": [
-                    { ""id"": ""setting.rules.max_fires_per_tick"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" }
+                    { ""id"": ""setting.rules.max_fires_per_tick"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" }
                 ]
             }");
 
@@ -449,7 +449,7 @@ namespace TheEmptying.Tests.EditMode.Rules
             emptySource.WriteDataFile("settings.json", @"{
                 ""type"": ""setting_definition"",
                 ""items"": [
-                    { ""id"": ""setting.rules.max_fires_per_tick"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" }
+                    { ""id"": ""setting.rules.max_fires_per_tick"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" }
                 ]
             }");
 
@@ -506,7 +506,7 @@ namespace TheEmptying.Tests.EditMode.Rules
             changedSource.WriteDataFile("settings.json", @"{
                 ""type"": ""setting_definition"",
                 ""items"": [
-                    { ""id"": ""setting.rules.max_fires_per_tick"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" }
+                    { ""id"": ""setting.rules.max_fires_per_tick"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" }
                 ]
             }");
 

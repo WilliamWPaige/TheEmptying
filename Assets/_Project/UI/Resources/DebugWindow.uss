@@ -1,8 +1,8 @@
 .debug-window-root {
     position: absolute;
-    left: 40px;
-    top: 40px;
-    width: 640px;
+    left: 16px;
+    top: 56px;
+    width: 480px;
     height: 480px;
     background-color: rgb(18, 18, 20);
     border-radius: 6px;
@@ -120,4 +120,9 @@
 .debug-cheat-reset-button {
     margin-left: 6px;
     height: 20px;
+}
+
+.debug-cheats-search {
+    flex-shrink: 0;
+    margin-bottom: 6px;
 }

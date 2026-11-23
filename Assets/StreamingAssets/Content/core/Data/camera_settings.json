@@ -3,6 +3,7 @@
     "items": [
         {
             "id": "setting.camera.pan_speed",
+            "label": "Pan speed",
             "valueType": "Number",
             "default": 10,
             "minimum": 1,
@@ -12,6 +13,7 @@
         },
         {
             "id": "setting.camera.zoom_speed",
+            "label": "Zoom speed",
             "valueType": "Number",
             "default": 2,
             "minimum": 0.1,
@@ -21,6 +23,7 @@
         },
         {
             "id": "setting.camera.zoom_min_height",
+            "label": "Zoom minimum height",
             "valueType": "Number",
             "default": 10,
             "minimum": 1,
@@ -30,6 +33,7 @@
         },
         {
             "id": "setting.camera.zoom_max_height",
+            "label": "Zoom maximum height",
             "valueType": "Number",
             "default": 100,
             "minimum": 1,
@@ -39,6 +43,7 @@
         },
         {
             "id": "setting.camera.rotate_speed",
+            "label": "Rotate speed",
             "valueType": "Number",
             "default": 90,
             "minimum": 10,
@@ -48,6 +53,7 @@
         },
         {
             "id": "setting.camera.rotate_drag_sensitivity",
+            "label": "Rotate drag sensitivity",
             "valueType": "Number",
             "default": 0.3,
             "minimum": 0.01,
@@ -57,6 +63,7 @@
         },
         {
             "id": "setting.camera.edge_scrolling",
+            "label": "Edge scrolling",
             "valueType": "Boolean",
             "default": 0,
             "minimum": 0,
@@ -66,6 +73,7 @@
         },
         {
             "id": "setting.camera.edge_scroll_size",
+            "label": "Edge scroll size",
             "valueType": "Number",
             "default": 20,
             "minimum": 1,

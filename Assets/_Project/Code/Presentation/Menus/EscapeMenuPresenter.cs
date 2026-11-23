@@ -1,6 +1,7 @@
 using System;
 using TheEmptying.Core.Console;
-using TheEmptying.Presentation.World;
+using TheEmptying.Presentation.DevTools;
+using TheEmptying.Presentation.Selection;
 using UnityEngine;
 using UnityEngine.SceneManagement;
 using UnityEngine.UIElements;
@@ -22,7 +23,8 @@ namespace TheEmptying.Presentation.Menus
         private const string MainMenuSceneName = "MainMenu";
 
         private IPresentationCommands _presentation;
-        private StrategyCameraController _cameraController;
+        private DebugWindowPresenter _debugWindow;
+        private WorldSelectionPresenter _worldSelection;
 
         private VisualElement _root;
         private VisualElement _mainPanel;
@@ -35,10 +37,15 @@ namespace TheEmptying.Presentation.Menus
 
         public bool IsOpen => _root != null && _root.style.display == DisplayStyle.Flex;
 
-        public void Initialize(VisualElement uiRoot, IPresentationCommands presentation, StrategyCameraController cameraController)
+        public void Initialize(
+            VisualElement uiRoot,
+            IPresentationCommands presentation,
+            DebugWindowPresenter debugWindow,
+            WorldSelectionPresenter worldSelection)
         {
             _presentation = presentation;
-            _cameraController = cameraController;
+            _debugWindow = debugWindow;
+            _worldSelection = worldSelection;
 
             _root = new VisualElement
             {
@@ -82,10 +89,9 @@ namespace TheEmptying.Presentation.Menus
         {
             _pausedBeforeOpen = _presentation.IsPaused;
             _presentation.SetPaused(true);
-            if (_cameraController != null)
-            {
-                _cameraController.InputSuspended = true;
-            }
+
+            _debugWindow?.ForceClose();
+            _worldSelection?.ForceCloseForModal();
 
             _mainPanel.style.display = DisplayStyle.Flex;
             _options.Close();
@@ -97,12 +103,10 @@ namespace TheEmptying.Presentation.Menus
         {
             _root.style.display = DisplayStyle.None;
 
-            if (_cameraController != null)
-            {
-                _cameraController.InputSuspended = false;
-            }
-
             _presentation.SetPaused(_pausedBeforeOpen);
+
+            _debugWindow?.ForceReopen();
+            _worldSelection?.ForceReopenAfterModal();
         }
 
         /// <summary>Go back one step if Options or a Yes/No question is open; otherwise open or close this menu.</summary>

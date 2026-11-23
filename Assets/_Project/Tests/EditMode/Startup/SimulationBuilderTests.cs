@@ -27,7 +27,7 @@ namespace TheEmptying.Tests.EditMode.Startup
             core.WriteDataFile("settings.json", @"{
                 ""type"": ""setting_definition"",
                 ""items"": [
-                    { ""id"": ""test.some_rate"", ""valueType"": ""Number"", ""default"": 1.5, ""minimum"": 0, ""maximum"": 10, ""category"": ""Test"", ""description"": ""A test rate."" }
+                    { ""id"": ""test.some_rate"", ""label"": ""Some rate"", ""valueType"": ""Number"", ""default"": 1.5, ""minimum"": 0, ""maximum"": 10, ""category"": ""Test"", ""description"": ""A test rate."" }
                 ]
             }");
 

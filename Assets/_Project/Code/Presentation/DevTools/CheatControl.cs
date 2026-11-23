@@ -15,6 +15,12 @@ namespace TheEmptying.Presentation.DevTools
         public CheatControlKind Kind { get; }
         public string Label { get; }
 
+        /// <summary>The setting's own content Id (R9), for the search box and the hover tooltip; null for a control that isn't backed by a setting.</summary>
+        public string Id { get; }
+
+        /// <summary>Shown on hover (R9) - the Id and description for a setting; null otherwise.</summary>
+        public string Tooltip { get; }
+
         public Action OnClick { get; }
 
         public Func<bool> GetToggleValue { get; }
@@ -31,6 +37,8 @@ namespace TheEmptying.Presentation.DevTools
         private CheatControl(
             CheatControlKind kind,
             string label,
+            string id = null,
+            string tooltip = null,
             Action onClick = null,
             Func<bool> getToggleValue = null,
             Action<bool> setToggleValue = null,
@@ -42,6 +50,8 @@ namespace TheEmptying.Presentation.DevTools
         {
             Kind = kind;
             Label = label;
+            Id = id;
+            Tooltip = tooltip;
             OnClick = onClick;
             GetToggleValue = getToggleValue;
             SetToggleValue = setToggleValue;
@@ -54,10 +64,10 @@ namespace TheEmptying.Presentation.DevTools
 
         public static CheatControl Button(string label, Action onClick) => new CheatControl(CheatControlKind.Button, label, onClick: onClick);
 
-        public static CheatControl Toggle(string label, Func<bool> getValue, Action<bool> setValue, Action onReset = null) =>
-            new CheatControl(CheatControlKind.Toggle, label, getToggleValue: getValue, setToggleValue: setValue, onReset: onReset);
+        public static CheatControl Toggle(string label, Func<bool> getValue, Action<bool> setValue, Action onReset = null, string id = null, string tooltip = null) =>
+            new CheatControl(CheatControlKind.Toggle, label, id: id, tooltip: tooltip, getToggleValue: getValue, setToggleValue: setValue, onReset: onReset);
 
-        public static CheatControl Number(string label, Func<double> getValue, Action<double> setValue, double? minimum = null, double? maximum = null, Action onReset = null) =>
-            new CheatControl(CheatControlKind.Number, label, getNumberValue: getValue, setNumberValue: setValue, minimum: minimum, maximum: maximum, onReset: onReset);
+        public static CheatControl Number(string label, Func<double> getValue, Action<double> setValue, double? minimum = null, double? maximum = null, Action onReset = null, string id = null, string tooltip = null) =>
+            new CheatControl(CheatControlKind.Number, label, id: id, tooltip: tooltip, getNumberValue: getValue, setNumberValue: setValue, minimum: minimum, maximum: maximum, onReset: onReset);
     }
 }

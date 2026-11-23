@@ -36,6 +36,14 @@ namespace TheEmptying.Presentation.DevTools
             public FloatField NumberField;
         }
 
+        /// <summary>R9: one section's title label plus its rows, kept so the search box can show/hide them without rebuilding the tree.</summary>
+        private sealed class CheatSectionBinding
+        {
+            public string Title;
+            public Label TitleLabel;
+            public readonly List<(CheatControl Control, VisualElement Row)> Rows = new List<(CheatControl Control, VisualElement Row)>();
+        }
+
         private VisualElement _uiRoot;
         private CheatMenuRegistry _cheatMenu;
 
@@ -52,10 +60,16 @@ namespace TheEmptying.Presentation.DevTools
         private Label _saveResultLabel;
         private ScrollView _errorsList;
         private ScrollView _cheatsList;
+        private TextField _cheatsSearchField;
 
         private ErrorFilter _filter = ErrorFilter.All;
         private readonly HashSet<DebugLogEntry> _expandedEntries = new HashSet<DebugLogEntry>();
         private readonly List<CheatRowBinding> _cheatBindings = new List<CheatRowBinding>();
+        private readonly List<CheatSectionBinding> _cheatSectionBindings = new List<CheatSectionBinding>();
+
+        /// <summary>R9: whether this window was open, and on which tab, right before the Escape menu force-closed it - so ForceReopen can restore exactly that (or do nothing, if it wasn't open).</summary>
+        private bool _wasOpenBeforeModalClose;
+        private bool _wasShowingErrorsTabBeforeModalClose;
 
         public bool IsOpen => _windowRoot != null && _windowRoot.style.display == DisplayStyle.Flex;
 
@@ -99,6 +113,31 @@ namespace TheEmptying.Presentation.DevTools
         public void OpenOnErrorsTab()
         {
             Open(showErrorsTab: true);
+        }
+
+        /// <summary>R9: the Escape menu is modal - it force-closes this window while open, remembering whether it was open (and which tab) so Close() can restore it.</summary>
+        public void ForceClose()
+        {
+            _wasOpenBeforeModalClose = IsOpen;
+            if (!_wasOpenBeforeModalClose)
+            {
+                return;
+            }
+
+            _wasShowingErrorsTabBeforeModalClose = _errorsPanel.style.display == DisplayStyle.Flex;
+            Close();
+        }
+
+        /// <summary>R9: undoes ForceClose once the Escape menu closes; a no-op if the window wasn't open when it was force-closed.</summary>
+        public void ForceReopen()
+        {
+            if (!_wasOpenBeforeModalClose)
+            {
+                return;
+            }
+
+            _wasOpenBeforeModalClose = false;
+            Open(_wasShowingErrorsTabBeforeModalClose);
         }
 
         private void Open(bool showErrorsTab)
@@ -165,6 +204,8 @@ namespace TheEmptying.Presentation.DevTools
             _saveResultLabel = _uiRoot.Q<Label>("debug-errors-save-result");
             _errorsList = _uiRoot.Q<ScrollView>("debug-errors-list");
             _cheatsList = _uiRoot.Q<ScrollView>("debug-cheats-list");
+            _cheatsSearchField = _uiRoot.Q<TextField>("debug-cheats-search");
+            _cheatsSearchField.RegisterValueChangedCallback(_ => ApplyCheatsSearchFilter());
 
             _errorsTabButton.clicked += () => SwitchTab(true);
             _cheatsTabButton.clicked += () => SwitchTab(false);
@@ -333,6 +374,7 @@ namespace TheEmptying.Presentation.DevTools
 
             _cheatsList.Clear();
             _cheatBindings.Clear();
+            _cheatSectionBindings.Clear();
 
             foreach (CheatSection section in _cheatMenu.Sections)
             {
@@ -340,13 +382,50 @@ namespace TheEmptying.Presentation.DevTools
                 titleLabel.AddToClassList("debug-cheat-section-title");
                 _cheatsList.Add(titleLabel);
 
+                var sectionBinding = new CheatSectionBinding { Title = section.Title, TitleLabel = titleLabel };
+
                 foreach (CheatControl control in section.Controls)
                 {
-                    _cheatsList.Add(BuildCheatRow(control));
+                    VisualElement row = BuildCheatRow(control);
+                    _cheatsList.Add(row);
+                    sectionBinding.Rows.Add((control, row));
                 }
+
+                _cheatSectionBindings.Add(sectionBinding);
             }
 
             RefreshCheatValuesInPlace();
+            ApplyCheatsSearchFilter();
+        }
+
+        /// <summary>
+        /// R9: hides every row (and, if none of its rows match, the whole
+        /// section) whose label, Id and section title all fail to contain
+        /// the search text. An empty search shows everything.
+        /// </summary>
+        private void ApplyCheatsSearchFilter()
+        {
+            string query = _cheatsSearchField?.value?.Trim() ?? string.Empty;
+
+            foreach (CheatSectionBinding section in _cheatSectionBindings)
+            {
+                bool sectionTitleMatches = query.Length == 0 || Contains(section.Title, query);
+                bool anyRowVisible = false;
+
+                foreach ((CheatControl control, VisualElement row) in section.Rows)
+                {
+                    bool rowMatches = sectionTitleMatches || Contains(control.Label, query) || Contains(control.Id, query);
+                    row.style.display = rowMatches ? DisplayStyle.Flex : DisplayStyle.None;
+                    anyRowVisible |= rowMatches;
+                }
+
+                section.TitleLabel.style.display = anyRowVisible ? DisplayStyle.Flex : DisplayStyle.None;
+            }
+        }
+
+        private static bool Contains(string haystack, string needle)
+        {
+            return !string.IsNullOrEmpty(haystack) && haystack.IndexOf(needle, StringComparison.OrdinalIgnoreCase) >= 0;
         }
 
         /// <summary>
@@ -394,6 +473,11 @@ namespace TheEmptying.Presentation.DevTools
         {
             var row = new VisualElement();
             row.AddToClassList("debug-cheat-row");
+
+            if (!string.IsNullOrEmpty(control.Tooltip))
+            {
+                row.tooltip = control.Tooltip;
+            }
 
             switch (control.Kind)
             {

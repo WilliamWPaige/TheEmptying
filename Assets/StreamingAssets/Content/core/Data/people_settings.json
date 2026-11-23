@@ -3,6 +3,7 @@
     "items": [
         {
             "id": "setting.people.founder_count",
+            "label": "Founder count",
             "valueType": "Integer",
             "default": 9,
             "minimum": 1,
@@ -12,6 +13,7 @@
         },
         {
             "id": "setting.people.founder_age_min",
+            "label": "Founder age min",
             "valueType": "Integer",
             "default": 20,
             "minimum": 1,
@@ -21,6 +23,7 @@
         },
         {
             "id": "setting.people.founder_age_max",
+            "label": "Founder age max",
             "valueType": "Integer",
             "default": 40,
             "minimum": 1,
@@ -30,6 +33,7 @@
         },
         {
             "id": "setting.people.founder_core_trade_min",
+            "label": "Founder core trade min",
             "valueType": "Integer",
             "default": 14,
             "minimum": 1,
@@ -39,6 +43,7 @@
         },
         {
             "id": "setting.people.founder_core_trade_max",
+            "label": "Founder core trade max",
             "valueType": "Integer",
             "default": 18,
             "minimum": 1,
@@ -48,6 +53,7 @@
         },
         {
             "id": "setting.people.founder_specialty_min",
+            "label": "Founder specialty min",
             "valueType": "Integer",
             "default": 19,
             "minimum": 1,
@@ -57,6 +63,7 @@
         },
         {
             "id": "setting.people.founder_specialty_max",
+            "label": "Founder specialty max",
             "valueType": "Integer",
             "default": 20,
             "minimum": 1,
@@ -66,6 +73,7 @@
         },
         {
             "id": "setting.people.founder_other_skill_min",
+            "label": "Founder other skill min",
             "valueType": "Integer",
             "default": 5,
             "minimum": 1,
@@ -75,6 +83,7 @@
         },
         {
             "id": "setting.people.founder_other_skill_max",
+            "label": "Founder other skill max",
             "valueType": "Integer",
             "default": 12,
             "minimum": 1,
@@ -84,6 +93,7 @@
         },
         {
             "id": "setting.people.founder_attribute_min",
+            "label": "Founder attribute min",
             "valueType": "Integer",
             "default": 10,
             "minimum": 1,
@@ -93,6 +103,7 @@
         },
         {
             "id": "setting.people.founder_attribute_max",
+            "label": "Founder attribute max",
             "valueType": "Integer",
             "default": 16,
             "minimum": 1,
@@ -102,6 +113,7 @@
         },
         {
             "id": "setting.people.monarch_age_min",
+            "label": "Monarch age min",
             "valueType": "Integer",
             "default": 25,
             "minimum": 1,
@@ -111,6 +123,7 @@
         },
         {
             "id": "setting.people.monarch_age_max",
+            "label": "Monarch age max",
             "valueType": "Integer",
             "default": 50,
             "minimum": 1,
@@ -120,6 +133,7 @@
         },
         {
             "id": "setting.people.monarch_leadership_speech_min",
+            "label": "Monarch leadership/speech min",
             "valueType": "Integer",
             "default": 8,
             "minimum": 1,
@@ -129,6 +143,7 @@
         },
         {
             "id": "setting.people.monarch_leadership_speech_max",
+            "label": "Monarch leadership/speech max",
             "valueType": "Integer",
             "default": 14,
             "minimum": 1,
@@ -138,6 +153,7 @@
         },
         {
             "id": "setting.people.monarch_other_skill_min",
+            "label": "Monarch other skill min",
             "valueType": "Integer",
             "default": 1,
             "minimum": 1,
@@ -147,6 +163,7 @@
         },
         {
             "id": "setting.people.monarch_other_skill_max",
+            "label": "Monarch other skill max",
             "valueType": "Integer",
             "default": 6,
             "minimum": 1,
@@ -156,6 +173,7 @@
         },
         {
             "id": "setting.people.monarch_attribute_min",
+            "label": "Monarch attribute min",
             "valueType": "Integer",
             "default": 6,
             "minimum": 1,
@@ -165,6 +183,7 @@
         },
         {
             "id": "setting.people.monarch_attribute_max",
+            "label": "Monarch attribute max",
             "valueType": "Integer",
             "default": 14,
             "minimum": 1,

@@ -22,5 +22,9 @@ namespace TheEmptying.Core.Content
 
         [JsonProperty("description")]
         public string Description { get; set; }
+
+        /// <summary>R9: the short, readable name shown in the Cheats tab instead of the raw Id (which is still shown, with the description, on hover). Required.</summary>
+        [JsonProperty("label")]
+        public string Label { get; set; }
     }
 }

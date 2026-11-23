@@ -111,7 +111,9 @@ namespace TheEmptying.Presentation.World
             bool edgeScrollingEnabled = _settings.Get(EdgeScrollingSettingId) != 0;
             float edgeSize = (float)_settings.Get(EdgeScrollSizeSettingId);
 
-            float scroll = _zoomAction?.ReadValue<float>() ?? 0f;
+            // R9: the wheel over a UI panel scrolls that panel, never the camera.
+            bool pointerOverUi = Mouse.current != null && UiInputUtility.IsPointerOverUi(_uiRoot, Mouse.current.position.ReadValue());
+            float scroll = pointerOverUi ? 0f : _zoomAction?.ReadValue<float>() ?? 0f;
             if (scroll != 0f)
             {
                 _height = Mathf.Clamp(_height - scroll * zoomSpeed, zoomMin, zoomMax);

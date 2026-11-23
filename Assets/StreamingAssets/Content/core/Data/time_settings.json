@@ -3,6 +3,7 @@
     "items": [
         {
             "id": "setting.time.real_seconds_per_day",
+            "label": "Real seconds per day",
             "valueType": "Number",
             "default": 1800,
             "minimum": 60,

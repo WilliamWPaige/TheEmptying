@@ -90,8 +90,8 @@ namespace TheEmptying.Tests.EditMode.EditorTools
             source.WriteDataFile("settings.json", @"{
                 ""type"": ""setting_definition"",
                 ""items"": [
-                    { ""id"": ""setting.rules.max_fires_per_tick"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" },
-                    { ""id"": ""setting.test.sample"", ""valueType"": ""Number"", ""default"": 1, ""minimum"": 0, ""maximum"": 10, ""category"": ""Test"", ""description"": ""x"" }
+                    { ""id"": ""setting.rules.max_fires_per_tick"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 1000, ""minimum"": 1, ""maximum"": 1000000, ""category"": ""Rules"", ""description"": ""x"" },
+                    { ""id"": ""setting.test.sample"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 1, ""minimum"": 0, ""maximum"": 10, ""category"": ""Test"", ""description"": ""x"" }
                 ]
             }");
 

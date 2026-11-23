@@ -34,6 +34,9 @@ namespace TheEmptying.Presentation.Selection
         private ISelectionTarget _current;
         private GameObject _highlight;
 
+        /// <summary>R9: what was selected right before the Escape menu force-hid this window, for ForceReopenAfterModal to restore; null when nothing was selected at the time.</summary>
+        private ISelectionTarget _hiddenByModal;
+
         /// <summary>The selected person's Id, for the People cheat's "remove selected person"; null if nothing is selected or the selection isn't a person.</summary>
         public EntityId? SelectedPersonId => _current is PersonSelectionTarget person ? person.Id : (EntityId?)null;
 
@@ -84,6 +87,28 @@ namespace TheEmptying.Presentation.Selection
         public void HandleEscapePressed()
         {
             ClearSelection();
+        }
+
+        /// <summary>R9: the Escape menu is modal - it hides this window while open, remembering the selection so Close() can bring it back.</summary>
+        public void ForceCloseForModal()
+        {
+            _hiddenByModal = _current;
+            if (_current != null)
+            {
+                ClearSelection();
+            }
+        }
+
+        /// <summary>R9: undoes ForceCloseForModal once the Escape menu closes; a no-op if nothing was selected at the time.</summary>
+        public void ForceReopenAfterModal()
+        {
+            if (_hiddenByModal == null)
+            {
+                return;
+            }
+
+            Select(_hiddenByModal);
+            _hiddenByModal = null;
         }
 
         private void Update()

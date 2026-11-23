@@ -95,6 +95,13 @@ namespace TheEmptying.Presentation
         private Label _errorBadgeErrorsLabel;
         private Label _errorBadgeWarningsLabel;
 
+        /// <summary>R9: the short on-screen message for Quick save/load ("Saved", "Loaded" or an error) - shown for ToastSeconds, then hidden.</summary>
+        private const float ToastSeconds = 2.5f;
+        private const string QuickSaveName = "quicksave";
+        private VisualElement _toastWrapper;
+        private Label _toastLabel;
+        private float _toastHideAtUnscaledTime = -1f;
+
         public bool IsPaused => _paused;
         public int Speed => (int)_speed;
 
@@ -161,9 +168,9 @@ namespace TheEmptying.Presentation
             BuildUi();
             WireInput();
             BuildWorld();
+            BuildDebugWindow();
             BuildEscapeMenu();
             BuildCheatMenu();
-            BuildDebugWindow();
             LogAndClearAnyStartupFocus();
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
         }
@@ -242,6 +249,8 @@ namespace TheEmptying.Presentation
             ClearUiFocusOnEmptyGameViewClick();
             RefreshQuestionPopup();
             RefreshErrorBadge();
+            RefreshCameraInputSuspension();
+            RefreshToast();
 
             if (_paused || IsBlockedByPendingQuestion())
             {
@@ -405,6 +414,10 @@ namespace TheEmptying.Presentation
             time.AddButton("Skip 1 hour", () => _simulation.Commands.Execute("skip 1 h"));
             time.AddButton("Skip 1 day", () => _simulation.Commands.Execute("skip 1 d"));
 
+            CheatSection save = _cheatMenu.AddSection("Save");
+            save.AddButton("Quick save", QuickSave);
+            save.AddButton("Quick load", QuickLoad);
+
             foreach (IGrouping<string, SettingDefinition> group in _simulation.Settings.ExportAll().GroupBy(d => d.Category).OrderBy(g => g.Key, StringComparer.Ordinal))
             {
                 CheatSection section = _cheatMenu.AddSection($"Settings: {group.Key}");
@@ -412,24 +425,29 @@ namespace TheEmptying.Presentation
                 {
                     string id = definition.Id;
                     double defaultValue = definition.Default;
+                    string tooltip = $"{id}\n{definition.Description}";
 
                     if (definition.ValueType == SettingValueType.Boolean)
                     {
                         section.AddToggle(
-                            id,
+                            definition.Label,
                             () => _simulation.Settings.Get(id) != 0,
                             value => _simulation.Commands.Execute($"set {id} {(value ? 1 : 0)}"),
-                            onReset: () => _simulation.Commands.Execute($"set {id} {defaultValue}"));
+                            onReset: () => _simulation.Commands.Execute($"set {id} {defaultValue}"),
+                            id: id,
+                            tooltip: tooltip);
                     }
                     else
                     {
                         section.AddNumber(
-                            id,
+                            definition.Label,
                             () => _simulation.Settings.Get(id),
                             value => _simulation.Commands.Execute($"set {id} {value}"),
                             definition.Minimum,
                             definition.Maximum,
-                            onReset: () => _simulation.Commands.Execute($"set {id} {defaultValue}"));
+                            onReset: () => _simulation.Commands.Execute($"set {id} {defaultValue}"),
+                            id: id,
+                            tooltip: tooltip);
                     }
                 }
             }
@@ -456,7 +474,7 @@ namespace TheEmptying.Presentation
         private void BuildEscapeMenu()
         {
             _escapeMenu = gameObject.AddComponent<EscapeMenuPresenter>();
-            _escapeMenu.Initialize(_uiDocument.rootVisualElement, this, _cameraController);
+            _escapeMenu.Initialize(_uiDocument.rootVisualElement, this, _debugWindow, _worldSelection);
         }
 
         #endregion
@@ -479,7 +497,7 @@ namespace TheEmptying.Presentation
             gameplayMap.FindAction("SetSpeed1").performed += _ => HandleSetSpeed(1);
             gameplayMap.FindAction("SetSpeed2").performed += _ => HandleSetSpeed(2);
             gameplayMap.FindAction("SetSpeed3").performed += _ => HandleSetSpeed(3);
-            gameplayMap.FindAction("ToggleDebugWindow").performed += _ => _debugWindow.ToggleWindow();
+            gameplayMap.FindAction("ToggleDebugWindow").performed += _ => HandleToggleDebugWindow();
             gameplayMap.FindAction("Escape").performed += _ => HandleEscapeKeyPressed();
 
             // Always enabled: the keyboard rule is that gameplay keys work unless a text
@@ -546,6 +564,34 @@ namespace TheEmptying.Presentation
             _escapeMenu.HandleEscapePressed();
         }
 
+        /// <summary>
+        /// R9: the camera is frozen while the debug window or the Escape
+        /// menu is open - recomputed every frame (instead of toggled at
+        /// each one's own Open/Close) so the two sources can never fight
+        /// over the flag.
+        /// </summary>
+        private void RefreshCameraInputSuspension()
+        {
+            if (_cameraController == null)
+            {
+                return;
+            }
+
+            bool shouldSuspend = (_debugWindow != null && _debugWindow.IsOpen) || (_escapeMenu != null && _escapeMenu.IsOpen);
+            _cameraController.InputSuspended = shouldSuspend;
+        }
+
+        /// <summary>F1's entry point - does nothing while the Escape menu is open, since it is modal.</summary>
+        private void HandleToggleDebugWindow()
+        {
+            if (_escapeMenu != null && _escapeMenu.IsOpen)
+            {
+                return;
+            }
+
+            _debugWindow.ToggleWindow();
+        }
+
         /// <summary>A left click that lands on nothing in the UI always clears whatever UI control currently has focus.</summary>
         private void ClearUiFocusOnEmptyGameViewClick()
         {
@@ -596,6 +642,99 @@ namespace TheEmptying.Presentation
 
             BuildHud(root);
             BuildQuestionPopup(root);
+            BuildToast(root);
+        }
+
+        /// <summary>R9: a small, self-hiding message for Quick save/load results, centered near the top of the screen.</summary>
+        private void BuildToast(VisualElement root)
+        {
+            var wrapper = new VisualElement
+            {
+                style =
+                {
+                    position = Position.Absolute,
+                    top = 56,
+                    left = 0,
+                    right = 0,
+                    flexDirection = FlexDirection.Row,
+                    justifyContent = Justify.Center,
+                    display = DisplayStyle.None
+                }
+            };
+
+            _toastLabel = new Label
+            {
+                style =
+                {
+                    color = Color.white,
+                    backgroundColor = new Color(0f, 0f, 0f, 0.65f),
+                    paddingLeft = 16,
+                    paddingRight = 16,
+                    paddingTop = 6,
+                    paddingBottom = 6,
+                    borderTopLeftRadius = 4,
+                    borderTopRightRadius = 4,
+                    borderBottomLeftRadius = 4,
+                    borderBottomRightRadius = 4,
+                    whiteSpace = WhiteSpace.Normal,
+                    maxWidth = 400
+                }
+            };
+
+            wrapper.Add(_toastLabel);
+            root.Add(wrapper);
+            _toastWrapper = wrapper;
+        }
+
+        /// <summary>Shows a short message, then hides it again after ToastSeconds.</summary>
+        private void ShowToast(string message)
+        {
+            if (_toastWrapper == null)
+            {
+                return;
+            }
+
+            _toastLabel.text = message;
+            _toastWrapper.style.display = DisplayStyle.Flex;
+            _toastHideAtUnscaledTime = Time.unscaledTime + ToastSeconds;
+        }
+
+        private void RefreshToast()
+        {
+            if (_toastWrapper == null || _toastHideAtUnscaledTime < 0f)
+            {
+                return;
+            }
+
+            if (Time.unscaledTime >= _toastHideAtUnscaledTime)
+            {
+                _toastWrapper.style.display = DisplayStyle.None;
+                _toastHideAtUnscaledTime = -1f;
+            }
+        }
+
+        /// <summary>The Save cheat section's "Quick save" button - one fixed slot, reusing the existing Save path.</summary>
+        private void QuickSave()
+        {
+            string result = Save(QuickSaveName);
+            bool failed = result.StartsWith("Save failed", StringComparison.Ordinal);
+            ShowToast(failed ? result : "Saved");
+            if (failed)
+            {
+                Debug.LogError($"[TheEmptying] {result}");
+            }
+        }
+
+        /// <summary>The Save cheat section's "Quick load" button - restores full state through the existing Load path.</summary>
+        private void QuickLoad()
+        {
+            string result = Load(QuickSaveName);
+            bool failed = result.StartsWith("No save named", StringComparison.Ordinal) || result.StartsWith("Load failed", StringComparison.Ordinal);
+            ShowToast(failed ? result : "Loaded");
+            if (failed)
+            {
+                Debug.LogError($"[TheEmptying] {result}");
+            }
         }
 
         private void BuildQuestionPopup(VisualElement root)

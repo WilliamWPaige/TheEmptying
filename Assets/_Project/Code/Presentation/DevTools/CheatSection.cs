@@ -20,15 +20,15 @@ namespace TheEmptying.Presentation.DevTools
             return this;
         }
 
-        public CheatSection AddToggle(string label, Func<bool> getValue, Action<bool> setValue, Action onReset = null)
+        public CheatSection AddToggle(string label, Func<bool> getValue, Action<bool> setValue, Action onReset = null, string id = null, string tooltip = null)
         {
-            Controls.Add(CheatControl.Toggle(label, getValue, setValue, onReset));
+            Controls.Add(CheatControl.Toggle(label, getValue, setValue, onReset, id, tooltip));
             return this;
         }
 
-        public CheatSection AddNumber(string label, Func<double> getValue, Action<double> setValue, double? minimum = null, double? maximum = null, Action onReset = null)
+        public CheatSection AddNumber(string label, Func<double> getValue, Action<double> setValue, double? minimum = null, double? maximum = null, Action onReset = null, string id = null, string tooltip = null)
         {
-            Controls.Add(CheatControl.Number(label, getValue, setValue, minimum, maximum, onReset));
+            Controls.Add(CheatControl.Number(label, getValue, setValue, minimum, maximum, onReset, id, tooltip));
             return this;
         }
     }

@@ -60,8 +60,8 @@ namespace TheEmptying.Tests.EditMode.Rules
                 ["type"] = "setting_definition",
                 ["items"] = new JArray
                 {
-                    new JObject { ["id"] = RuleRunner.MaxFiresPerTickSettingId, ["valueType"] = "Integer", ["default"] = 1000, ["minimum"] = 1, ["maximum"] = 1000000, ["category"] = "Rules", ["description"] = "x" },
-                    new JObject { ["id"] = RuleRunner.QuestionsPauseGameSettingId, ["valueType"] = "Boolean", ["default"] = 1, ["minimum"] = 0, ["maximum"] = 1, ["category"] = "Rules", ["description"] = "x" }
+                    new JObject { ["id"] = RuleRunner.MaxFiresPerTickSettingId, ["label"] = "x", ["valueType"] = "Integer", ["default"] = 1000, ["minimum"] = 1, ["maximum"] = 1000000, ["category"] = "Rules", ["description"] = "x" },
+                    new JObject { ["id"] = RuleRunner.QuestionsPauseGameSettingId, ["label"] = "x", ["valueType"] = "Boolean", ["default"] = 1, ["minimum"] = 0, ["maximum"] = 1, ["category"] = "Rules", ["description"] = "x" }
                 }
             };
             source.WriteDataFile("settings.json", settingsFile.ToString());

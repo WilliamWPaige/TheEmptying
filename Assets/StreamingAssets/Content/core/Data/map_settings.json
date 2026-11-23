@@ -3,6 +3,7 @@
     "items": [
         {
             "id": "setting.map.world_width_meters",
+            "label": "World width",
             "valueType": "Number",
             "default": 10240,
             "minimum": 256,
@@ -12,6 +13,7 @@
         },
         {
             "id": "setting.map.world_depth_meters",
+            "label": "World depth",
             "valueType": "Number",
             "default": 10240,
             "minimum": 256,
@@ -21,6 +23,7 @@
         },
         {
             "id": "setting.map.cell_size_meters",
+            "label": "Cell size",
             "valueType": "Number",
             "default": 1,
             "minimum": 0.1,
@@ -30,6 +33,7 @@
         },
         {
             "id": "setting.map.chunk_size_meters",
+            "label": "Chunk size",
             "valueType": "Number",
             "default": 256,
             "minimum": 8,
@@ -39,15 +43,17 @@
         },
         {
             "id": "setting.map.view_distance_chunks",
+            "label": "View distance",
             "valueType": "Integer",
             "default": 3,
             "minimum": 1,
-            "maximum": 20,
+            "maximum": 6,
             "category": "Map",
-            "description": "Placeholder. How many chunks out from the camera's own chunk are built and shown, in every direction. R6b: sized to what the camera can actually see at its maximum zoom-out (about 320 m), plus one chunk of margin - zoom-out is limited by design, so chunks further out are never built or rendered."
+            "description": "Placeholder. How many chunks out from the camera's own chunk are built and shown, in every direction. R6b: sized to what the camera can actually see at its maximum zoom-out (about 320 m), plus one chunk of margin - zoom-out is limited by design, so chunks further out are never built or rendered. R9: the maximum is capped at 6 chunks."
         },
         {
             "id": "setting.map.low_detail_height_meters",
+            "label": "Low detail height",
             "valueType": "Number",
             "default": 400,
             "minimum": 10,
@@ -57,6 +63,7 @@
         },
         {
             "id": "setting.map.trees_per_chunk",
+            "label": "Trees per chunk",
             "valueType": "Integer",
             "default": 20,
             "minimum": 0,
@@ -66,6 +73,7 @@
         },
         {
             "id": "setting.map.stones_per_chunk",
+            "label": "Stones per chunk",
             "valueType": "Integer",
             "default": 3,
             "minimum": 0,
@@ -75,6 +83,7 @@
         },
         {
             "id": "setting.map.grub_mounds_per_chunk",
+            "label": "Grub mounds per chunk",
             "valueType": "Integer",
             "default": 2,
             "minimum": 0,

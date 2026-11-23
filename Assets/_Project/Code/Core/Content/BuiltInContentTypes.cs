@@ -134,6 +134,11 @@ namespace TheEmptying.Core.Content
             {
                 context.ReportProblem(content.Id, "default", "must be between minimum and maximum.");
             }
+
+            if (string.IsNullOrEmpty(content.Label))
+            {
+                context.ReportProblem(content.Id, "label", "must not be empty.");
+            }
         }
 
         /// <summary>
