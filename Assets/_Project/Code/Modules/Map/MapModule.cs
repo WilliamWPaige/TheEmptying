@@ -1,8 +1,10 @@
 using System;
 using System.Collections.Generic;
+using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
+using TheEmptying.Core.Saves;
 
 namespace TheEmptying.Modules.Map
 {
@@ -16,9 +18,15 @@ namespace TheEmptying.Modules.Map
     /// entries for a world that is still just flat, empty ground. R6b adds
     /// a TEMPORARY random tree/stone placement, generated once per chunk
     /// from the world seed and the chunk's own coordinates alone, so it
-    /// never depends on visit order - see GeneratePlacements.
+    /// never depends on visit order - see GeneratePlacements. R10: every
+    /// created chunk's placements are saved (ISaveableModule) - a chunk
+    /// already generated before a save must never be regenerated after a
+    /// load, since its named random stream has already moved past the
+    /// point that produced the saved placements; regenerating it would
+    /// both give different (wrong) placements and double-consume that
+    /// stream.
     /// </summary>
-    public sealed class MapModule : IModule
+    public sealed class MapModule : IModule, ISaveableModule
     {
         public const string ModuleId = "module.map";
 
@@ -39,6 +47,7 @@ namespace TheEmptying.Modules.Map
 
         public string Id => ModuleId;
         public int Version => 1;
+        public int SectionVersion => 1;
         public IReadOnlyList<string> Dependencies => Array.Empty<string>();
 
         public double WorldWidthMeters => _settings.Get(WorldWidthSettingId);
@@ -202,6 +211,43 @@ namespace TheEmptying.Modules.Map
             }
 
             return false;
+        }
+
+        /// <summary>Only ever-created chunks are written - an unvisited chunk stays lazy, generated fresh (and correctly) from its own never-yet-touched random stream whenever it's first needed.</summary>
+        public void Write(SaveWriter writer)
+        {
+            writer.WriteInt(_chunks.Count);
+            foreach (KeyValuePair<ChunkCoord, ChunkData> entry in _chunks.OrderBy(kvp => kvp.Key.X).ThenBy(kvp => kvp.Key.Z))
+            {
+                writer.WriteInt(entry.Key.X);
+                writer.WriteInt(entry.Key.Z);
+                writer.WriteInt(entry.Value.Placements.Count);
+                foreach (ChunkPlacement placement in entry.Value.Placements)
+                {
+                    writer.WriteInt((int)placement.Kind);
+                    writer.WriteInt(placement.Cell.X);
+                    writer.WriteInt(placement.Cell.Z);
+                }
+            }
+        }
+
+        public void Read(SaveReader reader, int savedVersion)
+        {
+            int chunkCount = reader.ReadInt();
+            for (int i = 0; i < chunkCount; i++)
+            {
+                var coord = new ChunkCoord(reader.ReadInt(), reader.ReadInt());
+                int placementCount = reader.ReadInt();
+                var placements = new List<ChunkPlacement>(placementCount);
+                for (int p = 0; p < placementCount; p++)
+                {
+                    var kind = (PlacementKind)reader.ReadInt();
+                    var cell = new CellCoord(reader.ReadInt(), reader.ReadInt());
+                    placements.Add(new ChunkPlacement(kind, cell));
+                }
+
+                _chunks[coord] = new ChunkData(coord, placements);
+            }
         }
     }
 }

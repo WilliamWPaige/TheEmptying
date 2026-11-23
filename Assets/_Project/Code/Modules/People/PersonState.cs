@@ -1,17 +1,19 @@
 using System.Collections.Generic;
+using TheEmptying.Modules.Map;
 
 namespace TheEmptying.Modules.People
 {
     /// <summary>
     /// A person (R7: type and world position; R8: name, sex, age, role,
-    /// specialty and stats). Immutable once rolled - nothing here changes
-    /// over time yet.
+    /// specialty and stats; R10: current action, movement and history).
+    /// Identity and stats are set once at creation and never change; world
+    /// position and the action fields change every tick while walking.
     /// </summary>
     public sealed class PersonState
     {
         public string UnitContentId { get; }
-        public double WorldX { get; }
-        public double WorldZ { get; }
+        public double WorldX { get; set; }
+        public double WorldZ { get; set; }
         public string Name { get; }
         public PersonSex Sex { get; }
         public int AgeYears { get; }
@@ -22,6 +24,19 @@ namespace TheEmptying.Modules.People
 
         public IReadOnlyDictionary<string, int> Skills { get; }
         public IReadOnlyDictionary<string, int> Attributes { get; }
+
+        /// <summary>R10: what this person is doing right now - never null once spawned.</summary>
+        public PersonAction CurrentAction { get; set; }
+
+        /// <summary>
+        /// R10: the one cell nobody else may stand on or walk to while this
+        /// person holds it - their current cell while Idle, or the cell
+        /// they're walking to while Walk.
+        /// </summary>
+        public CellCoord ReservedCell { get; set; }
+
+        /// <summary>R10: the last few finished actions, most recent first, capped by setting.people.action_history_count.</summary>
+        public List<PersonActionHistoryEntry> History { get; } = new List<PersonActionHistoryEntry>();
 
         public PersonState(
             string unitContentId,

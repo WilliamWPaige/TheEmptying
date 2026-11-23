@@ -56,6 +56,18 @@ namespace TheEmptying.Presentation.Selection
             _root.style.display = DisplayStyle.Flex;
         }
 
+        /// <summary>R10: rebuilds the body in place from the same target, so a live value (a person's action progress, for example) stays current while the window is open.</summary>
+        public void Refresh(ISelectionTarget target)
+        {
+            if (!IsOpen)
+            {
+                return;
+            }
+
+            _content.Clear();
+            target.BuildContent(_content);
+        }
+
         public void Hide()
         {
             _root.style.display = DisplayStyle.None;

@@ -75,7 +75,14 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                     { ""id"": ""setting.people.monarch_other_skill_min"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 1, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.monarch_other_skill_max"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 6, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.monarch_attribute_min"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 6, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
-                    { ""id"": ""setting.people.monarch_attribute_max"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 14, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" }
+                    { ""id"": ""setting.people.monarch_attribute_max"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 14, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.walk_speed_mps"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 1.4, ""minimum"": 0.1, ""maximum"": 10, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.pathfinding_max_distance_meters"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 500, ""minimum"": 1, ""maximum"": 5000, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.idle_wait_min_seconds"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 5, ""minimum"": 0.1, ""maximum"": 300, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.idle_wait_max_seconds"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 20, ""minimum"": 0.1, ""maximum"": 300, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.idle_wander_radius_meters"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 8, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.action_history_count"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 10, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.time.real_seconds_per_day"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 1800, ""minimum"": 60, ""maximum"": 7200, ""category"": ""Time"", ""description"": ""x"" }
                 ]
             }");
         }

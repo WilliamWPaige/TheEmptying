@@ -1,4 +1,5 @@
 using System.Collections.Generic;
+using System.Linq;
 
 namespace TheEmptying.Core.Randomness
 {
@@ -32,10 +33,17 @@ namespace TheEmptying.Core.Randomness
             return stream;
         }
 
+        /// <summary>
+        /// Streams in a fixed (ordinal name) order, never dictionary
+        /// enumeration order - two runs with the same set of streams but a
+        /// different creation history must still serialize to the same
+        /// bytes, or the state hash (and so the save/load determinism
+        /// tests) would see a difference that was never really there.
+        /// </summary>
         public RandomServiceState ExportState()
         {
             var state = new RandomServiceState();
-            foreach (KeyValuePair<string, SimRandom> entry in _streams)
+            foreach (KeyValuePair<string, SimRandom> entry in _streams.OrderBy(kvp => kvp.Key, System.StringComparer.Ordinal))
             {
                 SimRandomState streamState = entry.Value.GetState();
                 state.Streams.Add(new RandomStreamEntry

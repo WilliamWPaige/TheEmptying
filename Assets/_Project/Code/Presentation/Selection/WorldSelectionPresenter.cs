@@ -42,6 +42,9 @@ namespace TheEmptying.Presentation.Selection
 
         public bool IsOpen => _infoWindow.IsOpen;
 
+        /// <summary>TEST TOOL (R10, never gameplay): while true, clicking the ground sends the selected person there instead of clearing the selection. Off by default.</summary>
+        public bool ClickToSendModeEnabled { get; set; }
+
         public void Initialize(
             PeopleModule peopleModule,
             MapModule mapModule,
@@ -132,6 +135,7 @@ namespace TheEmptying.Presentation.Selection
             }
 
             PositionHighlight(worldPosition, _current.Footprint);
+            _infoWindow.Refresh(_current);
         }
 
         private void HandleClick()
@@ -164,6 +168,17 @@ namespace TheEmptying.Presentation.Selection
                         Select(new ResourceSelectionTarget(_mapModule, asset, placement));
                         return;
                     }
+                }
+            }
+            else if (ClickToSendModeEnabled && SelectedPersonId.HasValue)
+            {
+                // TEST TOOL (R10): the ground has no collider (it's drawn, not raycast), so a miss here means the ground - the same ground-plane math MapCursorPresenter uses for its own highlight.
+                var groundPlane = new Plane(Vector3.up, Vector3.zero);
+                if (groundPlane.Raycast(ray, out float distance))
+                {
+                    Vector3 worldHit = _floatingOrigin.RenderToWorld(ray.GetPoint(distance));
+                    _peopleModule.TrySendPersonTo(SelectedPersonId.Value, worldHit.x, worldHit.z);
+                    return;
                 }
             }
 

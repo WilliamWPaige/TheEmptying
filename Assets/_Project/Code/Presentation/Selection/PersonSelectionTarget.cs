@@ -1,5 +1,6 @@
 using System.Linq;
 using TheEmptying.Core.Content;
+using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.People;
 using UnityEngine;
 using UnityEngine.UIElements;
@@ -61,6 +62,9 @@ namespace TheEmptying.Presentation.Selection
                 });
             }
 
+            BuildActionSection(container, person);
+            BuildHistorySection(container, person);
+
             container.Add(SectionHeading("Attributes"));
             foreach (AttributeDefinition attribute in BuiltInContentTypes.OrderedAttributes(_content))
             {
@@ -78,6 +82,84 @@ namespace TheEmptying.Presentation.Selection
                     container.Add(StatRow(skill.DisplayName, value, skill.Id == person.SpecialtySkillId));
                 }
             }
+        }
+
+        /// <summary>R10: current action, a progress bar, the target and distance (Walk only) and the thought line saying why.</summary>
+        private static void BuildActionSection(VisualElement container, PersonState person)
+        {
+            container.Add(SectionHeading("Action"));
+
+            PersonAction action = person.CurrentAction;
+            if (action == null)
+            {
+                return;
+            }
+
+            string actionLabel = action.Kind == ActionKind.Walk ? "Walking" : "Idle";
+            container.Add(new Label(actionLabel) { style = { color = Color.white, marginLeft = 8 } });
+
+            var progressOuter = new VisualElement
+            {
+                style =
+                {
+                    height = 8,
+                    marginLeft = 8,
+                    marginTop = 2,
+                    marginBottom = 4,
+                    backgroundColor = new Color(1f, 1f, 1f, 0.15f)
+                }
+            };
+            var progressFill = new VisualElement
+            {
+                style =
+                {
+                    height = 8,
+                    width = Length.Percent((float)(System.Math.Clamp(action.Progress, 0.0, 1.0) * 100.0)),
+                    backgroundColor = new Color(0.3f, 0.75f, 1f)
+                }
+            };
+            progressOuter.Add(progressFill);
+            container.Add(progressOuter);
+
+            if (action.Kind == ActionKind.Walk)
+            {
+                double distanceRemaining = System.Math.Max(0.0, action.TotalDistanceMeters - action.DistanceTraveledMeters);
+                container.Add(new Label($"Target: cell ({action.TargetCell.X}, {action.TargetCell.Z}) - {distanceRemaining:0.#} m away")
+                {
+                    style = { color = new Color(0.8f, 0.8f, 0.8f), marginLeft = 8, whiteSpace = WhiteSpace.Normal }
+                });
+            }
+
+            container.Add(new Label($"\"{action.Thought}\"")
+            {
+                style = { color = new Color(0.7f, 0.7f, 0.7f), unityFontStyleAndWeight = FontStyle.Italic, marginLeft = 8, marginBottom = 10, whiteSpace = WhiteSpace.Normal }
+            });
+        }
+
+        /// <summary>R10: the last few finished actions, most recent first, with their in-game start time and how long they lasted.</summary>
+        private static void BuildHistorySection(VisualElement container, PersonState person)
+        {
+            container.Add(SectionHeading("History"));
+
+            if (person.History.Count == 0)
+            {
+                container.Add(new Label("(nothing yet)") { style = { color = new Color(0.6f, 0.6f, 0.6f), marginLeft = 8, marginBottom = 10 } });
+                return;
+            }
+
+            foreach (PersonActionHistoryEntry entry in person.History)
+            {
+                GameDate date = GameDate.FromTick(entry.StartTick);
+                double durationMinutes = entry.DurationTicks / (double)CalendarConstants.TicksPerMinute;
+                string kindLabel = entry.Kind == ActionKind.Walk ? "Walk" : "Idle";
+
+                container.Add(new Label($"{kindLabel}: \"{entry.Thought}\" - {date}, {date.ToClockString(false)} ({durationMinutes:0.#} min)")
+                {
+                    style = { color = new Color(0.75f, 0.75f, 0.75f), marginLeft = 8, marginBottom = 2, whiteSpace = WhiteSpace.Normal }
+                });
+            }
+
+            container.Add(new VisualElement { style = { marginBottom = 8 } });
         }
 
         private string DisplayNameForSkill(string skillId)

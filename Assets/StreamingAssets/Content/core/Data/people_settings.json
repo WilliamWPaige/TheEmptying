@@ -190,6 +190,66 @@
             "maximum": 20,
             "category": "People",
             "description": "Placeholder. The Monarch's highest possible value in every attribute."
+        },
+        {
+            "id": "setting.people.walk_speed_mps",
+            "label": "Walk speed",
+            "valueType": "Number",
+            "default": 1.4,
+            "minimum": 0.1,
+            "maximum": 10,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R10). How fast a person walks, in meters per real second at 1x game speed; scales automatically with game speed."
+        },
+        {
+            "id": "setting.people.pathfinding_max_distance_meters",
+            "label": "Pathfinding max distance",
+            "valueType": "Number",
+            "default": 500,
+            "minimum": 1,
+            "maximum": 5000,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R10). The most a single path search will cover, in meters, before giving up."
+        },
+        {
+            "id": "setting.people.idle_wait_min_seconds",
+            "label": "Idle wait min",
+            "valueType": "Number",
+            "default": 5,
+            "minimum": 0.1,
+            "maximum": 300,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R10). The shortest an idle person's wait can roll, in real seconds at 1x game speed."
+        },
+        {
+            "id": "setting.people.idle_wait_max_seconds",
+            "label": "Idle wait max",
+            "valueType": "Number",
+            "default": 20,
+            "minimum": 0.1,
+            "maximum": 300,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R10). The longest an idle person's wait can roll, in real seconds at 1x game speed."
+        },
+        {
+            "id": "setting.people.idle_wander_radius_meters",
+            "label": "Idle wander radius",
+            "valueType": "Number",
+            "default": 8,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R10). How far an idle person may wander off on their own, in meters."
+        },
+        {
+            "id": "setting.people.action_history_count",
+            "label": "Action history count",
+            "valueType": "Integer",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R10). How many of a person's most recent finished actions are kept for the info window."
         }
     ]
 }

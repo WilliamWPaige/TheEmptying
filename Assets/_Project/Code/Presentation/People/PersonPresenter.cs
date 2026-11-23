@@ -13,10 +13,17 @@ namespace TheEmptying.Presentation.People
     /// floating origin, only while their chunk is loaded. Selection and
     /// the info window live in WorldSelectionPresenter, which uses
     /// TryGetEntityForInstance to tell a clicked person apart from
-    /// anything else.
+    /// anything else. R10: the rendered position eases toward the
+    /// simulation's own position every frame (Time.deltaTime, allowed
+    /// here in Presentation) rather than snapping to it - ticks happen
+    /// only a handful of times a second, so without this, walking would
+    /// visibly step rather than glide, at any game speed.
     /// </summary>
     public sealed class PersonPresenter : MonoBehaviour
     {
+        /// <summary>Not a setting - a pure rendering nicety (how quickly the visible position catches up to the simulation's own), not a tunable the design calls out.</summary>
+        private const float PositionSmoothingRate = 12f;
+
         private PeopleModule _peopleModule;
         private MapModule _mapModule;
         private FloatingOrigin _floatingOrigin;
@@ -25,6 +32,7 @@ namespace TheEmptying.Presentation.People
         private readonly Dictionary<string, UnitAsset> _unitAssetsById = new Dictionary<string, UnitAsset>();
         private readonly Dictionary<EntityId, GameObject> _activeInstances = new Dictionary<EntityId, GameObject>();
         private readonly Dictionary<GameObject, EntityId> _entityByInstance = new Dictionary<GameObject, EntityId>();
+        private readonly Dictionary<EntityId, Vector3> _smoothedWorldPosition = new Dictionary<EntityId, Vector3>();
         private readonly Stack<GameObject> _pool = new Stack<GameObject>();
         private readonly List<EntityId> _toHide = new List<EntityId>();
 
@@ -66,6 +74,7 @@ namespace TheEmptying.Presentation.People
 
             _activeInstances.Clear();
             _entityByInstance.Clear();
+            _smoothedWorldPosition.Clear();
         }
 
         /// <summary>Resolves a clicked GameObject back to the person it's currently drawing, if any.</summary>
@@ -98,6 +107,9 @@ namespace TheEmptying.Presentation.People
                     continue;
                 }
 
+                var worldPosition = new Vector3((float)person.WorldX, 0f, (float)person.WorldZ);
+                bool justShown = false;
+
                 if (!_activeInstances.TryGetValue(id, out GameObject instance))
                 {
                     if (!_unitAssetsById.TryGetValue(person.UnitContentId, out UnitAsset asset) || asset.Model == null)
@@ -109,10 +121,16 @@ namespace TheEmptying.Presentation.People
                     instance.SetActive(true);
                     _activeInstances[id] = instance;
                     _entityByInstance[instance] = id;
+                    justShown = true;
                 }
 
-                var worldPosition = new Vector3((float)person.WorldX, 0f, (float)person.WorldZ);
-                instance.transform.position = _floatingOrigin.WorldToRender(worldPosition);
+                // R10: ease toward the simulation's position in world space (never shifted), so a floating-origin shift mid-smooth can't cause a jump; snap instantly the first frame an instance is shown, so it never visibly slides in from wherever it (or the pooled object before it) last stood.
+                Vector3 smoothed = justShown || !_smoothedWorldPosition.TryGetValue(id, out Vector3 previous)
+                    ? worldPosition
+                    : Vector3.Lerp(previous, worldPosition, 1f - Mathf.Exp(-PositionSmoothingRate * Time.deltaTime));
+
+                _smoothedWorldPosition[id] = smoothed;
+                instance.transform.position = _floatingOrigin.WorldToRender(smoothed);
             }
 
             // Anyone no longer alive (removed or destroyed) also goes back to the pool.
@@ -141,6 +159,7 @@ namespace TheEmptying.Presentation.People
             instance.SetActive(false);
             _activeInstances.Remove(id);
             _entityByInstance.Remove(instance);
+            _smoothedWorldPosition.Remove(id);
             _pool.Push(instance);
         }
     }

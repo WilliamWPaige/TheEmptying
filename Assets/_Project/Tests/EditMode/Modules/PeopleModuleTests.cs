@@ -3,6 +3,7 @@ using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
+using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
@@ -18,7 +19,10 @@ namespace TheEmptying.Tests.EditMode.Modules
     /// R7: new-game founder placement (free cells, spaced apart). R8:
     /// identity and stats - deterministic by world seed, in range per
     /// role, exactly one Monarch and one Advisor, and the save/load round
-    /// trip - all against the real shipped content.
+    /// trip. R10: the new action/movement settings' defaults, that the
+    /// same seed gives the same action choices, and that action state
+    /// (including history) survives a save and load round trip - all
+    /// against the real shipped content.
     /// </summary>
     public class PeopleModuleTests
     {
@@ -157,6 +161,54 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
+        public void NewGame_SameSeed_GivesTheSameFirstActionChoices()
+        {
+            using var coreA = new TempCoreContentCopy();
+            using var coreB = new TempCoreContentCopy();
+
+            (Simulation simA, _, PeopleModule peopleA) = BuildNewGame(coreA, 7);
+            (Simulation simB, _, PeopleModule peopleB) = BuildNewGame(coreB, 7);
+
+            for (int i = 0; i < 100; i++)
+            {
+                simA.Step();
+                simB.Step();
+            }
+
+            List<PersonState> listA = peopleA.People.Select(r => r.Value).ToList();
+            List<PersonState> listB = peopleB.People.Select(r => r.Value).ToList();
+
+            Assert.AreEqual(listA.Count, listB.Count);
+            Assert.Greater(listA.Count, 0);
+
+            for (int i = 0; i < listA.Count; i++)
+            {
+                AssertSameActionState(listA[i], listB[i]);
+            }
+        }
+
+        [TestCase(PeopleModule.WalkSpeedMpsSettingId, SettingValueType.Number, 1.4, 0.1, 10.0, "People")]
+        [TestCase(PeopleModule.PathfindingMaxDistanceMetersSettingId, SettingValueType.Number, 500.0, 1.0, 5000.0, "People")]
+        [TestCase(PeopleModule.IdleWaitMinSecondsSettingId, SettingValueType.Number, 5.0, 0.1, 300.0, "People")]
+        [TestCase(PeopleModule.IdleWaitMaxSecondsSettingId, SettingValueType.Number, 20.0, 0.1, 300.0, "People")]
+        [TestCase(PeopleModule.IdleWanderRadiusMetersSettingId, SettingValueType.Number, 8.0, 1.0, 100.0, "People")]
+        [TestCase(PeopleModule.ActionHistoryCountSettingId, SettingValueType.Integer, 10.0, 1.0, 100.0, "People")]
+        public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
+            string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, _, _) = BuildNewGame(core);
+
+            Assert.IsTrue(simulation.Settings.TryGetDefinition(settingId, out SettingDefinition definition), $"Expected '{settingId}' to be declared.");
+            Assert.AreEqual(expectedType, definition.ValueType);
+            Assert.AreEqual(expectedDefault, definition.Default);
+            Assert.AreEqual(expectedMinimum, definition.Minimum);
+            Assert.AreEqual(expectedMaximum, definition.Maximum);
+            Assert.AreEqual(expectedCategory, definition.Category);
+            Assert.AreEqual(expectedDefault, simulation.Settings.Get(settingId), "The live value should start at the default.");
+        }
+
+        [Test]
         public void SaveAndLoad_StatsSurviveTheRoundTrip()
         {
             using var core = new TempCoreContentCopy();
@@ -180,6 +232,75 @@ namespace TheEmptying.Tests.EditMode.Modules
             {
                 Assert.AreEqual(before[i].Id, after[i].Id);
                 AssertSameState(before[i].State, after[i].State);
+            }
+        }
+
+        /// <summary>R10: a person's action state (kind, thought, progress-relevant fields, path, reserved cell, history) survives a save and load round trip exactly, and continuing the loaded game afterward matches continuing the original unbroken.</summary>
+        [Test]
+        public void SaveAndLoad_ActionStateSurvivesTheRoundTripAndKeepsMatchingAfterward()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, _, PeopleModule peopleBefore) = BuildNewGame(core);
+
+            for (int i = 0; i < 200; i++)
+            {
+                simulation.Step();
+            }
+
+            List<(EntityId Id, PersonState State)> before = peopleBefore.People.Select(r => (r.Key, r.Value)).ToList();
+            Assert.Greater(before.Count, 0);
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = before.Count }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            (Simulation loaded, LoadReport _) = GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var peopleAfter = (PeopleModule)loadedModules.First(m => m is PeopleModule);
+
+            List<(EntityId Id, PersonState State)> after = peopleAfter.People.Select(r => (r.Key, r.Value)).ToList();
+
+            Assert.AreEqual(before.Count, after.Count);
+            for (int i = 0; i < before.Count; i++)
+            {
+                AssertSameActionState(before[i].State, after[i].State);
+            }
+
+            // Continuing the loaded game must match continuing the original, unbroken - including the world itself (a chunk already generated before the save must never regenerate differently after a load).
+            for (int i = 0; i < 200; i++)
+            {
+                simulation.Step();
+                loaded.Step();
+            }
+
+            Assert.AreEqual(simulation.ComputeStateHash(), loaded.ComputeStateHash());
+        }
+
+        private static void AssertSameActionState(PersonState a, PersonState b)
+        {
+            Assert.AreEqual(a.WorldX, b.WorldX);
+            Assert.AreEqual(a.WorldZ, b.WorldZ);
+            Assert.AreEqual(a.ReservedCell, b.ReservedCell);
+
+            PersonAction x = a.CurrentAction;
+            PersonAction y = b.CurrentAction;
+            Assert.AreEqual(x.Kind, y.Kind);
+            Assert.AreEqual(x.Thought, y.Thought);
+            Assert.AreEqual(x.StartTick, y.StartTick);
+            Assert.AreEqual(x.DurationTicks, y.DurationTicks);
+            Assert.AreEqual(x.TargetCell, y.TargetCell);
+            CollectionAssert.AreEqual(x.Path, y.Path);
+            Assert.AreEqual(x.NextPathIndex, y.NextPathIndex);
+            Assert.AreEqual(x.DistanceTraveledMeters, y.DistanceTraveledMeters);
+            Assert.AreEqual(x.TotalDistanceMeters, y.TotalDistanceMeters);
+
+            Assert.AreEqual(a.History.Count, b.History.Count);
+            for (int h = 0; h < a.History.Count; h++)
+            {
+                Assert.AreEqual(a.History[h].Kind, b.History[h].Kind);
+                Assert.AreEqual(a.History[h].Thought, b.History[h].Thought);
+                Assert.AreEqual(a.History[h].StartTick, b.History[h].StartTick);
+                Assert.AreEqual(a.History[h].DurationTicks, b.History[h].DurationTicks);
             }
         }
 

@@ -1,9 +1,11 @@
 using System.Collections.Generic;
+using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
+using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Map;
 using TheEmptying.Presentation;
@@ -15,7 +17,11 @@ namespace TheEmptying.Tests.EditMode.Modules
     /// <summary>
     /// R6: the shipped map settings (map_settings.json) load with the
     /// right defaults, and MapModule's world/cell/chunk conversions are
-    /// correct at the center, the edges and the corners.
+    /// correct at the center, the edges and the corners. R10: a chunk
+    /// already created before a save keeps its exact placements after a
+    /// load - never regenerated against its own (by then advanced)
+    /// random stream, which would both scramble them and silently shift
+    /// every other stream drawn from afterward.
     /// </summary>
     public class MapModuleTests
     {
@@ -204,6 +210,36 @@ namespace TheEmptying.Tests.EditMode.Modules
             if (!occupied.Contains(chunkOriginCell))
             {
                 Assert.IsTrue(map.IsCellFree(chunkOriginCell));
+            }
+        }
+
+        [Test]
+        public void SaveAndLoad_AnAlreadyCreatedChunk_KeepsTheSamePlacements()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules);
+            var map = (MapModule)modules.First(m => m is MapModule);
+
+            var coord = new ChunkCoord(5, 9);
+            List<ChunkPlacement> before = map.GetOrCreateChunk(coord).Placements.ToList();
+            Assert.Greater(before.Count, 0);
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = 0 }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            GameSave.Load(stream, new[] { core.FolderPath }, loadedModules);
+            var loadedMap = (MapModule)loadedModules.First(m => m is MapModule);
+
+            List<ChunkPlacement> after = loadedMap.GetOrCreateChunk(coord).Placements.ToList();
+
+            Assert.AreEqual(before.Count, after.Count);
+            for (int i = 0; i < before.Count; i++)
+            {
+                Assert.AreEqual(before[i].Kind, after[i].Kind);
+                Assert.AreEqual(before[i].Cell, after[i].Cell);
             }
         }
 

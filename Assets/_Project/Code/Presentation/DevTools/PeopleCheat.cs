@@ -5,7 +5,12 @@ using UnityEngine;
 
 namespace TheEmptying.Presentation.DevTools
 {
-    /// <summary>R7 test tool: the cheat menu's "People" section - spawn a person at the camera center, and remove the selected person.</summary>
+    /// <summary>
+    /// R7 test tool: the cheat menu's "People" section - spawn a person at
+    /// the camera center, and remove the selected person. R10 adds "Click
+    /// to send" - while on, clicking the ground sends the selected person
+    /// there; test tool only, the player never orders units directly.
+    /// </summary>
     public sealed class PeopleCheat
     {
         private readonly PeopleModule _peopleModule;
@@ -24,6 +29,7 @@ namespace TheEmptying.Presentation.DevTools
             CheatSection people = registry.AddSection("People");
             people.AddButton("Spawn person at camera", SpawnAtCamera);
             people.AddButton("Remove selected person", RemoveSelected);
+            people.AddToggle("Click to send (test tool)", () => _selection.ClickToSendModeEnabled, value => _selection.ClickToSendModeEnabled = value);
         }
 
         private void SpawnAtCamera()
