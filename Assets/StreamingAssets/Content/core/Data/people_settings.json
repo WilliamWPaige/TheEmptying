@@ -270,6 +270,126 @@
             "maximum": 300,
             "category": "People",
             "description": "TEMPORARY placeholder (R11). The longest the wait between two people leaving the keep can roll, in real seconds at 1x game speed."
+        },
+        {
+            "id": "setting.people.hunger_drain_days",
+            "label": "Hunger drain days",
+            "valueType": "Number",
+            "default": 1,
+            "minimum": 0.1,
+            "maximum": 30,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). How many game days it takes a full person's hunger meter to drain to zero."
+        },
+        {
+            "id": "setting.people.hunger_eat_threshold",
+            "label": "Hunger eat threshold",
+            "valueType": "Number",
+            "default": 50,
+            "minimum": 0,
+            "maximum": 99,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). Below this hunger value, a person stops what they're doing at the next action boundary and goes to eat."
+        },
+        {
+            "id": "setting.people.eating_duration_minutes",
+            "label": "Eating duration",
+            "valueType": "Number",
+            "default": 5,
+            "minimum": 0.1,
+            "maximum": 120,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). How long eating one grub from a stockpile or home stash takes, in game minutes."
+        },
+        {
+            "id": "setting.people.home_stash_minimum_grubs",
+            "label": "Home stash minimum grubs",
+            "valueType": "Integer",
+            "default": 5,
+            "minimum": 0,
+            "maximum": 1000,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). After eating at a mound, if a person's home stash holds fewer grubs than this, they dig extra (up to their carry amount) and take them home."
+        },
+        {
+            "id": "setting.people.skill_years_to_master",
+            "label": "Skill years to master",
+            "valueType": "Number",
+            "default": 10,
+            "minimum": 0.1,
+            "maximum": 200,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). About how many game years of full-time work it takes to go from skill level 1 to the level cap (20)."
+        },
+        {
+            "id": "setting.people.skill_work_hours_per_day",
+            "label": "Skill work hours per day",
+            "valueType": "Number",
+            "default": 8,
+            "minimum": 1,
+            "maximum": 24,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). How many game hours a day of \"full-time work\" means, for working out the experience curve."
+        },
+        {
+            "id": "setting.people.skill_level_growth_factor",
+            "label": "Skill level growth factor",
+            "valueType": "Number",
+            "default": 1.25,
+            "minimum": 1.01,
+            "maximum": 5,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). Each skill level takes this many times longer to reach than the one before it."
+        },
+        {
+            "id": "setting.people.liked_work_count",
+            "label": "Liked work count",
+            "valueType": "Integer",
+            "default": 2,
+            "minimum": 0,
+            "maximum": 10,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). How many kinds of work each person rolls as liked at creation."
+        },
+        {
+            "id": "setting.people.disliked_work_count",
+            "label": "Disliked work count",
+            "valueType": "Integer",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 10,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). How many kinds of work each person rolls as disliked at creation. Never overlaps their liked work."
+        },
+        {
+            "id": "setting.people.liked_work_choice_weight",
+            "label": "Liked work choice weight",
+            "valueType": "Number",
+            "default": 2,
+            "minimum": 0.1,
+            "maximum": 10,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). How many times more likely a person is to choose a kind of work they like over an unrated one, all else equal."
+        },
+        {
+            "id": "setting.people.disliked_work_choice_weight",
+            "label": "Disliked work choice weight",
+            "valueType": "Number",
+            "default": 0.5,
+            "minimum": 0.01,
+            "maximum": 10,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). How many times as likely (so, less likely) a person is to choose a kind of work they dislike, compared to an unrated one."
+        },
+        {
+            "id": "setting.people.liked_work_experience_bonus",
+            "label": "Liked work experience bonus",
+            "valueType": "Number",
+            "default": 0.25,
+            "minimum": 0,
+            "maximum": 5,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13). How much faster (as a fraction) a person builds experience in a kind of work they like."
         }
     ]
 }

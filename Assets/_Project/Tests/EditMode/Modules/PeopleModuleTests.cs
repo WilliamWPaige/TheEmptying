@@ -299,6 +299,51 @@ namespace TheEmptying.Tests.EditMode.Modules
             }
         }
 
+        /// <summary>R13: nobody likes and dislikes the same skill, and placeholder counts (2 liked, 1 disliked) are rolled for everyone.</summary>
+        [Test]
+        public void Founding_LikesAndDislikes_NeverOverlap_AndMatchThePlaceholderCounts()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
+
+            int likedCount = (int)simulation.Settings.Get(PeopleModule.LikedWorkCountSettingId);
+            int dislikedCount = (int)simulation.Settings.Get(PeopleModule.DislikedWorkCountSettingId);
+
+            foreach (PersonState person in people.People.Select(r => r.Value))
+            {
+                Assert.AreEqual(likedCount, person.LikedSkillIds.Count);
+                Assert.AreEqual(dislikedCount, person.DislikedSkillIds.Count);
+                CollectionAssert.IsNotSubsetOf(person.LikedSkillIds, person.DislikedSkillIds);
+                Assert.IsEmpty(person.LikedSkillIds.Intersect(person.DislikedSkillIds));
+            }
+        }
+
+        /// <summary>R13: likes and dislikes are rolled from the world seed, so founding the same seed twice gives everyone the same ones.</summary>
+        [Test]
+        public void Founding_SameSeed_GivesTheSameLikesAndDislikes()
+        {
+            using var coreA = new TempCoreContentCopy();
+            using var coreB = new TempCoreContentCopy();
+
+            (Simulation _, MapModule mapA, BuildingsModule buildingsA, PeopleModule peopleA) = BuildNewGame(coreA, 11);
+            (Simulation _, MapModule mapB, BuildingsModule buildingsB, PeopleModule peopleB) = BuildNewGame(coreB, 11);
+            FoundKingdom(mapA, buildingsA, peopleA);
+            FoundKingdom(mapB, buildingsB, peopleB);
+
+            List<PersonState> listA = peopleA.People.Select(r => r.Value).ToList();
+            List<PersonState> listB = peopleB.People.Select(r => r.Value).ToList();
+
+            Assert.AreEqual(listA.Count, listB.Count);
+            Assert.Greater(listA.Count, 0);
+
+            for (int i = 0; i < listA.Count; i++)
+            {
+                CollectionAssert.AreEqual(listA[i].LikedSkillIds, listB[i].LikedSkillIds);
+                CollectionAssert.AreEqual(listA[i].DislikedSkillIds, listB[i].DislikedSkillIds);
+            }
+        }
+
         [TestCase(PeopleModule.WalkSpeedMpsSettingId, SettingValueType.Number, 1.4, 0.1, 10.0, "People")]
         [TestCase(PeopleModule.PathfindingMaxDistanceMetersSettingId, SettingValueType.Number, 500.0, 1.0, 5000.0, "People")]
         [TestCase(PeopleModule.IdleWaitMinSecondsSettingId, SettingValueType.Number, 5.0, 0.1, 300.0, "People")]
@@ -307,6 +352,18 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(PeopleModule.ActionHistoryCountSettingId, SettingValueType.Integer, 10.0, 1.0, 100.0, "People")]
         [TestCase(PeopleModule.KeepExitIntervalMinSecondsSettingId, SettingValueType.Number, 3.0, 0.1, 300.0, "People")]
         [TestCase(PeopleModule.KeepExitIntervalMaxSecondsSettingId, SettingValueType.Number, 5.0, 0.1, 300.0, "People")]
+        [TestCase(PeopleModule.HungerDrainDaysSettingId, SettingValueType.Number, 1.0, 0.1, 30.0, "People")]
+        [TestCase(PeopleModule.HungerEatThresholdSettingId, SettingValueType.Number, 50.0, 0.0, 99.0, "People")]
+        [TestCase(PeopleModule.EatingDurationMinutesSettingId, SettingValueType.Number, 5.0, 0.1, 120.0, "People")]
+        [TestCase(PeopleModule.HomeStashMinimumGrubsSettingId, SettingValueType.Integer, 5.0, 0.0, 1000.0, "People")]
+        [TestCase(PeopleModule.SkillYearsToMasterSettingId, SettingValueType.Number, 10.0, 0.1, 200.0, "People")]
+        [TestCase(PeopleModule.SkillWorkHoursPerDaySettingId, SettingValueType.Number, 8.0, 1.0, 24.0, "People")]
+        [TestCase(PeopleModule.SkillLevelGrowthFactorSettingId, SettingValueType.Number, 1.25, 1.01, 5.0, "People")]
+        [TestCase(PeopleModule.LikedWorkCountSettingId, SettingValueType.Integer, 2.0, 0.0, 10.0, "People")]
+        [TestCase(PeopleModule.DislikedWorkCountSettingId, SettingValueType.Integer, 1.0, 0.0, 10.0, "People")]
+        [TestCase(PeopleModule.LikedWorkChoiceWeightSettingId, SettingValueType.Number, 2.0, 0.1, 10.0, "People")]
+        [TestCase(PeopleModule.DislikedWorkChoiceWeightSettingId, SettingValueType.Number, 0.5, 0.01, 10.0, "People")]
+        [TestCase(PeopleModule.LikedWorkExperienceBonusSettingId, SettingValueType.Number, 0.25, 0.0, 5.0, "People")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
@@ -348,6 +405,40 @@ namespace TheEmptying.Tests.EditMode.Modules
                 Assert.AreEqual(before[i].Id, after[i].Id);
                 AssertSameState(before[i].State, after[i].State);
             }
+        }
+
+        /// <summary>R13: hunger, carried goods, a home stash, the current goal/target, likes/dislikes and skill experience all survive a save and load round trip - with every one of those fields set to a non-default value first, so the round trip is actually exercised.</summary>
+        [Test]
+        public void SaveAndLoad_HungerCarryingStashExperienceLikesAndDislikes_SurviveTheRoundTrip()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule peopleBefore) = BuildNewGame(core);
+            FoundKingdom(map, buildings, peopleBefore);
+
+            EntityId firstId = peopleBefore.People.First().Key;
+            peopleBefore.TryGetPerson(firstId, out PersonState firstPerson);
+
+            firstPerson.Hunger = 37.5;
+            firstPerson.CarriedItemId = "item.grub";
+            firstPerson.CarriedAmount = 4;
+            firstPerson.HomeStash["item.grub"] = 6;
+            firstPerson.Goal = PersonGoal.ForagingForStockpile;
+            firstPerson.TargetIsHome = true;
+            firstPerson.TargetIsMound = false;
+            firstPerson.LastAteFromMound = true;
+            firstPerson.SkillExperienceHours["skill.foraging"] = 12.5;
+            firstPerson.SetSkillLevel("skill.foraging", 9);
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = 1 }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var peopleAfter = (PeopleModule)loadedModules.First(m => m is PeopleModule);
+
+            Assert.IsTrue(peopleAfter.TryGetPerson(firstId, out PersonState loadedPerson));
+            AssertSameState(firstPerson, loadedPerson);
         }
 
         /// <summary>R10/R11: a founded game, with people still waiting inside the keep, survives a save and load round trip exactly (action state, history and the keep-exit timer alike), and continuing the loaded game afterward matches continuing the original unbroken.</summary>
@@ -407,6 +498,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(x.DurationTicks, y.DurationTicks);
             Assert.AreEqual(x.TargetCell, y.TargetCell);
             Assert.AreEqual(x.BuildingId, y.BuildingId);
+            Assert.AreEqual(x.SkillId, y.SkillId);
             CollectionAssert.AreEqual(x.Path, y.Path);
             Assert.AreEqual(x.NextPathIndex, y.NextPathIndex);
             Assert.AreEqual(x.DistanceTraveledMeters, y.DistanceTraveledMeters);
@@ -434,6 +526,21 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(a.SpecialtySkillId, b.SpecialtySkillId);
             CollectionAssert.AreEquivalent(a.Skills, b.Skills);
             CollectionAssert.AreEquivalent(a.Attributes, b.Attributes);
+
+            Assert.AreEqual(a.Hunger, b.Hunger);
+            Assert.AreEqual(a.CarriedItemId, b.CarriedItemId);
+            Assert.AreEqual(a.CarriedAmount, b.CarriedAmount);
+            Assert.AreEqual(a.HomeBuildingId, b.HomeBuildingId);
+            CollectionAssert.AreEquivalent(a.HomeStash, b.HomeStash);
+            Assert.AreEqual(a.Goal, b.Goal);
+            Assert.AreEqual(a.TargetZoneId, b.TargetZoneId);
+            Assert.AreEqual(a.ForagingDeliveryZoneId, b.ForagingDeliveryZoneId);
+            Assert.AreEqual(a.TargetIsHome, b.TargetIsHome);
+            Assert.AreEqual(a.TargetIsMound, b.TargetIsMound);
+            Assert.AreEqual(a.LastAteFromMound, b.LastAteFromMound);
+            CollectionAssert.AreEquivalent(a.LikedSkillIds, b.LikedSkillIds);
+            CollectionAssert.AreEquivalent(a.DislikedSkillIds, b.DislikedSkillIds);
+            CollectionAssert.AreEquivalent(a.SkillExperienceHours, b.SkillExperienceHours);
         }
     }
 }

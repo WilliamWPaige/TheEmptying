@@ -42,6 +42,9 @@ namespace TheEmptying.Modules.People
         /// <summary>InsideBuilding only: which building they're waiting in.</summary>
         public EntityId BuildingId { get; set; }
 
+        /// <summary>R13: Digging only (for now) - the skill this action's time counts toward, e.g. "skill.foraging". Empty for any action that grants no experience; this field is what lets a future work action grant experience without the action system needing to know its kind.</summary>
+        public string SkillId { get; set; } = string.Empty;
+
         /// <summary>0 at the start, 1 once the action is finished - Idle by elapsed ticks, Walk by distance covered; always 0 for InsideBuilding, which has no notion of progress (only the keep-exit timer ends it).</summary>
         public double Progress
         {

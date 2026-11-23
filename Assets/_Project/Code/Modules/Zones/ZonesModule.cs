@@ -54,6 +54,8 @@ namespace TheEmptying.Modules.Zones
 
         public IEnumerable<KeyValuePair<EntityId, ZoneState>> LivingAreas => _zones.Rows().Where(r => r.Value.ZoneTypeId == LivingAreaTypeId);
 
+        public IEnumerable<KeyValuePair<EntityId, ZoneState>> Stockpiles => _zones.Rows().Where(r => r.Value.ZoneTypeId == StockpileTypeId);
+
         public bool TryGetZone(EntityId id, out ZoneState zone) => _zones.TryGet(id, out zone);
 
         public void Initialize(ModuleContext context)
@@ -197,6 +199,19 @@ namespace TheEmptying.Modules.Zones
             GetOrCreateEntry(zone, itemContentId).Blocked = blocked;
         }
 
+        /// <summary>R13: removes up to amount of this item (eating a grub from a stockpile, say); returns how much was actually removed, never more than what's stored.</summary>
+        public int RemoveItemFromStockpile(EntityId zoneId, string itemContentId, int amount)
+        {
+            if (amount <= 0 || !_zones.TryGet(zoneId, out ZoneState zone) || !zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry entry))
+            {
+                return 0;
+            }
+
+            int actual = Math.Min(amount, entry.AmountStored);
+            entry.AmountStored -= actual;
+            return actual;
+        }
+
         /// <summary>
         /// Adds as much of amountRequested as slots, size, blocks and the
         /// keep-on-hand limit allow; Added may be less than requested.
@@ -225,16 +240,7 @@ namespace TheEmptying.Modules.Zones
                 return (0, amountRequested, "Blocked here.");
             }
 
-            int totalSlots = SlotCount(zone.Rect.Area);
-            int capacityPerSlot = CapacityPerSlot(item.Size);
-
-            int slotsUsedByOthers = zone.StockpileItems
-                .Where(kvp => kvp.Key != itemContentId)
-                .Sum(kvp => SlotsForOther(kvp));
-
-            int maxNewTotalBySlots = Math.Max(0, totalSlots - slotsUsedByOthers) * capacityPerSlot;
-            int maxAddBySlots = Math.Max(0, maxNewTotalBySlots - currentAmount);
-            int maxAddByLimit = Math.Max(0, limit - currentAmount);
+            (int maxAddBySlots, int maxAddByLimit) = ComputeMaxAdd(zone, item, itemContentId, currentAmount, limit);
 
             int actualAdd = Math.Max(0, Math.Min(amountRequested, Math.Min(maxAddBySlots, maxAddByLimit)));
             int didNotFit = amountRequested - actualAdd;
@@ -246,6 +252,51 @@ namespace TheEmptying.Modules.Zones
 
             string reason = didNotFit <= 0 ? null : maxAddByLimit < maxAddBySlots ? "Hit the keep-on-hand limit." : "Not enough room left.";
             return (actualAdd, didNotFit, reason);
+        }
+
+        /// <summary>
+        /// R13: how many more of this item this stockpile could currently
+        /// take, the same capacity math TryAddItemToStockpile uses, without
+        /// adding anything - 0 if blocked, not a stockpile, or the item is
+        /// unknown. Lets foraging work decide how much to dig before it
+        /// ever walks to the stockpile.
+        /// </summary>
+        public int GetRemainingRoomForItem(EntityId zoneId, string itemContentId)
+        {
+            if (!_zones.TryGet(zoneId, out ZoneState zone) || zone.ZoneTypeId != StockpileTypeId)
+            {
+                return 0;
+            }
+
+            if (!_content.TryGet(BuiltInContentTypes.ItemTypeName, itemContentId, out ContentEntry entry) || !(entry.Definition is ItemContent item))
+            {
+                return 0;
+            }
+
+            (int currentAmount, int limit, bool blocked) = GetStockpileItemInfo(zoneId, itemContentId);
+            if (blocked)
+            {
+                return 0;
+            }
+
+            (int maxAddBySlots, int maxAddByLimit) = ComputeMaxAdd(zone, item, itemContentId, currentAmount, limit);
+            return Math.Max(0, Math.Min(maxAddBySlots, maxAddByLimit));
+        }
+
+        private (int MaxAddBySlots, int MaxAddByLimit) ComputeMaxAdd(ZoneState zone, ItemContent item, string itemContentId, int currentAmount, int limit)
+        {
+            int totalSlots = SlotCount(zone.Rect.Area);
+            int capacityPerSlot = CapacityPerSlot(item.Size);
+
+            int slotsUsedByOthers = zone.StockpileItems
+                .Where(kvp => kvp.Key != itemContentId)
+                .Sum(kvp => SlotsForOther(kvp));
+
+            int maxNewTotalBySlots = Math.Max(0, totalSlots - slotsUsedByOthers) * capacityPerSlot;
+            int maxAddBySlots = Math.Max(0, maxNewTotalBySlots - currentAmount);
+            int maxAddByLimit = Math.Max(0, limit - currentAmount);
+
+            return (maxAddBySlots, maxAddByLimit);
         }
 
         private int SlotsForOther(KeyValuePair<string, StockpileItemEntry> kvp)
