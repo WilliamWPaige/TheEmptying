@@ -171,6 +171,7 @@ namespace TheEmptying.Presentation
             BuildDebugWindow();
             BuildEscapeMenu();
             BuildCheatMenu();
+            _debugWindow.RebuildCheatsStructure();
             LogAndClearAnyStartupFocus();
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
         }
