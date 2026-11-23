@@ -3,6 +3,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.People;
 using TheEmptying.Presentation.World;
@@ -11,6 +12,7 @@ using UnityEngine.InputSystem;
 using UnityEngine.Rendering;
 using UnityEngine.UIElements;
 using BuildingPresenter = TheEmptying.Presentation.Buildings.BuildingPresenter;
+using ZonePresenter = TheEmptying.Presentation.Zones.ZonePresenter;
 using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation.Selection
@@ -28,11 +30,13 @@ namespace TheEmptying.Presentation.Selection
         private PeopleModule _peopleModule;
         private MapModule _mapModule;
         private BuildingsModule _buildingsModule;
+        private ZonesModule _zonesModule;
         private ContentDatabase _content;
         private FloatingOrigin _floatingOrigin;
         private StrategyCameraController _cameraController;
         private PersonPresenter _personPresenter;
         private BuildingPresenter _buildingPresenter;
+        private ZonePresenter _zonePresenter;
         private TemporaryChunkDecorations _decorations;
         private Camera _camera;
         private VisualElement _uiRoot;
@@ -47,10 +51,10 @@ namespace TheEmptying.Presentation.Selection
         /// <summary>The selected person's Id, for the People cheat's "remove selected person"; null if nothing is selected or the selection isn't a person.</summary>
         public EntityId? SelectedPersonId => _current is PersonSelectionTarget person ? person.Id : (EntityId?)null;
 
-        public bool IsOpen => _infoWindow.IsOpen;
+        /// <summary>R12: the selected zone's Id, for the Stockpile cheat's "add to selected stockpile"; null if nothing is selected or the selection isn't a zone.</summary>
+        public EntityId? SelectedZoneId => _current is ZoneSelectionTarget zone ? zone.Id : (EntityId?)null;
 
-        /// <summary>TEST TOOL (R10, never gameplay): while true, clicking the ground sends the selected person there instead of clearing the selection. Off by default.</summary>
-        public bool ClickToSendModeEnabled { get; set; }
+        public bool IsOpen => _infoWindow.IsOpen;
 
         /// <summary>R11: the starting site's marker, while it still exists (set by GameBootstrap; cleared once the kingdom is founded, since it's gone for good).</summary>
         public StartingSiteMarkerPresenter SiteMarker { get; set; }
@@ -62,11 +66,13 @@ namespace TheEmptying.Presentation.Selection
             PeopleModule peopleModule,
             MapModule mapModule,
             BuildingsModule buildingsModule,
+            ZonesModule zonesModule,
             ContentDatabase content,
             FloatingOrigin floatingOrigin,
             StrategyCameraController cameraController,
             PersonPresenter personPresenter,
             BuildingPresenter buildingPresenter,
+            ZonePresenter zonePresenter,
             TemporaryChunkDecorations decorations,
             Camera camera,
             VisualElement uiRoot)
@@ -74,11 +80,13 @@ namespace TheEmptying.Presentation.Selection
             _peopleModule = peopleModule;
             _mapModule = mapModule;
             _buildingsModule = buildingsModule;
+            _zonesModule = zonesModule;
             _content = content;
             _floatingOrigin = floatingOrigin;
             _cameraController = cameraController;
             _personPresenter = personPresenter;
             _buildingPresenter = buildingPresenter;
+            _zonePresenter = zonePresenter;
             _decorations = decorations;
             _camera = camera;
             _uiRoot = uiRoot;
@@ -88,11 +96,12 @@ namespace TheEmptying.Presentation.Selection
         }
 
         /// <summary>After a load, the simulation (and its modules) are new instances; the old selection no longer means anything.</summary>
-        public void Rebind(PeopleModule peopleModule, MapModule mapModule, BuildingsModule buildingsModule, ContentDatabase content)
+        public void Rebind(PeopleModule peopleModule, MapModule mapModule, BuildingsModule buildingsModule, ZonesModule zonesModule, ContentDatabase content)
         {
             _peopleModule = peopleModule;
             _mapModule = mapModule;
             _buildingsModule = buildingsModule;
+            _zonesModule = zonesModule;
             _content = content;
             ClearSelection();
         }
@@ -200,21 +209,20 @@ namespace TheEmptying.Presentation.Selection
                     return;
                 }
 
-                // R11 PART5 fix: a hit that's neither the marker, a person, a resource nor a building (every shape prefab carries its own collider, so a click near but not exactly on one of them can still register a hit) must be treated the same as missing entirely for "Click to send" - otherwise it silently falls through to ClearSelection below and the tool does nothing.
-            }
-
-            if (ClickToSendModeEnabled && SelectedPersonId.HasValue)
-            {
-                // TEST TOOL (R10/R11): the ground has no collider (it's drawn, not raycast), so this ground-plane math - the same MapCursorPresenter uses for its own highlight - is how "the ground" is found, whether Physics.Raycast missed outright or hit something unrecognized.
-                var groundPlane = new Plane(Vector3.up, Vector3.zero);
-                if (groundPlane.Raycast(ray, out float distance))
+                if (_zonePresenter != null && _zonePresenter.TryGetZoneForInstance(hit.collider.gameObject, out EntityId zoneId))
                 {
-                    Vector3 worldHit = _floatingOrigin.RenderToWorld(ray.GetPoint(distance));
-                    _peopleModule.TrySendPersonTo(SelectedPersonId.Value, worldHit.x, worldHit.z);
+                    Select(new ZoneSelectionTarget(_zonesModule, _peopleModule, _content, zoneId, HandleZoneRemoved));
                     return;
                 }
             }
 
+            ClearSelection();
+        }
+
+        /// <summary>R12: a zone's "Remove zone" button - the zone is already gone from ZonesModule; redraw the ground so its visual disappears too, then clear the selection.</summary>
+        private void HandleZoneRemoved()
+        {
+            _zonePresenter?.Rebuild(_zonesModule);
             ClearSelection();
         }
 

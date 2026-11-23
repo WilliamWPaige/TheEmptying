@@ -52,16 +52,6 @@
             "description": "Placeholder. How many chunks out from the camera's own chunk are built and shown, in every direction. R6b: sized to what the camera can actually see at its maximum zoom-out (about 320 m), plus one chunk of margin - zoom-out is limited by design, so chunks further out are never built or rendered. R9: the maximum is capped at 6 chunks."
         },
         {
-            "id": "setting.map.low_detail_height_meters",
-            "label": "Low detail height",
-            "valueType": "Number",
-            "default": 400,
-            "minimum": 10,
-            "maximum": 5000,
-            "category": "Map",
-            "description": "Placeholder. Above this camera height, chunks show a flat, low-detail view with no grid lines, so performance stays smooth when zoomed far out. R6b: kept above the camera's maximum zoom height (100 m) so it can't trigger; left in place for when zoom is extended again later."
-        },
-        {
             "id": "setting.map.trees_per_chunk",
             "label": "Trees per chunk",
             "valueType": "Integer",

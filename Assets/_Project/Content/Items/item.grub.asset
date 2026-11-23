@@ -15,3 +15,8 @@ MonoBehaviour:
   id: item.grub
   displayName: Grub
   model: {fileID: 1895929917848890926, guid: 39f5e52f598246e4aaae04aa14cf8801, type: 3}
+  foodValue: 25
+  carryAmount: 5
+  baseValueCopper: 0
+  spoilTimeMinutes: 0
+  size: 1

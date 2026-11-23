@@ -58,14 +58,29 @@ namespace TheEmptying.Presentation.Content
 
         private static UnitContent ToRecord(UnitAsset asset) => new UnitContent { Id = asset.Id, DisplayName = asset.DisplayName };
 
-        private static ItemContent ToRecord(ItemAsset asset) => new ItemContent { Id = asset.Id, DisplayName = asset.DisplayName };
+        private static ItemContent ToRecord(ItemAsset asset) => new ItemContent
+        {
+            Id = asset.Id,
+            DisplayName = asset.DisplayName,
+            FoodValue = asset.FoodValue,
+            CarryAmount = asset.CarryAmount,
+            BaseValueCopper = asset.BaseValueCopper,
+            SpoilTimeMinutes = asset.SpoilTimeMinutes,
+            Size = asset.Size
+        };
 
         private static ResourceContent ToRecord(ResourceAsset asset) => new ResourceContent
         {
             Id = asset.Id,
             DisplayName = asset.DisplayName,
             FootprintWidth = asset.FootprintWidth,
-            FootprintDepth = asset.FootprintDepth
+            FootprintDepth = asset.FootprintDepth,
+            YieldedItem = new ContentRef<ItemContent>(asset.YieldedItemId),
+            UnlimitedAmount = asset.UnlimitedAmount,
+            AmountHeld = asset.AmountHeld,
+            HarvestTimeUnskilledMinutes = asset.HarvestTimeUnskilledMinutes,
+            HarvestTimeSkilledMinutes = asset.HarvestTimeSkilledMinutes,
+            HarvestTimeMasterMinutes = asset.HarvestTimeMasterMinutes
         };
 
         private static BuildingContent ToRecord(BuildingAsset asset) => new BuildingContent

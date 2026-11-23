@@ -56,10 +56,15 @@ namespace TheEmptying.Presentation.Selection
             _root.style.display = DisplayStyle.Flex;
         }
 
-        /// <summary>R10: rebuilds the body in place from the same target, so a live value (a person's action progress, for example) stays current while the window is open.</summary>
+        /// <summary>R10: rebuilds the body in place from the same target, so a live value (a person's action progress, for example) stays current while the window is open. R12: skipped while a field inside (a stockpile's keep-on-hand limit, say) has focus, so rebuilding doesn't interrupt typing.</summary>
         public void Refresh(ISelectionTarget target)
         {
             if (!IsOpen)
+            {
+                return;
+            }
+
+            if (_content.panel?.focusController?.focusedElement is VisualElement focused && _content.Contains(focused))
             {
                 return;
             }

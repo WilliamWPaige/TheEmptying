@@ -20,6 +20,7 @@ namespace TheEmptying.Core.Content
         public const string AttributeDefinitionTypeName = "attribute_definition";
         public const string NameListTypeName = "name_list";
         public const string StartingSiteTypeName = "starting_site";
+        public const string ZoneTypeTypeName = "zone_type";
 
         public static void RegisterAll(ContentTypeRegistry registry)
         {
@@ -35,6 +36,13 @@ namespace TheEmptying.Core.Content
             registry.Register(new ContentTypeDefinition(AttributeDefinitionTypeName, typeof(AttributeDefinition), ValidateAttributeDefinition));
             registry.Register(new ContentTypeDefinition(NameListTypeName, typeof(NameListDefinition), ValidateNameList));
             registry.Register(new ContentTypeDefinition(StartingSiteTypeName, typeof(StartingSiteDefinition), ValidateStartingSite));
+            registry.Register(new ContentTypeDefinition(ZoneTypeTypeName, typeof(ZoneTypeDefinition), ValidateZoneType));
+        }
+
+        /// <summary>Every loaded zone type, in Id order.</summary>
+        public static List<ZoneTypeDefinition> ZoneTypes(ContentDatabase database)
+        {
+            return database.ListByType(ZoneTypeTypeName).Select(e => (ZoneTypeDefinition)e.Definition).ToList();
         }
 
         /// <summary>Every loaded skill, in the order the data lists them (ListByType sorts by Id, so this re-sorts by the Order field instead).</summary>
@@ -188,6 +196,16 @@ namespace TheEmptying.Core.Content
             {
                 context.ReportProblem(content.Id, "displayName", "must not be empty.");
             }
+
+            if (content.Size < 1 || content.Size > 10)
+            {
+                context.ReportProblem(content.Id, "size", "must be between 1 and 10.");
+            }
+
+            if (content.SpoilTimeMinutes < 0)
+            {
+                context.ReportProblem(content.Id, "spoilTimeMinutes", "must not be negative.");
+            }
         }
 
         private static void ValidateResource(ContentDefinition definition, ContentValidationContext context)
@@ -195,6 +213,11 @@ namespace TheEmptying.Core.Content
             var content = (ResourceContent)definition;
             CheckIdPrefix(content.Id, "resource.", context);
             ValidateFootprint(content.Id, content.DisplayName, content.FootprintWidth, content.FootprintDepth, context);
+
+            if (content.HarvestTimeUnskilledMinutes < 0 || content.HarvestTimeSkilledMinutes < 0 || content.HarvestTimeMasterMinutes < 0)
+            {
+                context.ReportProblem(content.Id, "harvestTime", "must not be negative.");
+            }
         }
 
         private static void ValidateBuilding(ContentDefinition definition, ContentValidationContext context)
@@ -262,6 +285,22 @@ namespace TheEmptying.Core.Content
             if (content.FractionZ < 0.0 || content.FractionZ > 1.0)
             {
                 context.ReportProblem(content.Id, "fractionZ", "must be between 0 and 1.");
+            }
+        }
+
+        private static void ValidateZoneType(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (ZoneTypeDefinition)definition;
+            CheckIdPrefix(content.Id, "zone.", context);
+
+            if (string.IsNullOrEmpty(content.DisplayName))
+            {
+                context.ReportProblem(content.Id, "displayName", "must not be empty.");
+            }
+
+            if (string.IsNullOrEmpty(content.ColorHex))
+            {
+                context.ReportProblem(content.Id, "colorHex", "must not be empty.");
             }
         }
 

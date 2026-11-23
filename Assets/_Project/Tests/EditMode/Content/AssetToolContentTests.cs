@@ -82,16 +82,35 @@ namespace TheEmptying.Tests.EditMode.Content
         public void ItemAsset_Valid_HasNoProblems()
         {
             var asset = ScriptableObject.CreateInstance<ItemAsset>();
-            asset.SetForEditor("item.log", "Log", MakeModel());
+            asset.SetForEditor("item.log", "Log", MakeModel(), 0, 5, 0, 0, 4);
 
             Assert.IsFalse(asset.ValidateSelf().Any());
+        }
+
+        [TestCase(0)]
+        [TestCase(11)]
+        public void ItemAsset_SizeOutsideOneToTen_IsReported(int size)
+        {
+            var asset = ScriptableObject.CreateInstance<ItemAsset>();
+            asset.SetForEditor("item.log", "Log", MakeModel(), 0, 5, 0, 0, size);
+
+            Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Size")));
+        }
+
+        [Test]
+        public void ItemAsset_NegativeSpoilTime_IsReported()
+        {
+            var asset = ScriptableObject.CreateInstance<ItemAsset>();
+            asset.SetForEditor("item.log", "Log", MakeModel(), 0, 5, 0, -1, 4);
+
+            Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Spoil time")));
         }
 
         [Test]
         public void ResourceAsset_FootprintWidthBelowOne_IsReported()
         {
             var asset = ScriptableObject.CreateInstance<ResourceAsset>();
-            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 0, 1);
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 0, 1, "item.log", false, 5, 120, 60, 30);
 
             Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Footprint width")));
         }
@@ -100,16 +119,25 @@ namespace TheEmptying.Tests.EditMode.Content
         public void ResourceAsset_FootprintDepthBelowOne_IsReported()
         {
             var asset = ScriptableObject.CreateInstance<ResourceAsset>();
-            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 0);
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 0, "item.log", false, 5, 120, 60, 30);
 
             Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Footprint depth")));
+        }
+
+        [Test]
+        public void ResourceAsset_NegativeHarvestTime_IsReported()
+        {
+            var asset = ScriptableObject.CreateInstance<ResourceAsset>();
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, -1, 60, 30);
+
+            Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Harvest times")));
         }
 
         [Test]
         public void ResourceAsset_Valid_HasNoProblems()
         {
             var asset = ScriptableObject.CreateInstance<ResourceAsset>();
-            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1);
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, 120, 60, 30);
 
             Assert.IsFalse(asset.ValidateSelf().Any());
         }
@@ -154,13 +182,13 @@ namespace TheEmptying.Tests.EditMode.Content
             unit.SetForEditor("unit.villager", "Villager", MakeModel());
 
             var resource = ScriptableObject.CreateInstance<ResourceAsset>();
-            resource.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1);
+            resource.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, 120, 60, 30);
 
             var building = ScriptableObject.CreateInstance<BuildingAsset>();
             building.SetForEditor("building.hut", "Hut", MakeModel(), 2, 3);
 
             var item = ScriptableObject.CreateInstance<ItemAsset>();
-            item.SetForEditor("item.log", "Log", MakeModel());
+            item.SetForEditor("item.log", "Log", MakeModel(), 0, 5, 0, 0, 4);
 
             ContentCatalog catalog = MakeCatalog(
                 new List<UnitAsset> { unit },
@@ -182,6 +210,12 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual("resource.tree", resourceRecord.Id);
             Assert.AreEqual(1, resourceRecord.FootprintWidth);
             Assert.AreEqual(1, resourceRecord.FootprintDepth);
+            Assert.AreEqual("item.log", resourceRecord.YieldedItem.Id);
+            Assert.IsFalse(resourceRecord.UnlimitedAmount);
+            Assert.AreEqual(5, resourceRecord.AmountHeld);
+            Assert.AreEqual(120, resourceRecord.HarvestTimeUnskilledMinutes);
+            Assert.AreEqual(60, resourceRecord.HarvestTimeSkilledMinutes);
+            Assert.AreEqual(30, resourceRecord.HarvestTimeMasterMinutes);
 
             var buildingRecord = (BuildingContent)definitions.Single(d => d.TypeName == BuiltInContentTypes.BuildingTypeName).Definition;
             Assert.AreEqual("building.hut", buildingRecord.Id);
@@ -191,6 +225,8 @@ namespace TheEmptying.Tests.EditMode.Content
             var itemRecord = (ItemContent)definitions.Single(d => d.TypeName == BuiltInContentTypes.ItemTypeName).Definition;
             Assert.AreEqual("item.log", itemRecord.Id);
             Assert.AreEqual("Log", itemRecord.DisplayName);
+            Assert.AreEqual(5, itemRecord.CarryAmount);
+            Assert.AreEqual(4, itemRecord.Size);
         }
 
         /// <summary>R5b: a missing model is reported, not silently skipped-and-logged - it goes into the same problem list as everything else ContentLoader finds, so it stops the game the same way.</summary>
@@ -259,6 +295,39 @@ namespace TheEmptying.Tests.EditMode.Content
             (_, ContentLoadReport report) = loader.Load(null, assetDefinitions: assets);
 
             Assert.IsTrue(report.Problems.Any(p => p.ItemId == "resource.tree" && p.Field == "footprintWidth"));
+        }
+
+        [Test]
+        public void ContentLoader_ItemWithSizeOutsideOneToTen_IsReported()
+        {
+            var loader = new ContentLoader(CreateTypes(), ErrorMode.Release);
+            var assets = new[]
+            {
+                new ContentAssetDefinition(BuiltInContentTypes.ItemTypeName, new ItemContent { Id = "item.log", DisplayName = "Log", Size = 11 }, "content-assets", "item.log")
+            };
+
+            (_, ContentLoadReport report) = loader.Load(null, assetDefinitions: assets);
+
+            Assert.IsTrue(report.Problems.Any(p => p.ItemId == "item.log" && p.Field == "size"));
+        }
+
+        /// <summary>R12 FINISH: "a yielded item that doesn't exist" - caught generically by ContentLoader's ContentRef resolution pass, not by a hand-written check.</summary>
+        [Test]
+        public void ContentLoader_ResourceYieldingAnItemThatDoesNotExist_IsReported()
+        {
+            var loader = new ContentLoader(CreateTypes(), ErrorMode.Release);
+            var assets = new[]
+            {
+                new ContentAssetDefinition(
+                    BuiltInContentTypes.ResourceTypeName,
+                    new ResourceContent { Id = "resource.tree", DisplayName = "Tree", FootprintWidth = 1, FootprintDepth = 1, YieldedItem = new ContentRef<ItemContent>("item.does_not_exist") },
+                    "content-assets",
+                    "resource.tree")
+            };
+
+            (_, ContentLoadReport report) = loader.Load(null, assetDefinitions: assets);
+
+            Assert.IsTrue(report.Problems.Any(p => p.ItemId == "resource.tree" && p.Message.Contains("item.does_not_exist")));
         }
 
         [Test]

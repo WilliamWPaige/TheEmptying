@@ -38,7 +38,6 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(MapModule.CellSizeSettingId, SettingValueType.Number, 1.0, 0.1, 100.0, "Map")]
         [TestCase(MapModule.ChunkSizeSettingId, SettingValueType.Number, 256.0, 8.0, 4096.0, "Map")]
         [TestCase(WorldMapView.ViewDistanceChunksSettingId, SettingValueType.Integer, 3.0, 1.0, 6.0, "Map")]
-        [TestCase(WorldMapView.LowDetailHeightSettingId, SettingValueType.Number, 400.0, 10.0, 5000.0, "Map")]
         [TestCase(MapModule.TreesPerChunkSettingId, SettingValueType.Integer, 20.0, 0.0, 500.0, "Map")]
         [TestCase(MapModule.StonesPerChunkSettingId, SettingValueType.Integer, 3.0, 0.0, 500.0, "Map")]
         [TestCase(MapModule.GrubMoundsPerChunkSettingId, SettingValueType.Integer, 2.0, 0.0, 500.0, "Map")]

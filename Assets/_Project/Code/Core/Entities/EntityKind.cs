@@ -6,6 +6,7 @@ namespace TheEmptying.Core.Entities
         Building,
         Item,
         Group,
-        Site
+        Site,
+        Zone
     }
 }

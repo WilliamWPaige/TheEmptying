@@ -10,6 +10,7 @@ using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation;
 using TheEmptying.Tests.EditMode.Startup;
 using EntityId = TheEmptying.Core.Entities.EntityId;
@@ -68,6 +69,45 @@ namespace TheEmptying.Tests.EditMode.Modules
             }
 
             Assert.Fail("Not everyone left the keep within the tick budget.");
+        }
+
+        /// <summary>R12: while at least one Living Area exists, idle people pick their wander spots inside it instead of anywhere nearby.</summary>
+        [Test]
+        public void WithALivingArea_IdlePeopleWanderInsideIt()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var zones = (ZonesModule)modules.First(m => m is ZonesModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            FoundKingdom(map, buildings, people);
+
+            // Well clear of the 12x12 keep at the map center, and large enough that pathfinding and wander-target picking both have plenty of room.
+            double livingAreaCenterX = map.WorldWidthMeters * 0.5 + 40;
+            double livingAreaCenterZ = map.WorldDepthMeters * 0.5;
+            EntityId? livingAreaId = zones.TryPlaceZone(ZonesModule.LivingAreaTypeId, new OrientedRect(livingAreaCenterX, livingAreaCenterZ, 20, 20, 0), out string reason);
+            Assert.IsNotNull(livingAreaId, reason);
+
+            RunUntilEveryoneHasLeftTheKeep(simulation, people);
+
+            for (int i = 0; i < 4000; i++)
+            {
+                simulation.Step();
+            }
+
+            Assert.IsTrue(zones.TryGetZone(livingAreaId.Value, out ZoneState livingArea));
+            OrientedRect rect = livingArea.Rect;
+            double cellSize = map.CellSizeMeters;
+
+            foreach (PersonState person in people.People.Select(r => r.Value))
+            {
+                double cellCenterX = (person.ReservedCell.X + 0.5) * cellSize;
+                double cellCenterZ = (person.ReservedCell.Z + 0.5) * cellSize;
+                Assert.IsTrue(rect.Contains(cellCenterX, cellCenterZ), $"{person.Name}'s reserved cell {person.ReservedCell} is outside the Living Area.");
+            }
         }
 
         [Test]

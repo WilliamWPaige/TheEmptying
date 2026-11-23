@@ -14,6 +14,7 @@ using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation.Buildings;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.DevTools;
@@ -22,6 +23,7 @@ using TheEmptying.Presentation.People;
 using TheEmptying.Presentation.Selection;
 using TheEmptying.Presentation.Startup;
 using TheEmptying.Presentation.World;
+using TheEmptying.Presentation.Zones;
 using UnityEngine;
 using UnityEngine.InputSystem;
 using UnityEngine.UIElements;
@@ -91,6 +93,9 @@ namespace TheEmptying.Presentation
         private WorldSelectionPresenter _worldSelection;
         private BuildingsModule _buildingsModule;
         private BuildingPresenter _buildingPresenter;
+        private ZonesModule _zonesModule;
+        private ZonePresenter _zonePresenter;
+        private ZoneDrawingPresenter _zoneDrawing;
 
         /// <summary>R11: only set before founding; destroyed for good once the kingdom is founded.</summary>
         private StartingSiteMarkerPresenter _siteMarker;
@@ -341,6 +346,7 @@ namespace TheEmptying.Presentation
             _simulation = simulation;
             _mapModule = modules.OfType<MapModule>().First();
             _buildingsModule = modules.OfType<BuildingsModule>().First();
+            _zonesModule = modules.OfType<ZonesModule>().First();
             _peopleModule = modules.OfType<PeopleModule>().First();
 
             // The closure reads _simulation live, so it keeps working after a load swaps the field.
@@ -401,16 +407,33 @@ namespace TheEmptying.Presentation
             _buildingPresenter = gameObject.AddComponent<BuildingPresenter>();
             _buildingPresenter.Initialize(_floatingOrigin);
 
+            _zonePresenter = gameObject.AddComponent<ZonePresenter>();
+            _zonePresenter.Initialize(_floatingOrigin, _simulation.Content);
+            _zonePresenter.Rebuild(_zonesModule);
+
+            _zoneDrawing = gameObject.AddComponent<ZoneDrawingPresenter>();
+            _zoneDrawing.Initialize(
+                _floatingOrigin,
+                camera,
+                _uiDocument.rootVisualElement,
+                _zonesModule,
+                _zonePresenter,
+                _simulation.Content,
+                ShowToast,
+                () => _zonePresenter.Rebuild(_zonesModule));
+
             _worldSelection = gameObject.AddComponent<WorldSelectionPresenter>();
             _worldSelection.Initialize(
                 _peopleModule,
                 _mapModule,
                 _buildingsModule,
+                _zonesModule,
                 _simulation.Content,
                 _floatingOrigin,
                 _cameraController,
                 _personPresenter,
                 _buildingPresenter,
+                _zonePresenter,
                 _worldMapView.Decorations,
                 camera,
                 _uiDocument.rootVisualElement);
@@ -480,8 +503,9 @@ namespace TheEmptying.Presentation
             _spawnCheat.BuildSections(_cheatMenu);
 
             // Rebuilt fresh every time (unlike SpawnCheat): it must always hold the current MapModule, which a Load replaces.
-            new MapCheat(_mapModule, _worldMapView, _cameraController).BuildSections(_cheatMenu);
+            new MapCheat(_mapModule, _cameraController).BuildSections(_cheatMenu);
             new PeopleCheat(_peopleModule, _cameraController, _worldSelection).BuildSections(_cheatMenu);
+            new StockpileCheat(_zonesModule, _worldSelection, _simulation.Content, ShowToast).BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()
@@ -669,6 +693,12 @@ namespace TheEmptying.Presentation
             if (_foundingPopup != null && _foundingPopup.IsOpen)
             {
                 _foundingPopup.HandleEscapePressed();
+                return;
+            }
+
+            if (_zoneDrawing != null && _zoneDrawing.IsOpen)
+            {
+                _zoneDrawing.HandleEscapePressed();
                 return;
             }
 
@@ -971,6 +1001,7 @@ namespace TheEmptying.Presentation
             _hudPanel.Add(BuildHudButton("1x", () => HandleSetSpeed(1)));
             _hudPanel.Add(BuildHudButton("2x", () => HandleSetSpeed(2)));
             _hudPanel.Add(BuildHudButton("3x", () => HandleSetSpeed(3)));
+            _hudPanel.Add(BuildHudButton("Zones", () => _zoneDrawing?.OpenTypePicker()));
             _hudPanel.Add(BuildErrorBadge());
             root.Add(_hudPanel);
 
@@ -1102,12 +1133,16 @@ namespace TheEmptying.Presentation
                 _simulation = loaded;
                 _mapModule = modules.OfType<MapModule>().First();
                 _buildingsModule = modules.OfType<BuildingsModule>().First();
+                _zonesModule = modules.OfType<ZonesModule>().First();
                 _peopleModule = modules.OfType<PeopleModule>().First();
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
                 _worldMapView?.Rebind(_mapModule, _simulation.Settings);
                 _personPresenter?.Rebind(_peopleModule, _mapModule);
-                _worldSelection?.Rebind(_peopleModule, _mapModule, _buildingsModule, _simulation.Content);
+                _zonePresenter?.Rebind(_simulation.Content);
+                _zonePresenter?.Rebuild(_zonesModule);
+                _zoneDrawing?.Rebind(_zonesModule, _simulation.Content);
+                _worldSelection?.Rebind(_peopleModule, _mapModule, _buildingsModule, _zonesModule, _simulation.Content);
                 _buildingPresenter?.Rebuild(_buildingsModule);
                 ShowSiteMarkerIfNotFounded();
                 BuildCheatMenu();

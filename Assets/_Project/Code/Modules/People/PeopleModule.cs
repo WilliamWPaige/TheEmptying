@@ -10,6 +10,7 @@ using TheEmptying.Core.Scheduling;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
+using TheEmptying.Modules.Zones;
 
 namespace TheEmptying.Modules.People
 {
@@ -17,11 +18,13 @@ namespace TheEmptying.Modules.People
     /// People (R7: entity and world position; R8: identity and stats; R10:
     /// actions, real-time walking, idle milling, thoughts and history;
     /// R11: nobody exists until the kingdom is founded, after which the 9
-    /// founders start inside the keep and come out one at a time).
-    /// Depends on Map (to find a free cell - not on a tree, stone, mound
-    /// or building, and not already held by another person - to stand or
-    /// walk a person on) and on Buildings (to know which cells a building
-    /// blocks, and to release people from one at its door).
+    /// founders start inside the keep and come out one at a time; R12:
+    /// idle people prefer to wander inside a Living Area, if one exists
+    /// and they can path to it). Depends on Map (to find a free cell -
+    /// not on a tree, stone, mound or building, and not already held by
+    /// another person - to stand or walk a person on), Buildings (to
+    /// know which cells a building blocks, and to release people from one
+    /// at its door) and Zones (to find a Living Area to wander inside).
     /// </summary>
     public sealed class PeopleModule : IModule, ISaveableModule
     {
@@ -96,6 +99,7 @@ namespace TheEmptying.Modules.People
 
         private readonly MapModule _mapModule;
         private readonly BuildingsModule _buildingsModule;
+        private readonly ZonesModule _zonesModule;
         private EntityRegistry _entities;
         private SettingsRegistry _settings;
         private RandomService _randomService;
@@ -109,15 +113,16 @@ namespace TheEmptying.Modules.People
         /// <summary>R11: the tick the next person waiting inside a building should try to come out. Meaningless (and never checked) while nobody is inside.</summary>
         private long _nextExitTick;
 
-        public PeopleModule(MapModule mapModule, BuildingsModule buildingsModule)
+        public PeopleModule(MapModule mapModule, BuildingsModule buildingsModule, ZonesModule zonesModule)
         {
             _mapModule = mapModule ?? throw new ArgumentNullException(nameof(mapModule));
             _buildingsModule = buildingsModule ?? throw new ArgumentNullException(nameof(buildingsModule));
+            _zonesModule = zonesModule ?? throw new ArgumentNullException(nameof(zonesModule));
         }
 
         public string Id => ModuleId;
         public int Version => 1;
-        public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId };
+        public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId, ZonesModule.ModuleId };
         public int SectionVersion => 4;
 
         /// <summary>Every current person's Id and state, in ascending entity index order.</summary>
@@ -156,23 +161,6 @@ namespace TheEmptying.Modules.People
             SimRandom random = _randomService.GetStream(RollsStreamName);
             PersonState state = RollPerson(random, PersonRole.Founder, cells[0]);
             return SpawnPersonWithState(state, _context.CurrentTick);
-        }
-
-        /// <summary>
-        /// TEST TOOL (R10, never gameplay): starts the given person walking
-        /// to the cell containing this world position, with the thought
-        /// "Sent by test tool." Used by the People cheat's "Click to send"
-        /// toggle.
-        /// </summary>
-        public void TrySendPersonTo(EntityId id, double worldX, double worldZ)
-        {
-            if (!_people.TryGet(id, out PersonState person))
-            {
-                return;
-            }
-
-            CellCoord target = _mapModule.WorldToCell(worldX, worldZ);
-            StartWalk(id, person, target, "Sent by test tool.", _context.CurrentTick);
         }
 
         public void RemovePerson(EntityId id)
@@ -630,14 +618,21 @@ namespace TheEmptying.Modules.People
             };
         }
 
+        /// <summary>R12: while at least one Living Area exists, idle people prefer to wander inside the nearest one they can actually path to; with none (or none reachable), they wander nearby as before.</summary>
         private void StartWander(EntityId id, PersonState person, long tick)
         {
             SimRandom random = _randomService.GetStream(ActionsStreamName);
-            double radiusMeters = _settings.Get(IdleWanderRadiusMetersSettingId);
             double cellSize = _mapModule.CellSizeMeters;
             CellCoord current = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
 
-            CellCoord? target = TryPickWanderTarget(random, current, radiusMeters, cellSize, id);
+            CellCoord? target = TryPickTargetInNearestReachableLivingArea(random, person, current, cellSize, id);
+
+            if (!target.HasValue)
+            {
+                double radiusMeters = _settings.Get(IdleWanderRadiusMetersSettingId);
+                target = TryPickWanderTarget(random, current, radiusMeters, cellSize, id);
+            }
+
             if (!target.HasValue)
             {
                 StartIdle(id, person, tick, "Nowhere free to wander right now.");
@@ -645,6 +640,65 @@ namespace TheEmptying.Modules.People
             }
 
             StartWalk(id, person, target.Value, "Nothing to do, stretching my legs.", tick);
+        }
+
+        private CellCoord? TryPickTargetInNearestReachableLivingArea(SimRandom random, PersonState person, CellCoord startCell, double cellSize, EntityId selfId)
+        {
+            List<ZoneState> livingAreas = _zonesModule.LivingAreas
+                .Select(r => r.Value)
+                .OrderBy(z => DistanceSquared(person.WorldX, person.WorldZ, z.CenterX, z.CenterZ))
+                .ToList();
+
+            if (livingAreas.Count == 0)
+            {
+                return null;
+            }
+
+            double maxDistanceMeters = _settings.Get(PathfindingMaxDistanceMetersSettingId);
+
+            foreach (ZoneState area in livingAreas)
+            {
+                CellCoord? candidate = TryPickCellInZone(random, area, cellSize, selfId);
+                if (!candidate.HasValue)
+                {
+                    continue;
+                }
+
+                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Value, maxDistanceMeters, cellSize, IsWalkable);
+                if (path != null && path.Count > 0)
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private CellCoord? TryPickCellInZone(SimRandom random, ZoneState area, double cellSizeMeters, EntityId selfId)
+        {
+            for (int attempt = 0; attempt < WanderTargetAttempts; attempt++)
+            {
+                double localA = (random.NextFloat() - 0.5f) * area.SideALength;
+                double localB = (random.NextFloat() - 0.5f) * area.SideBLength;
+                double rad = area.RotationDegrees * Math.PI / 180.0;
+                double worldX = area.CenterX + localA * Math.Cos(rad) - localB * Math.Sin(rad);
+                double worldZ = area.CenterZ + localA * Math.Sin(rad) + localB * Math.Cos(rad);
+
+                CellCoord candidate = _mapModule.WorldToCell(worldX, worldZ);
+                if (IsCellFreeForPerson(candidate, selfId))
+                {
+                    return candidate;
+                }
+            }
+
+            return null;
+        }
+
+        private static double DistanceSquared(double x1, double z1, double x2, double z2)
+        {
+            double dx = x1 - x2;
+            double dz = z1 - z2;
+            return dx * dx + dz * dz;
         }
 
         private CellCoord? TryPickWanderTarget(SimRandom random, CellCoord current, double radiusMeters, double cellSizeMeters, EntityId selfId)

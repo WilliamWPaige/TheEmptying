@@ -17,3 +17,9 @@ MonoBehaviour:
   model: {fileID: 825663836894268182, guid: 7985fc61714ecb54599aeb639155ee71, type: 3}
   footprintWidth: 1
   footprintDepth: 1
+  yieldedItemId: item.grub
+  unlimitedAmount: 1
+  amountHeld: 0
+  harvestTimeUnskilledMinutes: 120
+  harvestTimeSkilledMinutes: 60
+  harvestTimeMasterMinutes: 30

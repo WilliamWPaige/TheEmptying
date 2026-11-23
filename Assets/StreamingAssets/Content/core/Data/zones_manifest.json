@@ -1,0 +1,6 @@
+{
+    "type": "module_manifest",
+    "items": [
+        { "id": "module.zones", "version": 1, "dependencies": ["module.map", "module.buildings"], "enabled": true }
+    ]
+}

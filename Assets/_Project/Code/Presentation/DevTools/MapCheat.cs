@@ -3,25 +3,21 @@ using TheEmptying.Presentation.World;
 
 namespace TheEmptying.Presentation.DevTools
 {
-    /// <summary>R6 test tool: the cheat menu's "Map" section - grid on/off, "go to" X/Y, and jump-to-center/corner.</summary>
+    /// <summary>R6 test tool: the cheat menu's "Map" section - "go to" X/Y, and jump-to-center/corner.</summary>
     public sealed class MapCheat
     {
         private readonly MapModule _mapModule;
-        private readonly WorldMapView _worldMapView;
         private readonly StrategyCameraController _cameraController;
 
-        public MapCheat(MapModule mapModule, WorldMapView worldMapView, StrategyCameraController cameraController)
+        public MapCheat(MapModule mapModule, StrategyCameraController cameraController)
         {
             _mapModule = mapModule;
-            _worldMapView = worldMapView;
             _cameraController = cameraController;
         }
 
         public void BuildSections(CheatMenuRegistry registry)
         {
             CheatSection map = registry.AddSection("Map");
-
-            map.AddToggle("Grid", () => _worldMapView.GridEnabledByPlayer, value => _worldMapView.GridEnabledByPlayer = value);
 
             map.AddNumber(
                 "Go to X",

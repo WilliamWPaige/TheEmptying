@@ -17,3 +17,9 @@ MonoBehaviour:
   model: {fileID: 6140264018679013057, guid: fa041bec13ac1f84d9d36d728bc5bc73, type: 3}
   footprintWidth: 2
   footprintDepth: 2
+  yieldedItemId: item.stone
+  unlimitedAmount: 0
+  amountHeld: 300
+  harvestTimeUnskilledMinutes: 120
+  harvestTimeSkilledMinutes: 60
+  harvestTimeMasterMinutes: 30

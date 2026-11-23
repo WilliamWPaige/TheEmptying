@@ -15,3 +15,8 @@ MonoBehaviour:
   id: item.stone
   displayName: Stone
   model: {fileID: 8617133818384658377, guid: 74926732fcdcdb04ca3fb061f13f70a5, type: 3}
+  foodValue: 0
+  carryAmount: 5
+  baseValueCopper: 0
+  spoilTimeMinutes: 0
+  size: 6

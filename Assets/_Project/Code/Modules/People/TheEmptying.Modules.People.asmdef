@@ -4,7 +4,8 @@
     "references": [
         "TheEmptying.Core",
         "TheEmptying.Modules.Map",
-        "TheEmptying.Modules.Buildings"
+        "TheEmptying.Modules.Buildings",
+        "TheEmptying.Modules.Zones"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

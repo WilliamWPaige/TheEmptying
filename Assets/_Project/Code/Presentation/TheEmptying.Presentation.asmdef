@@ -5,6 +5,7 @@
         "TheEmptying.Core",
         "TheEmptying.Modules.Map",
         "TheEmptying.Modules.Buildings",
+        "TheEmptying.Modules.Zones",
         "TheEmptying.Modules.People",
         "Unity.InputSystem",
         "Newtonsoft.Json"

@@ -12,6 +12,12 @@ namespace TheEmptying.Presentation.Content
         [SerializeField] private GameObject model;
         [SerializeField] private int footprintWidth = 1;
         [SerializeField] private int footprintDepth = 1;
+        [SerializeField] private string yieldedItemId;
+        [SerializeField] private bool unlimitedAmount;
+        [SerializeField] private int amountHeld;
+        [SerializeField] private double harvestTimeUnskilledMinutes;
+        [SerializeField] private double harvestTimeSkilledMinutes;
+        [SerializeField] private double harvestTimeMasterMinutes;
 
         public override string Id => id;
         public override string IdPrefix => "resource.";
@@ -20,6 +26,12 @@ namespace TheEmptying.Presentation.Content
         public override GameObject Model => model;
         public int FootprintWidth => footprintWidth;
         public int FootprintDepth => footprintDepth;
+        public string YieldedItemId => yieldedItemId;
+        public bool UnlimitedAmount => unlimitedAmount;
+        public int AmountHeld => amountHeld;
+        public double HarvestTimeUnskilledMinutes => harvestTimeUnskilledMinutes;
+        public double HarvestTimeSkilledMinutes => harvestTimeSkilledMinutes;
+        public double HarvestTimeMasterMinutes => harvestTimeMasterMinutes;
 
         public override IEnumerable<string> ValidateSelf()
         {
@@ -37,16 +49,38 @@ namespace TheEmptying.Presentation.Content
             {
                 yield return "Footprint depth must be at least 1.";
             }
+
+            if (harvestTimeUnskilledMinutes < 0 || harvestTimeSkilledMinutes < 0 || harvestTimeMasterMinutes < 0)
+            {
+                yield return "Harvest times must not be negative.";
+            }
         }
 
 #if UNITY_EDITOR
-        public void SetForEditor(string id, string displayName, GameObject model, int footprintWidth, int footprintDepth)
+        public void SetForEditor(
+            string id,
+            string displayName,
+            GameObject model,
+            int footprintWidth,
+            int footprintDepth,
+            string yieldedItemId,
+            bool unlimitedAmount,
+            int amountHeld,
+            double harvestTimeUnskilledMinutes,
+            double harvestTimeSkilledMinutes,
+            double harvestTimeMasterMinutes)
         {
             this.id = id;
             this.displayName = displayName;
             this.model = model;
             this.footprintWidth = footprintWidth;
             this.footprintDepth = footprintDepth;
+            this.yieldedItemId = yieldedItemId;
+            this.unlimitedAmount = unlimitedAmount;
+            this.amountHeld = amountHeld;
+            this.harvestTimeUnskilledMinutes = harvestTimeUnskilledMinutes;
+            this.harvestTimeSkilledMinutes = harvestTimeSkilledMinutes;
+            this.harvestTimeMasterMinutes = harvestTimeMasterMinutes;
         }
 #endif
     }

@@ -1,0 +1,15 @@
+{
+    "type": "zone_type",
+    "items": [
+        {
+            "id": "zone.stockpile",
+            "displayName": "Stockpile",
+            "colorHex": "#3DA5D9"
+        },
+        {
+            "id": "zone.living_area",
+            "displayName": "Living Area",
+            "colorHex": "#8BC34A"
+        }
+    ]
+}

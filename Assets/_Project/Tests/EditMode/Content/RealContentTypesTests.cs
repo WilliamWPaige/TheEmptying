@@ -62,6 +62,41 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(1, grubMound.FootprintDepth);
         }
 
+        /// <summary>R12: the real item fields match the prompt's placeholder values.</summary>
+        [TestCase("item.grub", 1, 25.0, 5)]
+        [TestCase("item.log", 4, 0.0, 5)]
+        [TestCase("item.stone", 6, 0.0, 5)]
+        public void RealItems_HaveTheExpectedPlaceholderFields(string itemId, int expectedSize, double expectedFoodValue, int expectedCarryAmount)
+        {
+            ContentCatalog catalog = LoadCatalog();
+            ItemAsset item = catalog.Items.Single(a => a.Id == itemId);
+
+            Assert.AreEqual(expectedSize, item.Size);
+            Assert.AreEqual(expectedFoodValue, item.FoodValue);
+            Assert.AreEqual(expectedCarryAmount, item.CarryAmount);
+        }
+
+        /// <summary>R12: the real resources yield the expected item, hold the expected amount (or are unlimited), and harvest at 2 h / 1 h / 30 min.</summary>
+        [TestCase("resource.grub_mound", "item.grub", true, 0)]
+        [TestCase("resource.tree", "item.log", false, 5)]
+        [TestCase("resource.stone", "item.stone", false, 300)]
+        public void RealResources_YieldTheExpectedItemAndAmount(string resourceId, string expectedItemId, bool expectedUnlimited, int expectedAmountHeld)
+        {
+            ContentCatalog catalog = LoadCatalog();
+            ResourceAsset resource = catalog.ResourceNodes.Single(a => a.Id == resourceId);
+
+            Assert.AreEqual(expectedItemId, resource.YieldedItemId);
+            Assert.AreEqual(expectedUnlimited, resource.UnlimitedAmount);
+            if (!expectedUnlimited)
+            {
+                Assert.AreEqual(expectedAmountHeld, resource.AmountHeld);
+            }
+
+            Assert.AreEqual(120, resource.HarvestTimeUnskilledMinutes);
+            Assert.AreEqual(60, resource.HarvestTimeSkilledMinutes);
+            Assert.AreEqual(30, resource.HarvestTimeMasterMinutes);
+        }
+
         [Test]
         public void EveryRealAsset_ValidatesCleanly()
         {

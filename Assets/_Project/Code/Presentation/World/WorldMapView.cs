@@ -10,14 +10,12 @@ namespace TheEmptying.Presentation.World
     /// R6: the chunked ground. Only chunks near the camera are built and
     /// shown - built tiles are pooled (hidden and reused, never destroyed)
     /// so panning across a chunk edge never hitches. Replaces the R1
-    /// TemporaryGround. Flat and plain for now, with a faint grid; swaps
-    /// to a flat material with no grid lines when zoomed far out, so
-    /// performance stays smooth.
+    /// TemporaryGround. R12: flat and plain, with no grid - the grid
+    /// display was removed; it wasn't needed.
     /// </summary>
     public sealed class WorldMapView : MonoBehaviour
     {
         public const string ViewDistanceChunksSettingId = "setting.map.view_distance_chunks";
-        public const string LowDetailHeightSettingId = "setting.map.low_detail_height_meters";
 
         private sealed class ChunkTile
         {
@@ -33,17 +31,12 @@ namespace TheEmptying.Presentation.World
 
         private Transform _chunkRoot;
         private Mesh _tileMesh;
-        private Material _gridMaterial;
-        private Material _flatMaterial;
-        private Material _currentMaterial;
+        private Material _groundMaterial;
 
         private readonly Dictionary<ChunkCoord, ChunkTile> _activeTiles = new Dictionary<ChunkCoord, ChunkTile>();
         private readonly Stack<ChunkTile> _pool = new Stack<ChunkTile>();
         private readonly List<ChunkCoord> _toRemove = new List<ChunkCoord>();
         private readonly HashSet<ChunkCoord> _needed = new HashSet<ChunkCoord>();
-
-        /// <summary>The Map cheat's grid on/off toggle. The low-detail zoom view always hides the grid regardless of this.</summary>
-        public bool GridEnabledByPlayer { get; set; } = true;
 
         /// <summary>For the world selection/click router (R8), to resolve a clicked resource back to its placement.</summary>
         public TemporaryChunkDecorations Decorations => _decorations;
@@ -62,11 +55,8 @@ namespace TheEmptying.Presentation.World
             _floatingOrigin.Shifted += delta => _chunkRoot.position -= delta;
             _decorations = new TemporaryChunkDecorations(mapModule, floatingOrigin);
 
-            float cellsPerSide = (float)(mapModule.ChunkSizeMeters / mapModule.CellSizeMeters);
             _tileMesh = BuildTileMesh((float)mapModule.ChunkSizeMeters);
-            _gridMaterial = BuildMaterial(withGrid: true, cellsPerSide);
-            _flatMaterial = BuildMaterial(withGrid: false, cellsPerSide);
-            _currentMaterial = _gridMaterial;
+            _groundMaterial = BuildMaterial();
         }
 
         /// <summary>After a load, the simulation (and its MapModule/SettingsRegistry) is a new instance; every tile goes back to the pool and is rebuilt from the new one next Update.</summary>
@@ -92,24 +82,7 @@ namespace TheEmptying.Presentation.World
                 return;
             }
 
-            UpdateMaterial();
             UpdateActiveChunks();
-        }
-
-        private void UpdateMaterial()
-        {
-            bool lowDetail = _cameraController.Height >= _settings.Get(LowDetailHeightSettingId);
-            Material material = (!GridEnabledByPlayer || lowDetail) ? _flatMaterial : _gridMaterial;
-            if (material == _currentMaterial)
-            {
-                return;
-            }
-
-            _currentMaterial = material;
-            foreach (ChunkTile tile in _activeTiles.Values)
-            {
-                tile.Renderer.sharedMaterial = material;
-            }
         }
 
         private void UpdateActiveChunks()
@@ -171,7 +144,6 @@ namespace TheEmptying.Presentation.World
                 (double originX, double originZ) = _mapModule.ChunkOrigin(coord);
                 var worldOrigin = new Vector3((float)originX, 0f, (float)originZ);
                 tile.GameObject.transform.position = _floatingOrigin.WorldToRender(worldOrigin);
-                tile.Renderer.sharedMaterial = _currentMaterial;
                 tile.GameObject.SetActive(true);
                 _activeTiles[coord] = tile;
 
@@ -188,7 +160,7 @@ namespace TheEmptying.Presentation.World
             meshFilter.sharedMesh = _tileMesh;
 
             var meshRenderer = gameObject.AddComponent<MeshRenderer>();
-            meshRenderer.sharedMaterial = _currentMaterial;
+            meshRenderer.sharedMaterial = _groundMaterial;
             meshRenderer.shadowCastingMode = ShadowCastingMode.Off;
             meshRenderer.receiveShadows = false;
 
@@ -226,43 +198,11 @@ namespace TheEmptying.Presentation.World
             return mesh;
         }
 
-        /// <summary>An unlit material with (or without) a small generated grid texture, tiled once per cell.</summary>
-        private static Material BuildMaterial(bool withGrid, float cellsPerSide)
+        /// <summary>A single plain, unlit ground color - no grid.</summary>
+        private static Material BuildMaterial()
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Texture");
-            var material = new Material(shader) { name = withGrid ? "WorldChunkGridMaterial" : "WorldChunkFlatMaterial" };
-
-            Texture2D texture = BuildGridTexture(withGrid);
-            material.mainTexture = texture;
-            material.mainTextureScale = withGrid ? new Vector2(cellsPerSide, cellsPerSide) : Vector2.one;
-
-            return material;
-        }
-
-        private static Texture2D BuildGridTexture(bool withGrid)
-        {
-            const int size = 8;
-            var groundColor = new Color(0.33f, 0.36f, 0.33f);
-            var lineColor = new Color(0.27f, 0.3f, 0.27f);
-
-            var texture = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
-            {
-                name = withGrid ? "WorldChunkGridTexture" : "WorldChunkFlatTexture",
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Repeat
-            };
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    bool onLine = withGrid && (x == 0 || y == 0);
-                    texture.SetPixel(x, y, onLine ? lineColor : groundColor);
-                }
-            }
-
-            texture.Apply();
-            return texture;
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Color");
+            return new Material(shader) { name = "WorldChunkGroundMaterial", color = new Color(0.33f, 0.36f, 0.33f) };
         }
     }
 }
