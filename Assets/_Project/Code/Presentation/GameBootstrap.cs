@@ -437,6 +437,7 @@ namespace TheEmptying.Presentation
                 _worldMapView.Decorations,
                 camera,
                 _uiDocument.rootVisualElement);
+            _worldSelection.ZoneDrawingTool = _zoneDrawing;
         }
 
         /// <summary>

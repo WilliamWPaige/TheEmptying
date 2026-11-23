@@ -13,6 +13,7 @@ using UnityEngine.Rendering;
 using UnityEngine.UIElements;
 using BuildingPresenter = TheEmptying.Presentation.Buildings.BuildingPresenter;
 using ZonePresenter = TheEmptying.Presentation.Zones.ZonePresenter;
+using ZoneDrawingPresenter = TheEmptying.Presentation.Zones.ZoneDrawingPresenter;
 using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation.Selection
@@ -37,6 +38,7 @@ namespace TheEmptying.Presentation.Selection
         private PersonPresenter _personPresenter;
         private BuildingPresenter _buildingPresenter;
         private ZonePresenter _zonePresenter;
+        private ZoneDrawingPresenter _zoneDrawing;
         private TemporaryChunkDecorations _decorations;
         private Camera _camera;
         private VisualElement _uiRoot;
@@ -58,6 +60,9 @@ namespace TheEmptying.Presentation.Selection
 
         /// <summary>R11: the starting site's marker, while it still exists (set by GameBootstrap; cleared once the kingdom is founded, since it's gone for good).</summary>
         public StartingSiteMarkerPresenter SiteMarker { get; set; }
+
+        /// <summary>R12b: set by GameBootstrap right after both are built. While its tool is armed or dragging, clicks here are ignored - drawing a zone never also selects or deselects anything.</summary>
+        public ZoneDrawingPresenter ZoneDrawingTool { get; set; }
 
         /// <summary>R11: called when the starting site marker is clicked - GameBootstrap opens the founding popup.</summary>
         public Action OnSiteMarkerClicked { get; set; }
@@ -111,6 +116,7 @@ namespace TheEmptying.Presentation.Selection
             _current = null;
             _infoWindow.Hide();
             _highlight.SetActive(false);
+            _zonePresenter?.SetSelected(null);
         }
 
         /// <summary>Escape's entry point for the info window (fits between the debug window and the Escape menu in GameBootstrap's priority order).</summary>
@@ -161,13 +167,22 @@ namespace TheEmptying.Presentation.Selection
                 return;
             }
 
-            PositionHighlight(worldPosition, _current.Footprint);
+            if (!(_current is ZoneSelectionTarget))
+            {
+                PositionHighlight(worldPosition, _current.Footprint);
+            }
+
             _infoWindow.Refresh(_current);
         }
 
         private void HandleClick()
         {
             if (Mouse.current == null || !Mouse.current.leftButton.wasPressedThisFrame)
+            {
+                return;
+            }
+
+            if (ZoneDrawingTool != null && ZoneDrawingTool.IsToolActive)
             {
                 return;
             }
@@ -231,6 +246,14 @@ namespace TheEmptying.Presentation.Selection
             _current = target;
             _infoWindow.Show(target);
 
+            if (target is ZoneSelectionTarget zoneTarget)
+            {
+                _highlight.SetActive(false);
+                _zonePresenter?.SetSelected(zoneTarget.Id);
+                return;
+            }
+
+            _zonePresenter?.SetSelected(null);
             if (target.TryGetWorldPosition(out Vector3 worldPosition))
             {
                 PositionHighlight(worldPosition, target.Footprint);

@@ -11,21 +11,24 @@ using EntityId = TheEmptying.Core.Entities.EntityId;
 namespace TheEmptying.Presentation.Zones
 {
     /// <summary>
-    /// R12: the HUD "Zones" button's type picker, and the click-click-
-    /// click rectangle-at-any-angle drawing tool: click to set the
-    /// start, a line follows the mouse to set the first side's length
-    /// and angle, click to lock it, move the mouse to pull out the
-    /// second side, click to finish. Right click or Escape cancels at
-    /// any point. Shows a live outline and a size label throughout.
+    /// R12b: the HUD "Zones" button's type picker, and the press-drag-
+    /// release drawing tool: press the left button on the ground to
+    /// start, drag, release to create. The box is always a clean,
+    /// straight box lined up with the camera's current facing (so
+    /// turning the camera with Q/E re-aligns it live) - see
+    /// ZoneDrawingMath. Invalid (too small, or overlapping the keep or
+    /// another zone) shows red and releasing does nothing. After
+    /// placing one zone, the tool stays armed with the same type;
+    /// right click or Escape while not dragging exits it, and while
+    /// dragging just cancels that drag.
     /// </summary>
     public sealed class ZoneDrawingPresenter : MonoBehaviour
     {
         private enum DrawState
         {
             None,
-            AwaitingStart,
-            AwaitingFirstSide,
-            AwaitingSecondSide
+            Armed,
+            Dragging
         }
 
         private FloatingOrigin _floatingOrigin;
@@ -41,15 +44,19 @@ namespace TheEmptying.Presentation.Zones
         private string _zoneTypeId;
         private double _startX;
         private double _startZ;
-        private double _sideALength;
-        private double _rotationDegrees;
 
         private ZoneVisual _preview;
         private VisualElement _typePickerPanel;
         private VisualElement _typeButtonRow;
         private Label _sizeLabel;
 
+        private static readonly Color InvalidColor = new Color(0.85f, 0.15f, 0.15f);
+
+        /// <summary>For the Escape chain's priority order: the type picker is showing, or a drag/armed tool is active.</summary>
         public bool IsOpen => (_typePickerPanel != null && _typePickerPanel.style.display == DisplayStyle.Flex) || _state != DrawState.None;
+
+        /// <summary>R12b: true whenever the tool would consume a world click (armed or dragging) - the world click router must ignore clicks while this is true.</summary>
+        public bool IsToolActive => _state != DrawState.None;
 
         public void Initialize(
             FloatingOrigin floatingOrigin,
@@ -79,7 +86,7 @@ namespace TheEmptying.Presentation.Zones
         {
             _zonesModule = zonesModule;
             _content = content;
-            CancelDrawing();
+            ExitTool();
             CloseTypePicker();
         }
 
@@ -94,7 +101,7 @@ namespace TheEmptying.Presentation.Zones
             _typePickerPanel.style.display = DisplayStyle.Flex;
         }
 
-        /// <summary>Escape's entry point - closes the type picker, or cancels an in-progress drawing, whichever is open.</summary>
+        /// <summary>Escape's entry point - closes the type picker, cancels a drag, or exits an armed (not dragging) tool, whichever applies.</summary>
         public void HandleEscapePressed()
         {
             if (_typePickerPanel.style.display == DisplayStyle.Flex)
@@ -103,7 +110,13 @@ namespace TheEmptying.Presentation.Zones
                 return;
             }
 
-            CancelDrawing();
+            if (_state == DrawState.Dragging)
+            {
+                CancelDrag();
+                return;
+            }
+
+            ExitTool();
         }
 
         private void CloseTypePicker()
@@ -115,12 +128,24 @@ namespace TheEmptying.Presentation.Zones
         {
             CloseTypePicker();
             _zoneTypeId = zoneTypeId;
-            _state = DrawState.AwaitingStart;
+            _state = DrawState.Armed;
         }
 
-        private void CancelDrawing()
+        private void ExitTool()
         {
             _state = DrawState.None;
+            HidePreview();
+        }
+
+        /// <summary>Drops the current drag but keeps the tool armed with the same type, ready to draw another.</summary>
+        private void CancelDrag()
+        {
+            _state = DrawState.Armed;
+            HidePreview();
+        }
+
+        private void HidePreview()
+        {
             _preview?.SetActive(false);
             if (_sizeLabel != null)
             {
@@ -142,88 +167,61 @@ namespace TheEmptying.Presentation.Zones
 
             if (Mouse.current.rightButton.wasPressedThisFrame)
             {
-                CancelDrawing();
+                if (_state == DrawState.Dragging)
+                {
+                    CancelDrag();
+                }
+                else
+                {
+                    ExitTool();
+                }
+
                 return;
             }
 
-            if (!TryGetGroundPoint(out double worldX, out double worldZ))
+            if (_state == DrawState.Armed)
+            {
+                if (Mouse.current.leftButton.wasPressedThisFrame
+                    && !UiInputUtility.IsPointerOverUi(_uiRoot, Mouse.current.position.ReadValue())
+                    && TryGetGroundPoint(out double pressX, out double pressZ))
+                {
+                    _startX = pressX;
+                    _startZ = pressZ;
+                    _state = DrawState.Dragging;
+                }
+
+                return;
+            }
+
+            // Dragging.
+            if (!TryGetGroundPoint(out double currentX, out double currentZ))
             {
                 return;
             }
 
-            bool clicked = Mouse.current.leftButton.wasPressedThisFrame && !UiInputUtility.IsPointerOverUi(_uiRoot, Mouse.current.position.ReadValue());
+            double cameraYawDegrees = _camera.transform.eulerAngles.y;
+            OrientedRect rect = ZoneDrawingMath.BuildRect(_startX, _startZ, currentX, currentZ, cameraYawDegrees);
+            bool valid = _zonesModule.CanPlace(rect, out string invalidReason);
 
-            switch (_state)
+            ShowPreview(rect, valid);
+            UpdateSizeLabel(rect.SideALength, rect.SideBLength);
+
+            if (Mouse.current.leftButton.wasReleasedThisFrame)
             {
-                case DrawState.AwaitingStart:
-                    if (clicked)
-                    {
-                        _startX = worldX;
-                        _startZ = worldZ;
-                        _state = DrawState.AwaitingFirstSide;
-                    }
-
-                    break;
-
-                case DrawState.AwaitingFirstSide:
-                    HandleAwaitingFirstSide(worldX, worldZ, clicked);
-                    break;
-
-                case DrawState.AwaitingSecondSide:
-                    HandleAwaitingSecondSide(worldX, worldZ, clicked);
-                    break;
+                FinishDrag(rect, valid, invalidReason);
             }
         }
 
-        private void HandleAwaitingFirstSide(double worldX, double worldZ, bool clicked)
-        {
-            double dx = worldX - _startX;
-            double dz = worldZ - _startZ;
-            double length = Math.Sqrt(dx * dx + dz * dz);
-            double rotation = length > 0.001 ? Math.Atan2(dz, dx) * 180.0 / Math.PI : 0.0;
-
-            double midX = (_startX + worldX) * 0.5;
-            double midZ = (_startZ + worldZ) * 0.5;
-            ShowPreview(new OrientedRect(midX, midZ, length, 0, rotation));
-            UpdateSizeLabel(length, 0);
-
-            if (clicked && length >= 0.01)
-            {
-                _sideALength = length;
-                _rotationDegrees = rotation;
-                _state = DrawState.AwaitingSecondSide;
-            }
-        }
-
-        private void HandleAwaitingSecondSide(double worldX, double worldZ, bool clicked)
-        {
-            double rad = _rotationDegrees * Math.PI / 180.0;
-            double axisAx = Math.Cos(rad);
-            double axisAz = Math.Sin(rad);
-            double axisBx = -Math.Sin(rad);
-            double axisBz = Math.Cos(rad);
-
-            double dx = worldX - _startX;
-            double dz = worldZ - _startZ;
-            double signedSideB = dx * axisBx + dz * axisBz;
-
-            double centerX = _startX + _sideALength * 0.5 * axisAx + signedSideB * 0.5 * axisBx;
-            double centerZ = _startZ + _sideALength * 0.5 * axisAz + signedSideB * 0.5 * axisBz;
-
-            var rect = new OrientedRect(centerX, centerZ, _sideALength, Math.Abs(signedSideB), _rotationDegrees);
-            ShowPreview(rect);
-            UpdateSizeLabel(_sideALength, signedSideB);
-
-            if (clicked)
-            {
-                FinishDrawing(rect);
-            }
-        }
-
-        private void FinishDrawing(OrientedRect rect)
+        private void FinishDrag(OrientedRect rect, bool valid, string invalidReason)
         {
             string zoneTypeId = _zoneTypeId;
-            CancelDrawing();
+            CancelDrag();
+
+            if (!valid)
+            {
+                _onMessage?.Invoke(invalidReason ?? "Couldn't place that zone.");
+                return;
+            }
 
             EntityId? id = _zonesModule.TryPlaceZone(zoneTypeId, rect, out string reason);
             if (id == null)
@@ -255,13 +253,14 @@ namespace TheEmptying.Presentation.Zones
             return true;
         }
 
-        private void ShowPreview(OrientedRect rect)
+        private void ShowPreview(OrientedRect rect, bool valid)
         {
             if (_preview == null)
             {
                 _preview = new ZoneVisual(transform, _zonePresenter.ColorFor(_zoneTypeId), collidable: false);
             }
 
+            _preview.SetColor(valid ? _zonePresenter.ColorFor(_zoneTypeId) : InvalidColor);
             _preview.UpdateGeometry(rect, _floatingOrigin);
             _preview.SetActive(true);
         }
