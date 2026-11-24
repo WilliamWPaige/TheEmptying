@@ -97,6 +97,18 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(30, resource.HarvestTimeMasterMinutes);
         }
 
+        /// <summary>R13b: the grub mound allows 2 workers at once (the design's crowding placeholder); the other resources default to 1.</summary>
+        [TestCase("resource.grub_mound", 2)]
+        [TestCase("resource.tree", 1)]
+        [TestCase("resource.stone", 1)]
+        public void RealResources_HaveTheExpectedMaxWorkers(string resourceId, int expectedMaxWorkers)
+        {
+            ContentCatalog catalog = LoadCatalog();
+            ResourceAsset resource = catalog.ResourceNodes.Single(a => a.Id == resourceId);
+
+            Assert.AreEqual(expectedMaxWorkers, resource.MaxWorkers);
+        }
+
         [Test]
         public void EveryRealAsset_ValidatesCleanly()
         {

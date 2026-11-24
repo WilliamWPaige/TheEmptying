@@ -18,6 +18,7 @@ namespace TheEmptying.Presentation.Content
         [SerializeField] private double harvestTimeUnskilledMinutes;
         [SerializeField] private double harvestTimeSkilledMinutes;
         [SerializeField] private double harvestTimeMasterMinutes;
+        [SerializeField] private int maxWorkers = 1;
 
         public override string Id => id;
         public override string IdPrefix => "resource.";
@@ -32,6 +33,7 @@ namespace TheEmptying.Presentation.Content
         public double HarvestTimeUnskilledMinutes => harvestTimeUnskilledMinutes;
         public double HarvestTimeSkilledMinutes => harvestTimeSkilledMinutes;
         public double HarvestTimeMasterMinutes => harvestTimeMasterMinutes;
+        public int MaxWorkers => maxWorkers;
 
         public override IEnumerable<string> ValidateSelf()
         {
@@ -54,6 +56,11 @@ namespace TheEmptying.Presentation.Content
             {
                 yield return "Harvest times must not be negative.";
             }
+
+            if (maxWorkers < 1)
+            {
+                yield return "Max workers must be at least 1.";
+            }
         }
 
 #if UNITY_EDITOR
@@ -68,7 +75,8 @@ namespace TheEmptying.Presentation.Content
             int amountHeld,
             double harvestTimeUnskilledMinutes,
             double harvestTimeSkilledMinutes,
-            double harvestTimeMasterMinutes)
+            double harvestTimeMasterMinutes,
+            int maxWorkers)
         {
             this.id = id;
             this.displayName = displayName;
@@ -81,6 +89,7 @@ namespace TheEmptying.Presentation.Content
             this.harvestTimeUnskilledMinutes = harvestTimeUnskilledMinutes;
             this.harvestTimeSkilledMinutes = harvestTimeSkilledMinutes;
             this.harvestTimeMasterMinutes = harvestTimeMasterMinutes;
+            this.maxWorkers = maxWorkers;
         }
 #endif
     }

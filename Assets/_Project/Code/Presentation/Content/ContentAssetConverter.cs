@@ -80,7 +80,8 @@ namespace TheEmptying.Presentation.Content
             AmountHeld = asset.AmountHeld,
             HarvestTimeUnskilledMinutes = asset.HarvestTimeUnskilledMinutes,
             HarvestTimeSkilledMinutes = asset.HarvestTimeSkilledMinutes,
-            HarvestTimeMasterMinutes = asset.HarvestTimeMasterMinutes
+            HarvestTimeMasterMinutes = asset.HarvestTimeMasterMinutes,
+            MaxWorkers = asset.MaxWorkers
         };
 
         private static BuildingContent ToRecord(BuildingAsset asset) => new BuildingContent

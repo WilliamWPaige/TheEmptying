@@ -390,6 +390,36 @@
             "maximum": 5,
             "category": "People",
             "description": "TEMPORARY placeholder (R13). How much faster (as a fraction) a person builds experience in a kind of work they like."
+        },
+        {
+            "id": "setting.people.spot_wait_min_seconds",
+            "label": "Spot wait min",
+            "valueType": "Number",
+            "default": 10,
+            "minimum": 0.1,
+            "maximum": 300,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13b). After finding no free spot at a resource (a grub mound, say) or a stockpile, the shortest a person waits before trying again, in real seconds at 1x game speed."
+        },
+        {
+            "id": "setting.people.spot_wait_max_seconds",
+            "label": "Spot wait max",
+            "valueType": "Number",
+            "default": 30,
+            "minimum": 0.1,
+            "maximum": 300,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13b). After finding no free spot at a resource (a grub mound, say) or a stockpile, the longest a person waits before trying again, in real seconds at 1x game speed."
+        },
+        {
+            "id": "setting.people.log_decisions",
+            "label": "Log person decisions",
+            "valueType": "Boolean",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R13b). Debug: logs each person's goal, chosen target (and why) and any failure reason every time they decide their next action. On by default in the Editor."
         }
     ]
 }

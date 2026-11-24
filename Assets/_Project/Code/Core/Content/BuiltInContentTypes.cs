@@ -218,6 +218,11 @@ namespace TheEmptying.Core.Content
             {
                 context.ReportProblem(content.Id, "harvestTime", "must not be negative.");
             }
+
+            if (content.MaxWorkers < 1)
+            {
+                context.ReportProblem(content.Id, "maxWorkers", "must be at least 1.");
+            }
         }
 
         private static void ValidateBuilding(ContentDefinition definition, ContentValidationContext context)

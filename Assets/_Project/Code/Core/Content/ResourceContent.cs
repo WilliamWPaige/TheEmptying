@@ -36,5 +36,9 @@ namespace TheEmptying.Core.Content
 
         [JsonProperty("harvestTimeMasterMinutes")]
         public double HarvestTimeMasterMinutes { get; set; }
+
+        /// <summary>R13b: how many people may work this resource at once (dig at a grub mound, say). A resource at its limit is treated as unavailable.</summary>
+        [JsonProperty("maxWorkers")]
+        public int MaxWorkers { get; set; } = 1;
     }
 }

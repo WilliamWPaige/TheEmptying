@@ -7,8 +7,10 @@ namespace TheEmptying.Modules.People
     /// <summary>
     /// A person (R7: type and world position; R8: name, sex, age, role,
     /// specialty and stats; R10: current action, movement and history;
-    /// R13: hunger, carried goods, a home stash, skill experience, and
-    /// likes/dislikes). Identity (name, sex, age, role, specialty) is set
+    /// R13: hunger, carried goods, skill experience, and likes/dislikes;
+    /// R13b: the home stash itself moved to PeopleModule, shared by
+    /// everyone living at the same home building). Identity (name, sex,
+    /// age, role, specialty) is set
     /// once at creation and never changes; everything else changes over
     /// play - skill levels included, via IncreaseSkill.
     /// </summary>
@@ -55,9 +57,6 @@ namespace TheEmptying.Modules.People
 
         /// <summary>R13: the building this person lives in - for now, every founder and the Monarch live in the keep. Null for a person with no home (e.g. the Spawn cheat).</summary>
         public EntityId? HomeBuildingId { get; set; }
-
-        /// <summary>R13: this person's own food stash, kept at their home, by item content Id.</summary>
-        public Dictionary<string, int> HomeStash { get; } = new Dictionary<string, int>();
 
         /// <summary>R13: what this person is currently trying to accomplish - see PersonGoal.</summary>
         public PersonGoal Goal { get; set; } = PersonGoal.None;

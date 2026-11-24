@@ -1,3 +1,4 @@
+using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Linq;
@@ -364,6 +365,9 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(PeopleModule.LikedWorkChoiceWeightSettingId, SettingValueType.Number, 2.0, 0.1, 10.0, "People")]
         [TestCase(PeopleModule.DislikedWorkChoiceWeightSettingId, SettingValueType.Number, 0.5, 0.01, 10.0, "People")]
         [TestCase(PeopleModule.LikedWorkExperienceBonusSettingId, SettingValueType.Number, 0.25, 0.0, 5.0, "People")]
+        [TestCase(PeopleModule.SpotWaitMinSecondsSettingId, SettingValueType.Number, 10.0, 0.1, 300.0, "People")]
+        [TestCase(PeopleModule.SpotWaitMaxSecondsSettingId, SettingValueType.Number, 30.0, 0.1, 300.0, "People")]
+        [TestCase(PeopleModule.LogDecisionsSettingId, SettingValueType.Boolean, 0.0, 0.0, 1.0, "People")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
@@ -421,7 +425,8 @@ namespace TheEmptying.Tests.EditMode.Modules
             firstPerson.Hunger = 37.5;
             firstPerson.CarriedItemId = "item.grub";
             firstPerson.CarriedAmount = 4;
-            firstPerson.HomeStash["item.grub"] = 6;
+            Assert.IsTrue(firstPerson.HomeBuildingId.HasValue);
+            peopleBefore.DepositIntoHomeStash(firstPerson.HomeBuildingId.Value, "item.grub", 6);
             firstPerson.Goal = PersonGoal.ForagingForStockpile;
             firstPerson.TargetIsHome = true;
             firstPerson.TargetIsMound = false;
@@ -439,6 +444,9 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             Assert.IsTrue(peopleAfter.TryGetPerson(firstId, out PersonState loadedPerson));
             AssertSameState(firstPerson, loadedPerson);
+
+            Assert.IsTrue(loadedPerson.HomeBuildingId.HasValue);
+            CollectionAssert.AreEquivalent(peopleBefore.GetHomeStash(firstPerson.HomeBuildingId.Value), peopleAfter.GetHomeStash(loadedPerson.HomeBuildingId.Value));
         }
 
         /// <summary>R10/R11: a founded game, with people still waiting inside the keep, survives a save and load round trip exactly (action state, history and the keep-exit timer alike), and continuing the loaded game afterward matches continuing the original unbroken.</summary>
@@ -531,7 +539,6 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(a.CarriedItemId, b.CarriedItemId);
             Assert.AreEqual(a.CarriedAmount, b.CarriedAmount);
             Assert.AreEqual(a.HomeBuildingId, b.HomeBuildingId);
-            CollectionAssert.AreEquivalent(a.HomeStash, b.HomeStash);
             Assert.AreEqual(a.Goal, b.Goal);
             Assert.AreEqual(a.TargetZoneId, b.TargetZoneId);
             Assert.AreEqual(a.ForagingDeliveryZoneId, b.ForagingDeliveryZoneId);
@@ -541,6 +548,191 @@ namespace TheEmptying.Tests.EditMode.Modules
             CollectionAssert.AreEquivalent(a.LikedSkillIds, b.LikedSkillIds);
             CollectionAssert.AreEquivalent(a.DislikedSkillIds, b.DislikedSkillIds);
             CollectionAssert.AreEquivalent(a.SkillExperienceHours, b.SkillExperienceHours);
+        }
+
+        /// <summary>R13b: a mound never has more than its own max-workers limit of people reserving one of its neighbor cells at once, and no two people ever hold the same reserved cell - the fix for the "one worker only" / endless "someone is already there" bugs.</summary>
+        [Test]
+        public void ForagingNearMounds_NeverExceedsAMoundsMaxWorkers_AndNeverDoubleReservesACell()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var zones = (ZonesModule)modules.First(m => m is ZonesModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            double centerX = map.WorldWidthMeters * 0.5;
+            double centerZ = map.WorldDepthMeters * 0.5;
+            FoundKingdom(map, buildings, people);
+
+            // So foraging-for-the-stockpile is actually chosen as work, not just eating at a mound when hungry.
+            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 10, 10, 0), out string reason);
+            Assert.IsNotNull(stockpileId, reason);
+
+            Assert.IsTrue(simulation.Content.TryGet(BuiltInContentTypes.ResourceTypeName, "resource.grub_mound", out ContentEntry entry));
+            var moundResource = (ResourceContent)entry.Definition;
+            int maxWorkers = moundResource.MaxWorkers;
+            Assert.Greater(maxWorkers, 0);
+
+            var moundCells = new HashSet<CellCoord>();
+            ChunkCoord centerChunk = map.WorldToChunk(centerX, centerZ);
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                for (int dz = -3; dz <= 3; dz++)
+                {
+                    ChunkData chunk = map.GetOrCreateChunk(new ChunkCoord(centerChunk.X + dx, centerChunk.Z + dz));
+                    foreach (ChunkPlacement placement in chunk.Placements)
+                    {
+                        if (placement.Kind == PlacementKind.GrubMound)
+                        {
+                            moundCells.Add(placement.Cell);
+                        }
+                    }
+                }
+            }
+
+            Assert.Greater(moundCells.Count, 0, "Sanity check: expected grub mounds near the keep.");
+
+            for (int tick = 0; tick < 20000; tick++)
+            {
+                simulation.Step();
+
+                List<CellCoord> reservedCells = people.People
+                    .Select(r => r.Value)
+                    .Where(p => p.CurrentAction.Kind != ActionKind.InsideBuilding)
+                    .Select(p => p.ReservedCell)
+                    .ToList();
+
+                CollectionAssert.AllItemsAreUnique(reservedCells, $"Two people held the same reserved cell at tick {tick}.");
+
+                foreach (CellCoord moundCell in moundCells)
+                {
+                    int workers = reservedCells.Count(c => IsAdjacentOrSame(c, moundCell));
+                    Assert.LessOrEqual(workers, maxWorkers, $"Mound at {moundCell} had {workers} workers at tick {tick}, more than its limit of {maxWorkers}.");
+                }
+            }
+        }
+
+        private static bool IsAdjacentOrSame(CellCoord a, CellCoord b)
+        {
+            return Math.Abs(a.X - b.X) <= 1 && Math.Abs(a.Z - b.Z) <= 1;
+        }
+
+        /// <summary>R13b: stockpiles are drop-off and pick-up only - nobody's idle target (their standing cell while Idle) is ever inside one.</summary>
+        [Test]
+        public void IdlePeople_AreNeverStandingInsideAStockpile()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var zones = (ZonesModule)modules.First(m => m is ZonesModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            double centerX = map.WorldWidthMeters * 0.5;
+            double centerZ = map.WorldDepthMeters * 0.5;
+            FoundKingdom(map, buildings, people);
+
+            // Small, close and tightly capped, so people deliver to and eat from it constantly - clear of the 12x12 keep at the map center.
+            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 15, centerZ, 8, 8, 0), out string reason);
+            Assert.IsNotNull(stockpileId, reason);
+            zones.SetKeepOnHandLimit(stockpileId.Value, "item.grub", 3);
+
+            Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
+            OrientedRect rect = stockpile.Rect;
+            double cellSize = map.CellSizeMeters;
+
+            RunUntilEveryoneHasLeftTheKeep(simulation, people);
+
+            for (int tick = 0; tick < 15000; tick++)
+            {
+                simulation.Step();
+
+                foreach (PersonState person in people.People.Select(r => r.Value))
+                {
+                    if (person.CurrentAction.Kind != ActionKind.Idle)
+                    {
+                        continue;
+                    }
+
+                    double worldX = (person.ReservedCell.X + 0.5) * cellSize;
+                    double worldZ = (person.ReservedCell.Z + 0.5) * cellSize;
+                    Assert.IsFalse(rect.Contains(worldX, worldZ), $"{person.Name} was idling inside the stockpile at tick {tick} (thought: '{person.CurrentAction.Thought}').");
+                }
+            }
+        }
+
+        /// <summary>R13b: goods never vanish - when a stockpile can't take everything being delivered, only what fit is removed from what's carried; the rest stays carried for the next trip.</summary>
+        [Test]
+        public void DeliveringMoreThanAStockpileCanHold_KeepsTheLeftoverCarried()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var zones = (ZonesModule)modules.First(m => m is ZonesModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            FoundKingdom(map, buildings, people);
+
+            double centerX = map.WorldWidthMeters * 0.5;
+            double centerZ = map.WorldDepthMeters * 0.5;
+            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason);
+            Assert.IsNotNull(stockpileId, reason);
+            zones.SetKeepOnHandLimit(stockpileId.Value, "item.grub", 2);
+
+            Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
+
+            EntityId firstId = people.People.First().Key;
+            people.TryGetPerson(firstId, out PersonState person);
+
+            person.WorldX = stockpile.CenterX;
+            person.WorldZ = stockpile.CenterZ;
+            person.CarriedItemId = "item.grub";
+            person.CarriedAmount = 10;
+            person.Goal = PersonGoal.ForagingForStockpile;
+            person.ForagingDeliveryZoneId = stockpileId.Value;
+
+            long tick = simulation.Clock.CurrentTick;
+            person.CurrentAction = new PersonAction
+            {
+                Kind = ActionKind.Idle,
+                StartTick = tick,
+                DurationTicks = 1,
+                CurrentTickForProgress = tick
+            };
+
+            simulation.Step();
+
+            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId.Value, "item.grub");
+            Assert.AreEqual(2, amountInStockpile, "Only the room actually available should have been added.");
+            Assert.AreEqual(8, person.CarriedAmount, "The leftover that didn't fit must stay carried, not vanish.");
+            Assert.AreEqual("item.grub", person.CarriedItemId);
+        }
+
+        /// <summary>R13b: a home building's shared stash (not any one person's) survives a save and load round trip.</summary>
+        [Test]
+        public void SharedHomeStash_SurvivesASaveAndLoadRoundTrip()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule peopleBefore) = BuildNewGame(core);
+            EntityId keepId = FoundKingdom(map, buildings, peopleBefore);
+
+            peopleBefore.DepositIntoHomeStash(keepId, "item.grub", 11);
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = 9 }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var peopleAfter = (PeopleModule)loadedModules.First(m => m is PeopleModule);
+
+            CollectionAssert.AreEquivalent(peopleBefore.GetHomeStash(keepId), peopleAfter.GetHomeStash(keepId));
+            Assert.AreEqual(11, peopleAfter.GetHomeStash(keepId)["item.grub"]);
         }
     }
 }

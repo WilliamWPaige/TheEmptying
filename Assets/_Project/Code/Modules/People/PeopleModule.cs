@@ -111,6 +111,15 @@ namespace TheEmptying.Modules.People
         /// <summary>R13: how much faster (fraction) experience builds in liked work (TEMPORARY placeholder).</summary>
         public const string LikedWorkExperienceBonusSettingId = "setting.people.liked_work_experience_bonus";
 
+        /// <summary>R13b: the shortest a person waits, after finding no free spot at a resource or a stockpile, before trying again (TEMPORARY placeholder).</summary>
+        public const string SpotWaitMinSecondsSettingId = "setting.people.spot_wait_min_seconds";
+
+        /// <summary>R13b: the longest a person waits, after finding no free spot at a resource or a stockpile, before trying again (TEMPORARY placeholder).</summary>
+        public const string SpotWaitMaxSecondsSettingId = "setting.people.spot_wait_max_seconds";
+
+        /// <summary>R13b: debug - logs each person's goal, chosen target (and why) and any failure reason every time they decide their next action. On by default in the Editor.</summary>
+        public const string LogDecisionsSettingId = "setting.people.log_decisions";
+
         /// <summary>Owned by time_settings.json, not by any module - the same real-time-to-tick conversion the presentation layer's tick rate uses.</summary>
         private const string RealSecondsPerDaySettingId = "setting.time.real_seconds_per_day";
 
@@ -161,8 +170,16 @@ namespace TheEmptying.Modules.People
         /// <summary>The one cell each reserving person currently holds - their standing cell while Idle, or the cell they're walking to while Walk. People waiting InsideBuilding hold none. Rebuilt from each person's own ReservedCell on load.</summary>
         private readonly Dictionary<CellCoord, EntityId> _reservedCells = new Dictionary<CellCoord, EntityId>();
 
+        /// <summary>R13b: each home building's own shared stash, by item content Id - for now, every founder's home is the keep, so everyone shares one pantry.</summary>
+        private readonly Dictionary<EntityId, Dictionary<string, int>> _homeStashesByBuilding = new Dictionary<EntityId, Dictionary<string, int>>();
+
+        private static readonly Dictionary<string, int> EmptyHomeStash = new Dictionary<string, int>();
+
         /// <summary>R11: the tick the next person waiting inside a building should try to come out. Meaningless (and never checked) while nobody is inside.</summary>
         private long _nextExitTick;
+
+        /// <summary>R13b: where LogDecision sends its lines, set by the presentation layer; null (the default) means decisions are never logged, regardless of the setting.</summary>
+        private Action<string> _decisionLogSink;
 
         public PeopleModule(MapModule mapModule, BuildingsModule buildingsModule, ZonesModule zonesModule)
         {
@@ -174,12 +191,77 @@ namespace TheEmptying.Modules.People
         public string Id => ModuleId;
         public int Version => 1;
         public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId, ZonesModule.ModuleId };
-        public int SectionVersion => 5;
+        public int SectionVersion => 6;
 
         /// <summary>Every current person's Id and state, in ascending entity index order.</summary>
         public IEnumerable<KeyValuePair<EntityId, PersonState>> People => _people.Rows();
 
         public bool TryGetPerson(EntityId id, out PersonState person) => _people.TryGet(id, out person);
+
+        /// <summary>R13b: where to send each logged decision line (see LogDecisionsSettingId); set by the presentation layer, which decides how (or whether) to show it.</summary>
+        public void SetDecisionLogSink(Action<string> sink) => _decisionLogSink = sink;
+
+        /// <summary>R13b: a home building's own shared stash (everyone living there draws from, and tops up, the same pantry); empty if nothing has ever been stored there.</summary>
+        public IReadOnlyDictionary<string, int> GetHomeStash(EntityId buildingId) =>
+            _homeStashesByBuilding.TryGetValue(buildingId, out Dictionary<string, int> stash) ? stash : EmptyHomeStash;
+
+        /// <summary>R13b: adds to a home building's shared stash - public so a future trade/delivery system (and tests) can top it up the same way foraging does.</summary>
+        public void DepositIntoHomeStash(EntityId buildingId, string itemContentId, int amount)
+        {
+            if (amount <= 0 || string.IsNullOrEmpty(itemContentId))
+            {
+                return;
+            }
+
+            if (!_homeStashesByBuilding.TryGetValue(buildingId, out Dictionary<string, int> stash))
+            {
+                stash = new Dictionary<string, int>();
+                _homeStashesByBuilding[buildingId] = stash;
+            }
+
+            stash.TryGetValue(itemContentId, out int current);
+            stash[itemContentId] = current + amount;
+        }
+
+        private void RemoveFromHomeStash(EntityId buildingId, string itemContentId, int amount)
+        {
+            if (!_homeStashesByBuilding.TryGetValue(buildingId, out Dictionary<string, int> stash) || !stash.TryGetValue(itemContentId, out int current))
+            {
+                return;
+            }
+
+            int remaining = Math.Max(0, current - amount);
+            if (remaining <= 0)
+            {
+                stash.Remove(itemContentId);
+            }
+            else
+            {
+                stash[itemContentId] = remaining;
+            }
+        }
+
+        private int HomeStashGrubCount(PersonState person)
+        {
+            if (!person.HomeBuildingId.HasValue)
+            {
+                return 0;
+            }
+
+            IReadOnlyDictionary<string, int> stash = GetHomeStash(person.HomeBuildingId.Value);
+            return stash.TryGetValue(GrubItemId(), out int count) ? count : 0;
+        }
+
+        /// <summary>R13b: logs name, goal, the chosen target (and why) or a failure reason - a no-op unless both a sink is wired up and LogDecisionsSettingId is on.</summary>
+        private void LogDecision(PersonState person, string message)
+        {
+            if (_decisionLogSink == null || _settings.Get(LogDecisionsSettingId) == 0)
+            {
+                return;
+            }
+
+            _decisionLogSink($"{person.Name} ({person.Goal}): {message}");
+        }
 
         /// <summary>R13: the live hunger-eat-threshold value, for the info window's hunger bar color.</summary>
         public double HungerEatThreshold => _settings.Get(HungerEatThresholdSettingId);
@@ -717,9 +799,20 @@ namespace TheEmptying.Modules.People
 
         private void StartIdle(EntityId id, PersonState person, long tick, string thought)
         {
+            StartTimedIdle(person, tick, thought, IdleWaitMinSecondsSettingId, IdleWaitMaxSecondsSettingId);
+        }
+
+        /// <summary>R13b: when a spot (a mound slot, a stockpile cell) is taken everywhere this person looked - wait a short while, with no stored "what I was trying," then try the exact same goal again. Never retries the same failed spot immediately in a loop.</summary>
+        private void StartWaitingForSpot(EntityId id, PersonState person, long tick)
+        {
+            StartTimedIdle(person, tick, "Waiting for a spot to free up.", SpotWaitMinSecondsSettingId, SpotWaitMaxSecondsSettingId);
+        }
+
+        private void StartTimedIdle(PersonState person, long tick, string thought, string minSecondsSettingId, string maxSecondsSettingId)
+        {
             SimRandom random = _randomService.GetStream(ActionsStreamName);
-            double minSeconds = _settings.Get(IdleWaitMinSecondsSettingId);
-            double maxSeconds = _settings.Get(IdleWaitMaxSecondsSettingId);
+            double minSeconds = _settings.Get(minSecondsSettingId);
+            double maxSeconds = _settings.Get(maxSecondsSettingId);
             double realSecondsPerDay = _settings.Get(RealSecondsPerDaySettingId);
 
             double waitSeconds = maxSeconds <= minSeconds ? minSeconds : minSeconds + random.NextFloat() * (maxSeconds - minSeconds);
@@ -838,13 +931,31 @@ namespace TheEmptying.Modules.People
                 }
 
                 var candidate = new CellCoord(current.X + dx, current.Z + dz);
-                if (IsCellFreeForPerson(candidate, selfId))
+                if (IsCellFreeForPerson(candidate, selfId) && !IsInsideAnyStockpile(candidate))
                 {
                     return candidate;
                 }
             }
 
             return null;
+        }
+
+        /// <summary>R13b: stockpiles are drop-off and pick-up only - an idle wander target never lands inside one.</summary>
+        private bool IsInsideAnyStockpile(CellCoord cell)
+        {
+            double cellSize = _mapModule.CellSizeMeters;
+            double worldX = (cell.X + 0.5) * cellSize;
+            double worldZ = (cell.Z + 0.5) * cellSize;
+
+            foreach (KeyValuePair<EntityId, ZoneState> row in _zonesModule.Stockpiles)
+            {
+                if (row.Value.Rect.Contains(worldX, worldZ))
+                {
+                    return true;
+                }
+            }
+
+            return false;
         }
 
         #endregion
@@ -931,9 +1042,9 @@ namespace TheEmptying.Modules.People
 
             if (action.Kind == ActionKind.Eating)
             {
-                if (person.TargetIsHome)
+                if (person.TargetIsHome && person.HomeBuildingId.HasValue)
                 {
-                    RemoveFromHomeStash(person, grubItemId, 1);
+                    RemoveFromHomeStash(person.HomeBuildingId.Value, grubItemId, 1);
                 }
                 else if (person.TargetZoneId.HasValue)
                 {
@@ -1005,6 +1116,13 @@ namespace TheEmptying.Modules.People
                         return;
                     }
 
+                    CellCoord standingCell = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
+                    if (IsInsideAnyStockpile(standingCell))
+                    {
+                        StepOutOfStockpileThenIdleOrWander(id, person, tick);
+                        return;
+                    }
+
                     if (person.CurrentAction != null && person.CurrentAction.Kind == ActionKind.Idle)
                     {
                         StartWander(id, person, tick);
@@ -1018,6 +1136,31 @@ namespace TheEmptying.Modules.People
             }
         }
 
+        /// <summary>How far StepOutOfStockpileThenIdleOrWander will search, ring by ring, for a free cell outside every stockpile - generous, since a stockpile is never more than a few cells across.</summary>
+        private const int StockpileExitSearchMaxRadiusCells = 12;
+
+        /// <summary>R13b: stockpiles are drop-off and pick-up only - a person who just delivered or ate there steps out to a free, non-stockpile cell before idling or wandering, instead of standing inside it.</summary>
+        private void StepOutOfStockpileThenIdleOrWander(EntityId id, PersonState person, long tick)
+        {
+            CellCoord current = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
+
+            for (int radius = 1; radius <= StockpileExitSearchMaxRadiusCells; radius++)
+            {
+                foreach (CellCoord candidate in RingCells(current, radius))
+                {
+                    if (IsCellFreeForPerson(candidate, id) && !IsInsideAnyStockpile(candidate))
+                    {
+                        LogDecision(person, $"stepping out of the stockpile to {candidate}.");
+                        StartWalk(id, person, candidate, "Stepping out of the stockpile.", tick);
+                        return;
+                    }
+                }
+            }
+
+            LogDecision(person, "boxed in by the stockpile everywhere nearby - waiting for a spot to free up.");
+            StartWaitingForSpot(id, person, tick);
+        }
+
         private void DecideSeekingFood(EntityId id, PersonState person, long tick)
         {
             if (person.Hunger >= FullHunger)
@@ -1025,11 +1168,13 @@ namespace TheEmptying.Modules.People
                 int homeStashMinimum = (int)_settings.Get(HomeStashMinimumGrubsSettingId);
                 if (person.LastAteFromMound && HomeStashGrubCount(person) < homeStashMinimum)
                 {
+                    LogDecision(person, "full after eating at a mound, and the home stash is low - topping it up.");
                     person.Goal = PersonGoal.ToppingUpHomeStash;
                     DecideNextAction(id, person, tick);
                     return;
                 }
 
+                LogDecision(person, "full - back to whatever comes next.");
                 person.Goal = PersonGoal.None;
                 DecideNextAction(id, person, tick);
                 return;
@@ -1039,26 +1184,29 @@ namespace TheEmptying.Modules.People
 
             if (person.TargetIsHome && IsAtHome(person, currentCell))
             {
+                LogDecision(person, "eating from the home stash.");
                 StartEatingAction(id, person, tick, "Eating from the home stash.");
                 return;
             }
 
             if (!person.TargetIsHome && person.TargetZoneId.HasValue && IsInsideZone(currentCell, person.TargetZoneId.Value))
             {
+                LogDecision(person, "eating from the stockpile.");
                 StartEatingAction(id, person, tick, "Eating from the stockpile.");
                 return;
             }
 
             if (person.TargetIsMound && IsAdjacentToMound(currentCell))
             {
+                LogDecision(person, "digging up a grub to eat (adjacent to mound).");
                 StartDiggingAction(id, person, tick, "Digging up a grub to eat.");
                 return;
             }
 
             if (!TryFindNearestFoodSource(id, person, currentCell, out CellCoord approachCell, out EntityId? zoneId, out bool isHome, out bool isMound))
             {
-                person.Goal = PersonGoal.None;
-                StartIdle(id, person, tick, "Hungry, but there's nowhere to find food.");
+                LogDecision(person, "hungry, but no free food source right now - waiting for a spot to free up.");
+                StartWaitingForSpot(id, person, tick);
                 return;
             }
 
@@ -1072,6 +1220,7 @@ namespace TheEmptying.Modules.People
                 : isMound
                     ? (starving ? "Starving - digging up anything to eat." : "Off to dig up something to eat.")
                     : (starving ? "Starving - rushing to the stockpile." : "Off to the stockpile to find something to eat.");
+            LogDecision(person, $"heading to {(isHome ? "home" : isMound ? "a mound" : "a stockpile")} ({approachCell}) to eat - {thought}");
             StartWalk(id, person, approachCell, thought, tick);
         }
 
@@ -1085,24 +1234,27 @@ namespace TheEmptying.Modules.People
             {
                 if (IsAdjacentToMound(currentCell))
                 {
+                    LogDecision(person, "digging extra grubs to take home (adjacent to mound).");
                     StartDiggingAction(id, person, tick, "Digging extra grubs to take home.");
                     return;
                 }
 
                 double maxDistanceMeters = _settings.Get(PathfindingMaxDistanceMetersSettingId);
-                if (TryFindNearestReachableMound(currentCell, maxDistanceMeters, out CellCoord moundApproach))
+                if (TryFindNearestReachableMound(id, currentCell, maxDistanceMeters, out CellCoord moundApproach))
                 {
+                    LogDecision(person, $"walking to mound approach {moundApproach} to dig extra grubs for home.");
                     StartWalk(id, person, moundApproach, "Off to dig extra grubs to take home.", tick);
                     return;
                 }
 
-                person.Goal = PersonGoal.None;
-                DecideNextAction(id, person, tick);
+                LogDecision(person, "no free mound spot to top up the home stash - waiting for a spot to free up.");
+                StartWaitingForSpot(id, person, tick);
                 return;
             }
 
             if (!person.HomeBuildingId.HasValue || !_buildingsModule.TryGetBuilding(person.HomeBuildingId.Value, out BuildingState home))
             {
+                LogDecision(person, "no home to take grubs to - giving up on topping up.");
                 person.Goal = PersonGoal.None;
                 DecideNextAction(id, person, tick);
                 return;
@@ -1110,7 +1262,8 @@ namespace TheEmptying.Modules.People
 
             if (currentCell == home.DoorCell)
             {
-                DepositIntoHomeStash(person, person.CarriedItemId, person.CarriedAmount);
+                LogDecision(person, $"depositing {person.CarriedAmount} {person.CarriedItemId} into the home stash.");
+                DepositIntoHomeStash(person.HomeBuildingId.Value, person.CarriedItemId, person.CarriedAmount);
                 person.CarriedAmount = 0;
                 person.CarriedItemId = string.Empty;
                 person.Goal = PersonGoal.None;
@@ -1118,6 +1271,7 @@ namespace TheEmptying.Modules.People
                 return;
             }
 
+            LogDecision(person, $"walking home ({home.DoorCell}) to drop off {person.CarriedAmount} {person.CarriedItemId}.");
             StartWalk(id, person, home.DoorCell, "Taking grubs home.", tick);
         }
 
@@ -1133,12 +1287,19 @@ namespace TheEmptying.Modules.People
             {
                 if (!TryFindNearestStockpileWithRoom(id, currentCell, grubItemId, maxDistanceMeters, out EntityId zoneId, out CellCoord _))
                 {
+                    if (person.CarriedAmount > 0 && TryDeliverLeftoverGoodsHome(id, person, currentCell, tick))
+                    {
+                        return;
+                    }
+
+                    LogDecision(person, "no stockpile needs grubs right now.");
                     person.Goal = PersonGoal.None;
                     StartIdle(id, person, tick, person.CarriedAmount > 0 ? "Nowhere to take this for now." : "No stockpile needs grubs right now.");
                     return;
                 }
 
                 person.ForagingDeliveryZoneId = zoneId;
+                LogDecision(person, $"chose stockpile {zoneId} as the delivery target.");
             }
 
             EntityId targetZoneId = person.ForagingDeliveryZoneId.Value;
@@ -1149,20 +1310,22 @@ namespace TheEmptying.Modules.People
             {
                 if (IsAdjacentToMound(currentCell))
                 {
+                    LogDecision(person, "digging grubs for the stockpile (adjacent to mound).");
                     StartDiggingAction(id, person, tick, "Digging grubs for the stockpile.");
                     return;
                 }
 
-                if (TryFindNearestReachableMound(currentCell, maxDistanceMeters, out CellCoord moundApproach))
+                if (TryFindNearestReachableMound(id, currentCell, maxDistanceMeters, out CellCoord moundApproach))
                 {
+                    LogDecision(person, $"walking to mound approach {moundApproach} to dig grubs for the stockpile.");
                     StartWalk(id, person, moundApproach, "Off to dig grubs for the stockpile.", tick);
                     return;
                 }
 
                 if (person.CarriedAmount <= 0)
                 {
-                    person.Goal = PersonGoal.None;
-                    StartIdle(id, person, tick, "No grub mound nearby to forage.");
+                    LogDecision(person, "no free mound spot to forage - waiting for a spot to free up.");
+                    StartWaitingForSpot(id, person, tick);
                     return;
                 }
 
@@ -1171,7 +1334,9 @@ namespace TheEmptying.Modules.People
 
             if (IsInsideZone(currentCell, targetZoneId))
             {
+                int amountBeforeDelivery = person.CarriedAmount;
                 DeliverCarriedGoods(person, targetZoneId);
+                LogDecision(person, $"delivered {amountBeforeDelivery - person.CarriedAmount} {grubItemId} to the stockpile.");
                 person.ForagingDeliveryZoneId = null;
                 person.Goal = PersonGoal.None;
                 DecideNextAction(id, person, tick);
@@ -1180,6 +1345,7 @@ namespace TheEmptying.Modules.People
 
             if (!_zonesModule.TryGetZone(targetZoneId, out ZoneState targetZone))
             {
+                LogDecision(person, "the stockpile is gone - giving up this trip.");
                 person.ForagingDeliveryZoneId = null;
                 person.Goal = PersonGoal.None;
                 StartIdle(id, person, tick, "The stockpile is gone.");
@@ -1189,13 +1355,38 @@ namespace TheEmptying.Modules.People
             CellCoord? deliverCell = TryPickCellInZone(_randomService.GetStream(ActionsStreamName), targetZone, _mapModule.CellSizeMeters, id);
             if (!deliverCell.HasValue)
             {
+                LogDecision(person, "no free cell at the stockpile - waiting for a spot to free up.");
                 person.ForagingDeliveryZoneId = null;
-                person.Goal = PersonGoal.None;
-                StartIdle(id, person, tick, "Couldn't reach the stockpile.");
+                StartWaitingForSpot(id, person, tick);
                 return;
             }
 
+            LogDecision(person, $"walking to stockpile cell {deliverCell.Value} to drop off {person.CarriedAmount} {grubItemId}.");
             StartWalk(id, person, deliverCell.Value, "Carrying grubs to the stockpile.", tick);
+        }
+
+        /// <summary>R13b: goods never vanish - when no stockpile has room for what's carried, walk it home and add it to the shared stash instead of holding it indefinitely.</summary>
+        private bool TryDeliverLeftoverGoodsHome(EntityId id, PersonState person, CellCoord currentCell, long tick)
+        {
+            if (!person.HomeBuildingId.HasValue || !_buildingsModule.TryGetBuilding(person.HomeBuildingId.Value, out BuildingState home))
+            {
+                return false;
+            }
+
+            if (currentCell == home.DoorCell)
+            {
+                LogDecision(person, $"no stockpile has room - depositing {person.CarriedAmount} {person.CarriedItemId} at home instead.");
+                DepositIntoHomeStash(person.HomeBuildingId.Value, person.CarriedItemId, person.CarriedAmount);
+                person.CarriedAmount = 0;
+                person.CarriedItemId = string.Empty;
+                person.Goal = PersonGoal.None;
+                DecideNextAction(id, person, tick);
+                return true;
+            }
+
+            LogDecision(person, $"no stockpile has room - taking {person.CarriedAmount} {person.CarriedItemId} home instead.");
+            StartWalk(id, person, home.DoorCell, "No stockpile has room - taking it home instead.", tick);
+            return true;
         }
 
         private bool ForagingIsAvailable()
@@ -1273,7 +1464,7 @@ namespace TheEmptying.Modules.People
                 candidates.Add((DistanceSquared(startWorldX, startWorldZ, homeWorldX, homeWorldZ), homeBuilding.DoorCell, null, true, false));
             }
 
-            if (TryFindNearestReachableMound(startCell, maxDistanceMeters, out CellCoord moundApproach))
+            if (TryFindNearestReachableMound(selfId, startCell, maxDistanceMeters, out CellCoord moundApproach))
             {
                 double moundWorldX = (moundApproach.X + 0.5) * cellSize;
                 double moundWorldZ = (moundApproach.Z + 0.5) * cellSize;
@@ -1335,11 +1526,19 @@ namespace TheEmptying.Modules.People
             return false;
         }
 
-        private bool TryFindNearestReachableMound(CellCoord startCell, double maxDistanceMeters, out CellCoord approachCell)
+        /// <summary>
+        /// The nearest grub mound with a free approach cell this person could
+        /// reserve, within its own max-workers limit - another mound, nearer
+        /// or farther, is tried next whenever one is already at that limit or
+        /// has no walkable neighbor left free. Never the same contested cell
+        /// twice: a mound at its limit is skipped outright, not retried.
+        /// </summary>
+        private bool TryFindNearestReachableMound(EntityId selfId, CellCoord startCell, double maxDistanceMeters, out CellCoord approachCell)
         {
             approachCell = default;
             ChunkCoord startChunk = _mapModule.CellToChunk(startCell);
             double cellSize = _mapModule.CellSizeMeters;
+            int maxWorkers = Math.Max(1, GrubMoundResourceContent()?.MaxWorkers ?? 1);
 
             var candidates = new List<(double DistanceSq, CellCoord Approach)>();
 
@@ -1355,7 +1554,7 @@ namespace TheEmptying.Modules.People
                             continue;
                         }
 
-                        CellCoord? approach = TryFindApproachCellAdjacentTo(placement.Cell);
+                        CellCoord? approach = TryFindApproachCellAdjacentTo(placement.Cell, selfId, maxWorkers);
                         if (!approach.HasValue)
                         {
                             continue;
@@ -1385,17 +1584,38 @@ namespace TheEmptying.Modules.People
             return false;
         }
 
-        private CellCoord? TryFindApproachCellAdjacentTo(CellCoord moundCell)
+        /// <summary>
+        /// A free walkable neighbor of this mound this person could reserve -
+        /// null if the mound already has maxWorkers people reserving one of
+        /// its neighbor cells (treated as unavailable), even if some other
+        /// neighbor happens to still be free. A neighbor this person already
+        /// reserves counts as free to them, never as one of "the others".
+        /// </summary>
+        private CellCoord? TryFindApproachCellAdjacentTo(CellCoord moundCell, EntityId selfId, int maxWorkers)
         {
+            CellCoord? firstFree = null;
+            int reservedByOthers = 0;
+
             foreach (CellCoord neighbor in Neighbors8(moundCell))
             {
-                if (IsWalkable(neighbor))
+                if (!IsWalkable(neighbor))
                 {
-                    return neighbor;
+                    continue;
+                }
+
+                if (_reservedCells.TryGetValue(neighbor, out EntityId owner) && owner != selfId)
+                {
+                    reservedByOthers++;
+                    continue;
+                }
+
+                if (!firstFree.HasValue)
+                {
+                    firstFree = neighbor;
                 }
             }
 
-            return null;
+            return reservedByOthers >= maxWorkers ? null : firstFree;
         }
 
         private bool IsAdjacentToMound(CellCoord cell)
@@ -1509,6 +1729,7 @@ namespace TheEmptying.Modules.People
             };
         }
 
+        /// <summary>R13b: goods never vanish - only what the stockpile actually had room for is removed from what's carried; any leftover stays carried, for the caller to take elsewhere.</summary>
         private void DeliverCarriedGoods(PersonState person, EntityId zoneId)
         {
             if (person.CarriedAmount <= 0 || string.IsNullOrEmpty(person.CarriedItemId))
@@ -1516,43 +1737,12 @@ namespace TheEmptying.Modules.People
                 return;
             }
 
-            _zonesModule.TryAddItemToStockpile(zoneId, person.CarriedItemId, person.CarriedAmount);
-            person.CarriedAmount = 0;
-            person.CarriedItemId = string.Empty;
-        }
-
-        private static void DepositIntoHomeStash(PersonState person, string itemContentId, int amount)
-        {
-            if (amount <= 0 || string.IsNullOrEmpty(itemContentId))
+            (int added, int _, string _) = _zonesModule.TryAddItemToStockpile(zoneId, person.CarriedItemId, person.CarriedAmount);
+            person.CarriedAmount -= added;
+            if (person.CarriedAmount <= 0)
             {
-                return;
+                person.CarriedItemId = string.Empty;
             }
-
-            person.HomeStash.TryGetValue(itemContentId, out int current);
-            person.HomeStash[itemContentId] = current + amount;
-        }
-
-        private static void RemoveFromHomeStash(PersonState person, string itemContentId, int amount)
-        {
-            if (!person.HomeStash.TryGetValue(itemContentId, out int current))
-            {
-                return;
-            }
-
-            int remaining = Math.Max(0, current - amount);
-            if (remaining <= 0)
-            {
-                person.HomeStash.Remove(itemContentId);
-            }
-            else
-            {
-                person.HomeStash[itemContentId] = remaining;
-            }
-        }
-
-        private int HomeStashGrubCount(PersonState person)
-        {
-            return person.HomeStash.TryGetValue(GrubItemId(), out int count) ? count : 0;
         }
 
         private ResourceContent GrubMoundResourceContent()
@@ -1613,6 +1803,7 @@ namespace TheEmptying.Modules.People
 
             if (!IsCellFreeForPerson(targetCell, id))
             {
+                LogDecision(person, $"walk to {targetCell} failed - someone or something is already there.");
                 BeginFailedWalk(person, "Someone - or something - is already there.", tick);
                 return;
             }
@@ -1623,6 +1814,7 @@ namespace TheEmptying.Modules.People
             List<CellCoord> path = CellPathFinder.FindPath(startCell, targetCell, maxDistanceMeters, cellSize, IsWalkable);
             if (path == null || path.Count == 0)
             {
+                LogDecision(person, $"walk to {targetCell} failed - no path within range.");
                 BeginFailedWalk(person, "Couldn't find a way there.", tick);
                 return;
             }
@@ -1729,7 +1921,6 @@ namespace TheEmptying.Modules.People
                 writer.WriteString(state.CarriedItemId);
                 writer.WriteInt(state.CarriedAmount);
                 writer.WriteEntityId(state.HomeBuildingId ?? EntityId.None);
-                WriteStringIntMap(writer, state.HomeStash);
                 writer.WriteInt((int)state.Goal);
                 writer.WriteEntityId(state.TargetZoneId ?? EntityId.None);
                 writer.WriteEntityId(state.ForagingDeliveryZoneId ?? EntityId.None);
@@ -1739,6 +1930,13 @@ namespace TheEmptying.Modules.People
                 writer.WriteStringList(state.LikedSkillIds);
                 writer.WriteStringList(state.DislikedSkillIds);
                 WriteStringDoubleMap(writer, state.SkillExperienceHours);
+            }
+
+            writer.WriteInt(_homeStashesByBuilding.Count);
+            foreach (KeyValuePair<EntityId, Dictionary<string, int>> row in _homeStashesByBuilding)
+            {
+                writer.WriteEntityId(row.Key);
+                WriteStringIntMap(writer, row.Value);
             }
         }
 
@@ -1775,11 +1973,6 @@ namespace TheEmptying.Modules.People
                 state.CarriedAmount = reader.ReadInt();
                 EntityId homeBuildingRaw = reader.ReadEntityId();
                 state.HomeBuildingId = homeBuildingRaw.IsNone ? (EntityId?)null : homeBuildingRaw;
-                foreach (KeyValuePair<string, int> kvp in ReadStringIntMap(reader))
-                {
-                    state.HomeStash[kvp.Key] = kvp.Value;
-                }
-
                 state.Goal = (PersonGoal)reader.ReadInt();
                 EntityId targetZoneRaw = reader.ReadEntityId();
                 state.TargetZoneId = targetZoneRaw.IsNone ? (EntityId?)null : targetZoneRaw;
@@ -1802,6 +1995,13 @@ namespace TheEmptying.Modules.People
                 {
                     _reservedCells[reservedCell] = id;
                 }
+            }
+
+            int stashCount = reader.ReadInt();
+            for (int i = 0; i < stashCount; i++)
+            {
+                EntityId buildingId = reader.ReadEntityId();
+                _homeStashesByBuilding[buildingId] = ReadStringIntMap(reader);
             }
         }
 

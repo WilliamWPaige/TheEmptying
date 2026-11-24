@@ -123,13 +123,17 @@ namespace TheEmptying.Presentation.Selection
             });
 
             container.Add(SectionHeading("Home stash"));
-            if (person.HomeStash.Count == 0)
+            System.Collections.Generic.IReadOnlyDictionary<string, int> homeStash = person.HomeBuildingId.HasValue
+                ? _peopleModule.GetHomeStash(person.HomeBuildingId.Value)
+                : EmptyHomeStash;
+
+            if (homeStash.Count == 0)
             {
                 container.Add(new Label("(empty)") { style = { color = new Color(0.6f, 0.6f, 0.6f), marginLeft = 8, marginBottom = 10 } });
             }
             else
             {
-                foreach (System.Collections.Generic.KeyValuePair<string, int> entry in person.HomeStash)
+                foreach (System.Collections.Generic.KeyValuePair<string, int> entry in homeStash)
                 {
                     container.Add(new Label($"{DisplayNameForItem(entry.Key)}: {entry.Value}") { style = { color = new Color(0.85f, 0.85f, 0.85f), marginLeft = 8, marginBottom = 2 } });
                 }
@@ -137,6 +141,8 @@ namespace TheEmptying.Presentation.Selection
                 container.Add(new VisualElement { style = { marginBottom = 8 } });
             }
         }
+
+        private static readonly System.Collections.Generic.Dictionary<string, int> EmptyHomeStash = new System.Collections.Generic.Dictionary<string, int>();
 
         /// <summary>R13: the kinds of work this person likes and dislikes, rolled once at creation.</summary>
         private void BuildLikesAndDislikesSection(VisualElement container, PersonState person)

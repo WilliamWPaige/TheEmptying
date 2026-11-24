@@ -348,6 +348,7 @@ namespace TheEmptying.Presentation
             _buildingsModule = modules.OfType<BuildingsModule>().First();
             _zonesModule = modules.OfType<ZonesModule>().First();
             _peopleModule = modules.OfType<PeopleModule>().First();
+            WireUpPersonDecisionLog();
 
             // The closure reads _simulation live, so it keeps working after a load swaps the field.
             ErrorCatcher.InGameTimestampProvider = () =>
@@ -360,6 +361,16 @@ namespace TheEmptying.Presentation
 
             Debug.Log($"[TheEmptying] Startup report:\n{report}");
             return report;
+        }
+
+        /// <summary>R13b: sends each logged person decision to the Unity console, and - in the Editor only - forces the log on regardless of the setting's data default, since a build should stay quiet unless the player turns it on.</summary>
+        private void WireUpPersonDecisionLog()
+        {
+            _peopleModule.SetDecisionLogSink(message => Debug.Log($"[People] {message}"));
+
+#if UNITY_EDITOR
+            _simulation.Settings.Set(PeopleModule.LogDecisionsSettingId, 1);
+#endif
         }
 
         /// <summary>Converts every ScriptableObject content asset in the shipped catalog into the plain records the simulation reads.</summary>
@@ -1136,6 +1147,7 @@ namespace TheEmptying.Presentation
                 _buildingsModule = modules.OfType<BuildingsModule>().First();
                 _zonesModule = modules.OfType<ZonesModule>().First();
                 _peopleModule = modules.OfType<PeopleModule>().First();
+                WireUpPersonDecisionLog();
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
                 _worldMapView?.Rebind(_mapModule, _simulation.Settings);

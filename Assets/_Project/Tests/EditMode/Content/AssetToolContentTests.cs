@@ -110,7 +110,7 @@ namespace TheEmptying.Tests.EditMode.Content
         public void ResourceAsset_FootprintWidthBelowOne_IsReported()
         {
             var asset = ScriptableObject.CreateInstance<ResourceAsset>();
-            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 0, 1, "item.log", false, 5, 120, 60, 30);
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 0, 1, "item.log", false, 5, 120, 60, 30, 1);
 
             Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Footprint width")));
         }
@@ -119,7 +119,7 @@ namespace TheEmptying.Tests.EditMode.Content
         public void ResourceAsset_FootprintDepthBelowOne_IsReported()
         {
             var asset = ScriptableObject.CreateInstance<ResourceAsset>();
-            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 0, "item.log", false, 5, 120, 60, 30);
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 0, "item.log", false, 5, 120, 60, 30, 1);
 
             Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Footprint depth")));
         }
@@ -128,16 +128,25 @@ namespace TheEmptying.Tests.EditMode.Content
         public void ResourceAsset_NegativeHarvestTime_IsReported()
         {
             var asset = ScriptableObject.CreateInstance<ResourceAsset>();
-            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, -1, 60, 30);
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, -1, 60, 30, 1);
 
             Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Harvest times")));
+        }
+
+        [Test]
+        public void ResourceAsset_MaxWorkersBelowOne_IsReported()
+        {
+            var asset = ScriptableObject.CreateInstance<ResourceAsset>();
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, 120, 60, 30, 0);
+
+            Assert.IsTrue(asset.ValidateSelf().Any(p => p.Contains("Max workers")));
         }
 
         [Test]
         public void ResourceAsset_Valid_HasNoProblems()
         {
             var asset = ScriptableObject.CreateInstance<ResourceAsset>();
-            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, 120, 60, 30);
+            asset.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, 120, 60, 30, 1);
 
             Assert.IsFalse(asset.ValidateSelf().Any());
         }
@@ -182,7 +191,7 @@ namespace TheEmptying.Tests.EditMode.Content
             unit.SetForEditor("unit.villager", "Villager", MakeModel());
 
             var resource = ScriptableObject.CreateInstance<ResourceAsset>();
-            resource.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, 120, 60, 30);
+            resource.SetForEditor("resource.tree", "Tree", MakeModel(), 1, 1, "item.log", false, 5, 120, 60, 30, 3);
 
             var building = ScriptableObject.CreateInstance<BuildingAsset>();
             building.SetForEditor("building.hut", "Hut", MakeModel(), 2, 3);
@@ -216,6 +225,7 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(120, resourceRecord.HarvestTimeUnskilledMinutes);
             Assert.AreEqual(60, resourceRecord.HarvestTimeSkilledMinutes);
             Assert.AreEqual(30, resourceRecord.HarvestTimeMasterMinutes);
+            Assert.AreEqual(3, resourceRecord.MaxWorkers);
 
             var buildingRecord = (BuildingContent)definitions.Single(d => d.TypeName == BuiltInContentTypes.BuildingTypeName).Definition;
             Assert.AreEqual("building.hut", buildingRecord.Id);
