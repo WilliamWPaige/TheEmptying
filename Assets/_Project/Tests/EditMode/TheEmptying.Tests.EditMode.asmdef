@@ -9,6 +9,7 @@
         "TheEmptying.Modules.Buildings",
         "TheEmptying.Modules.Zones",
         "TheEmptying.Modules.People",
+        "TheEmptying.Modules.Discovery",
         "UnityEngine.TestRunner",
         "UnityEditor.TestRunner"
     ],

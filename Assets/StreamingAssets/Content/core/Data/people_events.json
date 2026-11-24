@@ -1,0 +1,26 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.people.item_held",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "R14: posted whenever a person digs, carries or eats an item - feeds the discovery system, nothing else."
+        },
+        {
+            "id": "event.people.resource_harvested",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "R14: posted whenever a person finishes harvesting from a resource - feeds the discovery system, nothing else."
+        },
+        {
+            "id": "event.people.action_performed",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "R14: posted whenever a person starts a new action - feeds the discovery system, nothing else."
+        }
+    ]
+}

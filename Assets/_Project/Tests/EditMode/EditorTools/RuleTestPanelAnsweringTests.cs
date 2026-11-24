@@ -49,6 +49,10 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                 ""type"": ""module_manifest"",
                 ""items"": [ { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map"", ""module.buildings"", ""module.zones""], ""enabled"": true } ]
             }");
+            source.WriteDataFile("discovery_manifest.json", @"{
+                ""type"": ""module_manifest"",
+                ""items"": [ { ""id"": ""module.discovery"", ""version"": 1, ""dependencies"": [], ""enabled"": true } ]
+            }");
             source.WriteDataFile("events.json", @"{
                 ""type"": ""event_definition"",
                 ""items"": [ { ""id"": ""go"", ""visibility"": ""Public"", ""reportingScore"": 0, ""notabilityScore"": 0, ""description"": ""test event"" } ]

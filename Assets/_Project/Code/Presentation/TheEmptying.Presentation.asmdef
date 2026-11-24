@@ -7,6 +7,7 @@
         "TheEmptying.Modules.Buildings",
         "TheEmptying.Modules.Zones",
         "TheEmptying.Modules.People",
+        "TheEmptying.Modules.Discovery",
         "Unity.InputSystem",
         "Newtonsoft.Json"
     ],

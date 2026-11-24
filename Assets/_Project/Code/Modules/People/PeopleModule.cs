@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
+using TheEmptying.Core.Events;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Randomness;
 using TheEmptying.Core.Saves;
@@ -126,6 +127,15 @@ namespace TheEmptying.Modules.People
         private const string RollsStreamName = "people.rolls";
         private const string ActionsStreamName = "people.actions";
         private const string ActionSystemId = "people.actions";
+
+        /// <summary>R14: posted whenever a person digs, carries or eats an item - feeds the discovery system.</summary>
+        private const string ItemHeldEventId = "event.people.item_held";
+
+        /// <summary>R14: posted whenever a person finishes harvesting from a resource - feeds the discovery system.</summary>
+        private const string ResourceHarvestedEventId = "event.people.resource_harvested";
+
+        /// <summary>R14: posted whenever a person starts a new action - feeds the discovery system.</summary>
+        private const string ActionPerformedEventId = "event.people.action_performed";
 
         /// <summary>The six skills every founder (and the Advisor) is good at by design - not a setting, the design names these specific skills.</summary>
         private static readonly HashSet<string> CoreTradeSkillIds = new HashSet<string>
@@ -263,6 +273,37 @@ namespace TheEmptying.Modules.People
             _decisionLogSink($"{person.Name} ({person.Goal}): {message}");
         }
 
+        /// <summary>R14: a person now holds (dug, carries, or is eating) this item - feeds the discovery system.</summary>
+        private void PostItemHeld(string itemContentId)
+        {
+            _context.Events.Post(ItemHeldEventId, _context.CurrentTick, new EventData().SetString("contentId", itemContentId));
+        }
+
+        /// <summary>R14: a person just finished harvesting from this resource - feeds the discovery system.</summary>
+        private void PostResourceHarvested(string resourceContentId)
+        {
+            _context.Events.Post(ResourceHarvestedEventId, _context.CurrentTick, new EventData().SetString("contentId", resourceContentId));
+        }
+
+        /// <summary>R14: a person just started a new action of this kind - feeds the discovery system. Any new ActionKind only needs a mapping here and a matching action_definition entry in data; the discovery system itself never changes.</summary>
+        private void PostActionPerformed(ActionKind kind)
+        {
+            _context.Events.Post(ActionPerformedEventId, _context.CurrentTick, new EventData().SetString("contentId", ActionContentId(kind)));
+        }
+
+        private static string ActionContentId(ActionKind kind)
+        {
+            switch (kind)
+            {
+                case ActionKind.Idle: return "action.idle";
+                case ActionKind.Walk: return "action.walk";
+                case ActionKind.InsideBuilding: return "action.inside_building";
+                case ActionKind.Eating: return "action.eating";
+                case ActionKind.Digging: return "action.digging";
+                default: return "action.unknown";
+            }
+        }
+
         /// <summary>R13: the live hunger-eat-threshold value, for the info window's hunger bar color.</summary>
         public double HungerEatThreshold => _settings.Get(HungerEatThresholdSettingId);
 
@@ -364,6 +405,7 @@ namespace TheEmptying.Modules.People
 
                 EntityId id = _entities.Create(EntityKind.Person);
                 _people.Add(id, state);
+                PostActionPerformed(ActionKind.InsideBuilding);
             }
 
             RollNextExitTick(tick);
@@ -827,6 +869,8 @@ namespace TheEmptying.Modules.People
                 DurationTicks = durationTicks,
                 CurrentTickForProgress = tick
             };
+
+            PostActionPerformed(ActionKind.Idle);
         }
 
         /// <summary>R12: while at least one Living Area exists, idle people prefer to wander inside the nearest one they can actually path to; with none (or none reachable), they wander nearby as before.</summary>
@@ -1042,6 +1086,8 @@ namespace TheEmptying.Modules.People
 
             if (action.Kind == ActionKind.Eating)
             {
+                PostItemHeld(grubItemId);
+
                 if (person.TargetIsHome && person.HomeBuildingId.HasValue)
                 {
                     RemoveFromHomeStash(person.HomeBuildingId.Value, grubItemId, 1);
@@ -1058,6 +1104,9 @@ namespace TheEmptying.Modules.People
 
             if (action.Kind == ActionKind.Digging)
             {
+                PostResourceHarvested(GrubMoundResourceId);
+                PostItemHeld(grubItemId);
+
                 if (person.Goal == PersonGoal.SeekingFood)
                 {
                     person.Hunger = Math.Min(FullHunger, person.Hunger + ItemFoodValue(grubItemId));
@@ -1705,6 +1754,8 @@ namespace TheEmptying.Modules.People
                 DurationTicks = durationTicks,
                 CurrentTickForProgress = tick
             };
+
+            PostActionPerformed(ActionKind.Eating);
         }
 
         private void StartDiggingAction(EntityId id, PersonState person, long tick, string thought)
@@ -1727,6 +1778,8 @@ namespace TheEmptying.Modules.People
                 SkillId = ForagingSkillId,
                 CurrentTickForProgress = tick
             };
+
+            PostActionPerformed(ActionKind.Digging);
         }
 
         /// <summary>R13b: goods never vanish - only what the stockpile actually had room for is removed from what's carried; any leftover stays carried, for the caller to take elsewhere.</summary>
@@ -1793,6 +1846,8 @@ namespace TheEmptying.Modules.People
         /// </summary>
         private void StartWalk(EntityId id, PersonState person, CellCoord targetCell, string thought, long tick)
         {
+            PostActionPerformed(ActionKind.Walk);
+
             CellCoord startCell = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
 
             if (startCell == targetCell)

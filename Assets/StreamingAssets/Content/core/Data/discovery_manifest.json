@@ -1,0 +1,6 @@
+{
+    "type": "module_manifest",
+    "items": [
+        { "id": "module.discovery", "version": 1, "dependencies": [], "enabled": true }
+    ]
+}

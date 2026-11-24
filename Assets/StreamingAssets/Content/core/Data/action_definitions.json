@@ -1,0 +1,30 @@
+{
+    "type": "action_definition",
+    "items": [
+        {
+            "id": "action.idle",
+            "displayName": "Idle",
+            "description": "Standing in place with nothing urgent to do, waiting a while before deciding what's next."
+        },
+        {
+            "id": "action.walk",
+            "displayName": "Walk",
+            "description": "Moving on foot from one place to another."
+        },
+        {
+            "id": "action.inside_building",
+            "displayName": "Inside a building",
+            "description": "Waiting inside a building, out of sight, until it's their turn to come out."
+        },
+        {
+            "id": "action.eating",
+            "displayName": "Eat",
+            "description": "Eating a grub from a stockpile or a home stash to satisfy hunger."
+        },
+        {
+            "id": "action.digging",
+            "displayName": "Dig",
+            "description": "Digging up a grub from a mound, whether to eat it or to carry it elsewhere."
+        }
+    ]
+}

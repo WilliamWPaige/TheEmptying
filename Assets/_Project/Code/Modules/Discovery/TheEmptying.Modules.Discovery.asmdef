@@ -1,0 +1,16 @@
+{
+    "name": "TheEmptying.Modules.Discovery",
+    "rootNamespace": "TheEmptying.Modules.Discovery",
+    "references": [
+        "TheEmptying.Core"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

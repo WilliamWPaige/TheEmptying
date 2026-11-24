@@ -3,6 +3,7 @@ using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
+using TheEmptying.Core.Events;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Modules.Buildings;
@@ -33,11 +34,15 @@ namespace TheEmptying.Modules.Zones
         /// <summary>Placeholder: the shortest either side of a zone may be.</summary>
         public const double MinimumSideMeters = 2.0;
 
+        /// <summary>R14: posted whenever an item is put in a stockpile - feeds the discovery system.</summary>
+        private const string ItemStoredEventId = "event.zones.item_stored";
+
         private readonly MapModule _mapModule;
         private readonly BuildingsModule _buildingsModule;
         private EntityRegistry _entities;
         private ContentDatabase _content;
         private EntityTable<ZoneState> _zones;
+        private ModuleContext _context;
 
         public ZonesModule(MapModule mapModule, BuildingsModule buildingsModule)
         {
@@ -62,6 +67,7 @@ namespace TheEmptying.Modules.Zones
         {
             _entities = context.Entities;
             _content = context.Content;
+            _context = context;
             _zones = new EntityTable<ZoneState>(_entities);
         }
 
@@ -248,6 +254,7 @@ namespace TheEmptying.Modules.Zones
             if (actualAdd > 0)
             {
                 GetOrCreateEntry(zone, itemContentId).AmountStored += actualAdd;
+                _context.Events.Post(ItemStoredEventId, _context.CurrentTick, new EventData().SetString("contentId", itemContentId));
             }
 
             string reason = didNotFit <= 0 ? null : maxAddByLimit < maxAddBySlots ? "Hit the keep-on-hand limit." : "Not enough room left.";

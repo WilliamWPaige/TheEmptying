@@ -1,0 +1,12 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.buildings.placed",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "R14: posted whenever a building is placed (the keep, at founding) - feeds the discovery system, nothing else."
+        }
+    ]
+}

@@ -21,6 +21,7 @@ namespace TheEmptying.Core.Content
         public const string NameListTypeName = "name_list";
         public const string StartingSiteTypeName = "starting_site";
         public const string ZoneTypeTypeName = "zone_type";
+        public const string ActionDefinitionTypeName = "action_definition";
 
         public static void RegisterAll(ContentTypeRegistry registry)
         {
@@ -37,6 +38,7 @@ namespace TheEmptying.Core.Content
             registry.Register(new ContentTypeDefinition(NameListTypeName, typeof(NameListDefinition), ValidateNameList));
             registry.Register(new ContentTypeDefinition(StartingSiteTypeName, typeof(StartingSiteDefinition), ValidateStartingSite));
             registry.Register(new ContentTypeDefinition(ZoneTypeTypeName, typeof(ZoneTypeDefinition), ValidateZoneType));
+            registry.Register(new ContentTypeDefinition(ActionDefinitionTypeName, typeof(ActionDefinitionContent), ValidateActionDefinition));
         }
 
         /// <summary>Every loaded zone type, in Id order.</summary>
@@ -230,6 +232,23 @@ namespace TheEmptying.Core.Content
             var content = (BuildingContent)definition;
             CheckIdPrefix(content.Id, "building.", context);
             ValidateFootprint(content.Id, content.DisplayName, content.FootprintWidth, content.FootprintDepth, context);
+        }
+
+        /// <summary>R14: one kind of action a person can perform, for the Discoveries window's Actions tab.</summary>
+        private static void ValidateActionDefinition(ContentDefinition definition, ContentValidationContext context)
+        {
+            var content = (ActionDefinitionContent)definition;
+            CheckIdPrefix(content.Id, "action.", context);
+
+            if (string.IsNullOrEmpty(content.DisplayName))
+            {
+                context.ReportProblem(content.Id, "displayName", "must not be empty.");
+            }
+
+            if (string.IsNullOrEmpty(content.Description))
+            {
+                context.ReportProblem(content.Id, "description", "must not be empty.");
+            }
         }
 
         private static void ValidateFootprint(string id, string displayName, int footprintWidth, int footprintDepth, ContentValidationContext context)

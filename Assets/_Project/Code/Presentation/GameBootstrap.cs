@@ -12,12 +12,14 @@ using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
+using TheEmptying.Modules.Discovery;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation.Buildings;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.DevTools;
+using TheEmptying.Presentation.Discovery;
 using TheEmptying.Presentation.Menus;
 using TheEmptying.Presentation.People;
 using TheEmptying.Presentation.Selection;
@@ -96,6 +98,10 @@ namespace TheEmptying.Presentation
         private ZonesModule _zonesModule;
         private ZonePresenter _zonePresenter;
         private ZoneDrawingPresenter _zoneDrawing;
+        private DiscoveryModule _discoveryModule;
+        private DiscoveriesWindowPresenter _discoveriesWindow;
+        private Button _zonesButton;
+        private Button _discoveriesButton;
 
         /// <summary>R11: only set before founding; destroyed for good once the kingdom is founded.</summary>
         private StartingSiteMarkerPresenter _siteMarker;
@@ -185,6 +191,7 @@ namespace TheEmptying.Presentation
             WireInput();
             BuildWorld();
             BuildDebugWindow();
+            BuildDiscoveriesWindow();
             BuildEscapeMenu();
             BuildFoundingPopup();
             SetupNewGameBeforeFounding();
@@ -348,7 +355,9 @@ namespace TheEmptying.Presentation
             _buildingsModule = modules.OfType<BuildingsModule>().First();
             _zonesModule = modules.OfType<ZonesModule>().First();
             _peopleModule = modules.OfType<PeopleModule>().First();
+            _discoveryModule = modules.OfType<DiscoveryModule>().First();
             WireUpPersonDecisionLog();
+            WireUpDiscoveryNotifications();
 
             // The closure reads _simulation live, so it keeps working after a load swaps the field.
             ErrorCatcher.InGameTimestampProvider = () =>
@@ -371,6 +380,43 @@ namespace TheEmptying.Presentation
 #if UNITY_EDITOR
             _simulation.Settings.Set(PeopleModule.LogDecisionsSettingId, 1);
 #endif
+        }
+
+        /// <summary>R14: shows "Discovered: X" the moment something new is recorded, and keeps the Discoveries window's list current if it happens to be open already.</summary>
+        private void WireUpDiscoveryNotifications()
+        {
+            _discoveryModule.Discovered += OnDiscovered;
+        }
+
+        private void OnDiscovered(string category, string contentId, long tick)
+        {
+            ShowToast($"Discovered: {ResolveDiscoveryDisplayName(category, contentId)}");
+            _discoveriesWindow?.RefreshIfOpen();
+        }
+
+        private string ResolveDiscoveryDisplayName(string category, string contentId)
+        {
+            if (category == DiscoveryModule.ItemCategory && _simulation.Content.TryGet(BuiltInContentTypes.ItemTypeName, contentId, out ContentEntry itemEntry) && itemEntry.Definition is ItemContent item)
+            {
+                return item.DisplayName;
+            }
+
+            if (category == DiscoveryModule.ResourceCategory && _simulation.Content.TryGet(BuiltInContentTypes.ResourceTypeName, contentId, out ContentEntry resourceEntry) && resourceEntry.Definition is ResourceContent resource)
+            {
+                return resource.DisplayName;
+            }
+
+            if (category == DiscoveryModule.BuildingCategory && _simulation.Content.TryGet(BuiltInContentTypes.BuildingTypeName, contentId, out ContentEntry buildingEntry) && buildingEntry.Definition is BuildingContent building)
+            {
+                return building.DisplayName;
+            }
+
+            if (category == DiscoveryModule.ActionCategory && _simulation.Content.TryGet(BuiltInContentTypes.ActionDefinitionTypeName, contentId, out ContentEntry actionEntry) && actionEntry.Definition is ActionDefinitionContent action)
+            {
+                return action.DisplayName;
+            }
+
+            return contentId;
         }
 
         /// <summary>Converts every ScriptableObject content asset in the shipped catalog into the plain records the simulation reads.</summary>
@@ -518,6 +564,7 @@ namespace TheEmptying.Presentation
             new MapCheat(_mapModule, _cameraController).BuildSections(_cheatMenu);
             new PeopleCheat(_peopleModule, _cameraController, _worldSelection).BuildSections(_cheatMenu);
             new StockpileCheat(_zonesModule, _worldSelection, _simulation.Content, ShowToast).BuildSections(_cheatMenu);
+            new DiscoveryCheat(_discoveryModule).BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()
@@ -526,11 +573,18 @@ namespace TheEmptying.Presentation
             _debugWindow.Initialize(_uiDocument.rootVisualElement, _cheatMenu);
         }
 
+        /// <summary>R14: the Discoveries window - built once; Load() rebinds it to the freshly loaded DiscoveryModule and content.</summary>
+        private void BuildDiscoveriesWindow()
+        {
+            _discoveriesWindow = gameObject.AddComponent<DiscoveriesWindowPresenter>();
+            _discoveriesWindow.Initialize(_uiDocument.rootVisualElement, _discoveryModule, _simulation.Content);
+        }
+
         /// <summary>R4: Resume/Main Menu/Options/Exit Game, with the shared Options panel and the two Yes/No confirmations.</summary>
         private void BuildEscapeMenu()
         {
             _escapeMenu = gameObject.AddComponent<EscapeMenuPresenter>();
-            _escapeMenu.Initialize(_uiDocument.rootVisualElement, this, _debugWindow, _worldSelection);
+            _escapeMenu.Initialize(_uiDocument.rootVisualElement, this, _debugWindow, _worldSelection, _discoveriesWindow);
         }
 
         /// <summary>R11: "Found your kingdom here?" - opened by clicking the starting site marker.</summary>
@@ -699,6 +753,12 @@ namespace TheEmptying.Presentation
             if (_debugWindow.IsOpen)
             {
                 _debugWindow.ToggleWindow();
+                return;
+            }
+
+            if (_discoveriesWindow != null && _discoveriesWindow.IsOpen)
+            {
+                _discoveriesWindow.HandleEscapePressed();
                 return;
             }
 
@@ -1013,7 +1073,10 @@ namespace TheEmptying.Presentation
             _hudPanel.Add(BuildHudButton("1x", () => HandleSetSpeed(1)));
             _hudPanel.Add(BuildHudButton("2x", () => HandleSetSpeed(2)));
             _hudPanel.Add(BuildHudButton("3x", () => HandleSetSpeed(3)));
-            _hudPanel.Add(BuildHudButton("Zones", () => _zoneDrawing?.OpenTypePicker()));
+            _zonesButton = BuildHudButton("Zones", () => _zoneDrawing?.OpenTypePicker());
+            _hudPanel.Add(_zonesButton);
+            _discoveriesButton = BuildHudButton("Discoveries", () => _discoveriesWindow?.Toggle());
+            _hudPanel.Add(_discoveriesButton);
             _hudPanel.Add(BuildErrorBadge());
             root.Add(_hudPanel);
 
@@ -1069,6 +1132,18 @@ namespace TheEmptying.Presentation
             GameDate date = _simulation.Clock.CurrentDate;
             _dateLabel.text = $"{date}, {date.ToClockString(false)}";
             _speedLabel.text = _paused ? "Paused" : $"{(int)_speed}x";
+
+            // R14: Zones and Discoveries only make sense once there's a kingdom to draw zones in or discover things about.
+            DisplayStyle foundedButtonsDisplay = _buildingsModule != null && _buildingsModule.IsFounded ? DisplayStyle.Flex : DisplayStyle.None;
+            if (_zonesButton != null)
+            {
+                _zonesButton.style.display = foundedButtonsDisplay;
+            }
+
+            if (_discoveriesButton != null)
+            {
+                _discoveriesButton.style.display = foundedButtonsDisplay;
+            }
         }
 
         #region IPresentationCommands
@@ -1147,7 +1222,15 @@ namespace TheEmptying.Presentation
                 _buildingsModule = modules.OfType<BuildingsModule>().First();
                 _zonesModule = modules.OfType<ZonesModule>().First();
                 _peopleModule = modules.OfType<PeopleModule>().First();
+                if (_discoveryModule != null)
+                {
+                    _discoveryModule.Discovered -= OnDiscovered;
+                }
+
+                _discoveryModule = modules.OfType<DiscoveryModule>().First();
                 WireUpPersonDecisionLog();
+                WireUpDiscoveryNotifications();
+                _discoveriesWindow?.Rebind(_discoveryModule, _simulation.Content);
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
                 _worldMapView?.Rebind(_mapModule, _simulation.Settings);
@@ -1160,6 +1243,7 @@ namespace TheEmptying.Presentation
                 ShowSiteMarkerIfNotFounded();
                 BuildCheatMenu();
                 _debugWindow?.RebuildCheatsStructure();
+                RefreshHud();
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

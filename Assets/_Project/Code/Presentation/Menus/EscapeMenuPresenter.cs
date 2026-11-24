@@ -1,6 +1,7 @@
 using System;
 using TheEmptying.Core.Console;
 using TheEmptying.Presentation.DevTools;
+using TheEmptying.Presentation.Discovery;
 using TheEmptying.Presentation.Selection;
 using UnityEngine;
 using UnityEngine.SceneManagement;
@@ -25,6 +26,7 @@ namespace TheEmptying.Presentation.Menus
         private IPresentationCommands _presentation;
         private DebugWindowPresenter _debugWindow;
         private WorldSelectionPresenter _worldSelection;
+        private DiscoveriesWindowPresenter _discoveriesWindow;
 
         private VisualElement _root;
         private VisualElement _mainPanel;
@@ -41,11 +43,13 @@ namespace TheEmptying.Presentation.Menus
             VisualElement uiRoot,
             IPresentationCommands presentation,
             DebugWindowPresenter debugWindow,
-            WorldSelectionPresenter worldSelection)
+            WorldSelectionPresenter worldSelection,
+            DiscoveriesWindowPresenter discoveriesWindow = null)
         {
             _presentation = presentation;
             _debugWindow = debugWindow;
             _worldSelection = worldSelection;
+            _discoveriesWindow = discoveriesWindow;
 
             _root = new VisualElement
             {
@@ -92,6 +96,7 @@ namespace TheEmptying.Presentation.Menus
 
             _debugWindow?.ForceClose();
             _worldSelection?.ForceCloseForModal();
+            _discoveriesWindow?.ForceCloseForModal();
 
             _mainPanel.style.display = DisplayStyle.Flex;
             _options.Close();
@@ -107,6 +112,7 @@ namespace TheEmptying.Presentation.Menus
 
             _debugWindow?.ForceReopen();
             _worldSelection?.ForceReopenAfterModal();
+            _discoveriesWindow?.ForceReopenAfterModal();
         }
 
         /// <summary>Go back one step if Options or a Yes/No question is open; otherwise open or close this menu.</summary>

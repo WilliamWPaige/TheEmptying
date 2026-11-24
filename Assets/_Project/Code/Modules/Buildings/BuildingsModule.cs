@@ -1,6 +1,7 @@
 using System;
 using System.Collections.Generic;
 using TheEmptying.Core.Entities;
+using TheEmptying.Core.Events;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Modules.Map;
@@ -18,9 +19,13 @@ namespace TheEmptying.Modules.Buildings
         public const string ModuleId = "module.buildings";
         public const string KeepContentId = "building.keep";
 
+        /// <summary>R14: posted whenever a building is placed - feeds the discovery system.</summary>
+        private const string BuildingPlacedEventId = "event.buildings.placed";
+
         private readonly MapModule _mapModule;
         private EntityRegistry _entities;
         private EntityTable<BuildingState> _buildings;
+        private ModuleContext _context;
 
         public BuildingsModule(MapModule mapModule)
         {
@@ -43,6 +48,7 @@ namespace TheEmptying.Modules.Buildings
         public void Initialize(ModuleContext context)
         {
             _entities = context.Entities;
+            _context = context;
             _buildings = new EntityTable<BuildingState>(_entities);
         }
 
@@ -65,6 +71,9 @@ namespace TheEmptying.Modules.Buildings
             var state = new BuildingState(contentId, worldX, worldZ, footprintWidth, footprintDepth, minCell, doorCell);
             EntityId id = _entities.Create(EntityKind.Building);
             _buildings.Add(id, state);
+
+            _context.Events.Post(BuildingPlacedEventId, _context.CurrentTick, new EventData().SetString("contentId", contentId));
+
             return id;
         }
 

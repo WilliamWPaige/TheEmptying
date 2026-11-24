@@ -1,0 +1,12 @@
+{
+    "type": "event_definition",
+    "items": [
+        {
+            "id": "event.zones.item_stored",
+            "visibility": "Hidden",
+            "reportingScore": 0,
+            "notabilityScore": 0,
+            "description": "R14: posted whenever an item is put in a stockpile - feeds the discovery system, nothing else."
+        }
+    ]
+}
