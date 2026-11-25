@@ -1,3 +1,4 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
@@ -36,6 +37,7 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase("setting.ponds.path_cost_multiplier", SettingValueType.Number, 10.0, 1.0, 1000.0, "Ponds")]
         [TestCase(PondsModule.StartingPondMinDistanceMetersSettingId, SettingValueType.Number, 20.0, 0.0, 1000.0, "Ponds")]
         [TestCase(PondsModule.StartingPondMaxDistanceMetersSettingId, SettingValueType.Number, 50.0, 0.0, 1000.0, "Ponds")]
+        [TestCase(PondsModule.ClearMarginCellsSettingId, SettingValueType.Integer, 1.0, 0.0, 10.0, "Ponds")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
@@ -279,6 +281,169 @@ namespace TheEmptying.Tests.EditMode.Modules
                 pondsAfter.GetOrCreatePondsForChunk(coord);
                 Assert.AreEqual(countBefore, pondsAfter.Ponds.Count(), $"Chunk {coord} should already have been marked generated.");
             }
+        }
+
+        /// <summary>R17b: nothing (tree, stone or grub mound) may stand on a pond's water or within the clear-margin setting of its edge - checked against every pond, in every chunk asked about, for several chunks.</summary>
+        private static void AssertNoPlacementWithinPondMargins(MapModule map, IReadOnlyList<PondState> ponds, IEnumerable<ChunkCoord> chunks, double marginMeters)
+        {
+            double cellSize = map.CellSizeMeters;
+
+            foreach (ChunkCoord coord in chunks)
+            {
+                ChunkData chunk = map.GetOrCreateChunk(coord);
+                foreach (ChunkPlacement placement in chunk.Placements)
+                {
+                    int footprint = placement.Kind == PlacementKind.Stone ? 2 : 1;
+                    double rectMinX = placement.Cell.X * cellSize;
+                    double rectMinZ = placement.Cell.Z * cellSize;
+                    double rectMaxX = rectMinX + footprint * cellSize;
+                    double rectMaxZ = rectMinZ + footprint * cellSize;
+
+                    foreach (PondState pond in ponds)
+                    {
+                        double closestX = System.Math.Clamp(pond.CenterX, rectMinX, rectMaxX);
+                        double closestZ = System.Math.Clamp(pond.CenterZ, rectMinZ, rectMaxZ);
+                        double dx = pond.CenterX - closestX;
+                        double dz = pond.CenterZ - closestZ;
+                        double distance = System.Math.Sqrt(dx * dx + dz * dz);
+
+                        Assert.GreaterOrEqual(
+                            distance,
+                            pond.RadiusMeters + marginMeters - 1e-9,
+                            $"{placement.Kind} at {placement.Cell} (chunk {coord}) is within the clear margin of a pond centered at ({pond.CenterX:0.##}, {pond.CenterZ:0.##}), radius {pond.RadiusMeters:0.##}.");
+                    }
+                }
+            }
+        }
+
+        /// <summary>R17b: a pond's own random scatter never leaves a tree, stone or mound on its water or within one margin cell of its edge - checked across several chunks.</summary>
+        [Test]
+        public void GeneratedPonds_KeepMapPlacementsClearOfWaterAndTheMargin()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, PondsModule ponds) = BuildNewGame(core);
+
+            double marginMeters = simulation.Settings.Get(PondsModule.ClearMarginCellsSettingId) * map.CellSizeMeters;
+
+            var checkedChunks = new List<ChunkCoord>();
+            for (int cx = 3; cx <= 7; cx++)
+            {
+                for (int cz = 7; cz <= 11; cz++)
+                {
+                    var coord = new ChunkCoord(cx, cz);
+                    ponds.GetOrCreatePondsForChunk(coord);
+                    checkedChunks.Add(coord);
+                }
+            }
+
+            AssertNoPlacementWithinPondMargins(map, ponds.Ponds.Select(r => r.Value).ToList(), checkedChunks, marginMeters);
+        }
+
+        /// <summary>R17b: same as above, but for a different world seed - the clearing rule must not depend on which seed happens to be running.</summary>
+        [Test]
+        public void GeneratedPonds_KeepMapPlacementsClearOfWaterAndTheMargin_OnADifferentSeed()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, PondsModule ponds) = BuildNewGame(core, seed: 99);
+
+            double marginMeters = simulation.Settings.Get(PondsModule.ClearMarginCellsSettingId) * map.CellSizeMeters;
+
+            var checkedChunks = new List<ChunkCoord>();
+            for (int cx = 10; cx <= 14; cx++)
+            {
+                for (int cz = 2; cz <= 6; cz++)
+                {
+                    var coord = new ChunkCoord(cx, cz);
+                    ponds.GetOrCreatePondsForChunk(coord);
+                    checkedChunks.Add(coord);
+                }
+            }
+
+            AssertNoPlacementWithinPondMargins(map, ponds.Ponds.Select(r => r.Value).ToList(), checkedChunks, marginMeters);
+        }
+
+        /// <summary>R17b: the guaranteed starting pond clears its own water and margin too, not just scattered ponds.</summary>
+        [Test]
+        public void GuaranteedStartingPond_AlsoKeepsMapPlacementsClear()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, PondsModule ponds) = BuildNewGame(core);
+
+            PondState guaranteed = ponds.Ponds.Select(r => r.Value).Single();
+            double marginMeters = simulation.Settings.Get(PondsModule.ClearMarginCellsSettingId) * map.CellSizeMeters;
+            double clearRadius = guaranteed.RadiusMeters + marginMeters;
+
+            var touchedChunks = new[]
+            {
+                map.WorldToChunk(guaranteed.CenterX - clearRadius, guaranteed.CenterZ - clearRadius),
+                map.WorldToChunk(guaranteed.CenterX + clearRadius, guaranteed.CenterZ - clearRadius),
+                map.WorldToChunk(guaranteed.CenterX - clearRadius, guaranteed.CenterZ + clearRadius),
+                map.WorldToChunk(guaranteed.CenterX + clearRadius, guaranteed.CenterZ + clearRadius)
+            }.Distinct().ToList();
+
+            AssertNoPlacementWithinPondMargins(map, new List<PondState> { guaranteed }, touchedChunks, marginMeters);
+        }
+
+        /// <summary>R17b: the same chunk, from the same seed, generates the same placements and ponds every time - the clearing doesn't introduce any order or visit-time dependence.</summary>
+        [Test]
+        public void PondClearing_SameSeedAndChunk_AlwaysGivesTheSamePlacementsAndPonds()
+        {
+            using var coreA = new TempCoreContentCopy();
+            using var coreB = new TempCoreContentCopy();
+            (Simulation _, MapModule mapA, PondsModule pondsA) = BuildNewGame(coreA, 5);
+            (Simulation _, MapModule mapB, PondsModule pondsB) = BuildNewGame(coreB, 5);
+
+            var coord = new ChunkCoord(5, 9);
+            List<EntityId> pondIdsA = pondsA.GetOrCreatePondsForChunk(coord).ToList();
+            List<EntityId> pondIdsB = pondsB.GetOrCreatePondsForChunk(coord).ToList();
+            Assert.AreEqual(pondIdsA.Count, pondIdsB.Count);
+
+            for (int i = 0; i < pondIdsA.Count; i++)
+            {
+                Assert.IsTrue(pondsA.TryGetPond(pondIdsA[i], out PondState pondA));
+                Assert.IsTrue(pondsB.TryGetPond(pondIdsB[i], out PondState pondB));
+                Assert.AreEqual(pondA.CenterX, pondB.CenterX);
+                Assert.AreEqual(pondA.CenterZ, pondB.CenterZ);
+                Assert.AreEqual(pondA.RadiusMeters, pondB.RadiusMeters);
+            }
+
+            List<ChunkPlacement> placementsA = mapA.GetOrCreateChunk(coord).Placements.ToList();
+            List<ChunkPlacement> placementsB = mapB.GetOrCreateChunk(coord).Placements.ToList();
+
+            Assert.AreEqual(placementsA.Count, placementsB.Count);
+            for (int i = 0; i < placementsA.Count; i++)
+            {
+                Assert.AreEqual(placementsA[i].Kind, placementsB[i].Kind);
+                Assert.AreEqual(placementsA[i].Cell, placementsB[i].Cell);
+            }
+        }
+
+        /// <summary>R17b: the cleared-out state (both the pond and the map placements it removed) survives a save and load round trip exactly - the invariant still holds afterward too.</summary>
+        [Test]
+        public void PondClearing_SurvivesSaveAndLoad()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule mapBefore, PondsModule pondsBefore) = BuildNewGame(core);
+
+            var coords = new[] { new ChunkCoord(5, 9), new ChunkCoord(6, 9), new ChunkCoord(5, 10) };
+            foreach (ChunkCoord coord in coords)
+            {
+                pondsBefore.GetOrCreatePondsForChunk(coord);
+            }
+
+            double marginMeters = simulation.Settings.Get(PondsModule.ClearMarginCellsSettingId) * mapBefore.CellSizeMeters;
+            AssertNoPlacementWithinPondMargins(mapBefore, pondsBefore.Ponds.Select(r => r.Value).ToList(), coords, marginMeters);
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = 0 }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var mapAfter = (MapModule)loadedModules.First(m => m is MapModule);
+            var pondsAfter = (PondsModule)loadedModules.First(m => m is PondsModule);
+
+            AssertNoPlacementWithinPondMargins(mapAfter, pondsAfter.Ponds.Select(r => r.Value).ToList(), coords, marginMeters);
         }
     }
 }

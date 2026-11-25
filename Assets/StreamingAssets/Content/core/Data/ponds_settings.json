@@ -80,6 +80,16 @@
             "maximum": 1000,
             "category": "Ponds",
             "description": "Placeholder. The guaranteed starting pond's longest possible distance from the starting site, in meters."
+        },
+        {
+            "id": "setting.ponds.clear_margin_cells",
+            "label": "Pond clear margin",
+            "valueType": "Integer",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 10,
+            "category": "Ponds",
+            "description": "TEMPORARY placeholder (R17b). How many cells beyond a pond's own edge must stay clear of any tree, stone or grub mound, so every pond keeps clear edge cells to drink from."
         }
     ]
 }

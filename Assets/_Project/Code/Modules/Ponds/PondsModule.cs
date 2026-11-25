@@ -34,6 +34,9 @@ namespace TheEmptying.Modules.Ponds
         public const string StartingPondMinDistanceMetersSettingId = "setting.ponds.starting_pond_min_distance_meters";
         public const string StartingPondMaxDistanceMetersSettingId = "setting.ponds.starting_pond_max_distance_meters";
 
+        /// <summary>R17b: how many cells beyond a pond's own edge must stay clear of any tree, stone or grub mound, so every pond keeps clear edge cells to drink from.</summary>
+        public const string ClearMarginCellsSettingId = "setting.ponds.clear_margin_cells";
+
         private const int MaxPlacementAttempts = 50;
         private const string ChunkStreamPrefix = "ponds.chunk_placements";
         private const string GuaranteedPondStreamName = "ponds.guaranteed_starting_pond";
@@ -311,11 +314,27 @@ namespace TheEmptying.Modules.Ponds
             return false;
         }
 
+        /// <summary>
+        /// R17b: also clears any tree, stone or grub mound standing on
+        /// this pond's water or within the clear-margin setting of its
+        /// edge, so every pond keeps clear edge cells to drink from. Runs
+        /// here (the one place a pond is ever created, guaranteed or
+        /// scattered) rather than as a separate pass, so it can never be
+        /// missed for one path and not the other. Deterministic: forcing
+        /// the touched map chunk(s) to exist now, rather than whenever
+        /// something else happens to ask for them, never changes what
+        /// they generate (map chunk generation depends only on the world
+        /// seed and the chunk's own coordinates).
+        /// </summary>
         private EntityId CreatePond(double centerX, double centerZ, double radiusMeters, int maxDrinks)
         {
             var state = new PondState { CenterX = centerX, CenterZ = centerZ, RadiusMeters = radiusMeters, DrinksCurrent = maxDrinks };
             EntityId id = _entities.Create(EntityKind.Pond);
             _ponds.Add(id, state);
+
+            double marginMeters = _settings.Get(ClearMarginCellsSettingId) * _mapModule.CellSizeMeters;
+            _mapModule.RemovePlacementsWithinRadius(centerX, centerZ, radiusMeters + marginMeters);
+
             return id;
         }
 

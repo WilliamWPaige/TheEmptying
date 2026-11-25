@@ -50,6 +50,21 @@ namespace TheEmptying.Presentation.Selection
         private ISelectionTarget _current;
         private GameObject _highlight;
 
+        /// <summary>
+        /// R17b: the frame (Time.frameCount) a PointerDownEvent last hit
+        /// something other than _uiRoot itself - i.e. an actual control in
+        /// any window (debug, info, HUD, Discoveries, menus, popups), not
+        /// empty space. HandleClick checks this alongside the older
+        /// position-based IsPointerOverUi check, since a click on a UI
+        /// control (the "Empty pond" cheat button, reported in R17b) could
+        /// still reach the world-click/deselect logic below despite that
+        /// check. This flag comes straight from UI Toolkit's own hit-test
+        /// for this exact click - the same one that decides whether the
+        /// control's own "clicked" fires - so it can never disagree with
+        /// what the control itself does with the click.
+        /// </summary>
+        private int _uiPointerDownFrame = -1;
+
         /// <summary>R9: what was selected right before the Escape menu force-hid this window, for ForceReopenAfterModal to restore; null when nothing was selected at the time.</summary>
         private ISelectionTarget _hiddenByModal;
 
@@ -108,6 +123,17 @@ namespace TheEmptying.Presentation.Selection
 
             _infoWindow.Initialize(uiRoot, CenterCameraOnSelection, ClearSelection);
             BuildHighlight();
+
+            _uiRoot.RegisterCallback<PointerDownEvent>(OnUiRootPointerDown);
+        }
+
+        /// <summary>R17b: fires for every pointer-down UI Toolkit dispatches anywhere under _uiRoot, bubbled up from wherever it actually hit. evt.target is fixed at that original hit - if it's not _uiRoot itself, something real (a button, a field, a window) caught this click.</summary>
+        private void OnUiRootPointerDown(PointerDownEvent evt)
+        {
+            if (!ReferenceEquals(evt.target, _uiRoot))
+            {
+                _uiPointerDownFrame = Time.frameCount;
+            }
         }
 
         /// <summary>After a load, the simulation (and its modules) are new instances; the old selection no longer means anything.</summary>
@@ -194,6 +220,11 @@ namespace TheEmptying.Presentation.Selection
             }
 
             if (ZoneDrawingTool != null && ZoneDrawingTool.IsToolActive)
+            {
+                return;
+            }
+
+            if (_uiPointerDownFrame == Time.frameCount)
             {
                 return;
             }

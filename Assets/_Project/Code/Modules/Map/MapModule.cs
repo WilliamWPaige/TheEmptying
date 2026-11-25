@@ -165,6 +165,66 @@ namespace TheEmptying.Modules.Map
             }
         }
 
+        /// <summary>
+        /// R17b: removes any placement (tree, stone or grub mound) whose
+        /// own footprint comes within radiusMeters of (centerX, centerZ) -
+        /// used when a pond is created, so its water and a clear margin
+        /// around it never have anything blocking an edge cell. Each
+        /// touched chunk is forced to exist first (GetOrCreateChunk), so
+        /// the result is the same whether this chunk's placements were
+        /// already generated or not - and, like RemovePlacementsOverlapping,
+        /// only the chunks the bounding square's four corners fall into are
+        /// touched (true for every pond size used so far).
+        /// </summary>
+        public void RemovePlacementsWithinRadius(double centerX, double centerZ, double radiusMeters)
+        {
+            double cellSize = CellSizeMeters;
+
+            var touchedChunks = new HashSet<ChunkCoord>
+            {
+                WorldToChunk(centerX - radiusMeters, centerZ - radiusMeters),
+                WorldToChunk(centerX + radiusMeters, centerZ - radiusMeters),
+                WorldToChunk(centerX - radiusMeters, centerZ + radiusMeters),
+                WorldToChunk(centerX + radiusMeters, centerZ + radiusMeters)
+            };
+
+            foreach (ChunkCoord coord in touchedChunks)
+            {
+                ChunkData chunk = GetOrCreateChunk(coord);
+                var kept = new List<ChunkPlacement>();
+                bool changed = false;
+
+                foreach (ChunkPlacement placement in chunk.Placements)
+                {
+                    int footprint = FootprintCellsFor(placement.Kind);
+                    double rectMinX = placement.Cell.X * cellSize;
+                    double rectMinZ = placement.Cell.Z * cellSize;
+                    double rectMaxX = rectMinX + footprint * cellSize;
+                    double rectMaxZ = rectMinZ + footprint * cellSize;
+
+                    double closestX = Math.Clamp(centerX, rectMinX, rectMaxX);
+                    double closestZ = Math.Clamp(centerZ, rectMinZ, rectMaxZ);
+                    double dx = centerX - closestX;
+                    double dz = centerZ - closestZ;
+                    bool withinRadius = dx * dx + dz * dz < radiusMeters * radiusMeters;
+
+                    if (withinRadius)
+                    {
+                        changed = true;
+                    }
+                    else
+                    {
+                        kept.Add(placement);
+                    }
+                }
+
+                if (changed)
+                {
+                    _chunks[coord] = new ChunkData(coord, kept);
+                }
+            }
+        }
+
         /// <summary>Creates the chunk's data (and its one-time random placements) the first time it's asked for; returns the same instance on every later call.</summary>
         public ChunkData GetOrCreateChunk(ChunkCoord coord)
         {
