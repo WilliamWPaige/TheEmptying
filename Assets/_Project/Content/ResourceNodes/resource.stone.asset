@@ -23,3 +23,11 @@ MonoBehaviour:
   harvestTimeUnskilledMinutes: 120
   harvestTimeSkilledMinutes: 60
   harvestTimeMasterMinutes: 30
+  gatherItemId: item.rock
+  gatherRadiusMeters: 3
+  gatherTimeUnskilledMinutes: 30
+  gatherTimeSkilledMinutes: 15
+  gatherTimeMasterMinutes: 5
+  gatherMaxConcurrent: 2
+  gatherBonusItemId: item.flint
+  gatherBonusChance: 0.1

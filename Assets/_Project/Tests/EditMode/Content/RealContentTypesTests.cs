@@ -24,7 +24,7 @@ namespace TheEmptying.Tests.EditMode.Content
 
             CollectionAssert.AreEquivalent(new[] { "unit.person" }, catalog.Units.Select(a => a.Id));
             CollectionAssert.AreEquivalent(new[] { "resource.tree", "resource.stone", "resource.grub_mound" }, catalog.ResourceNodes.Select(a => a.Id));
-            CollectionAssert.AreEquivalent(new[] { "item.log", "item.stone", "item.grub" }, catalog.Items.Select(a => a.Id));
+            CollectionAssert.AreEquivalent(new[] { "item.log", "item.stone", "item.grub", "item.stick", "item.rock", "item.flint" }, catalog.Items.Select(a => a.Id));
             CollectionAssert.AreEquivalent(new[] { "building.keep" }, catalog.Buildings.Select(a => a.Id));
         }
 
@@ -62,10 +62,13 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(1, grubMound.FootprintDepth);
         }
 
-        /// <summary>R12: the real item fields match the prompt's placeholder values.</summary>
+        /// <summary>R12/R15: the real item fields match the prompt's placeholder values.</summary>
         [TestCase("item.grub", 1, 25.0, 5)]
         [TestCase("item.log", 4, 0.0, 5)]
         [TestCase("item.stone", 6, 0.0, 5)]
+        [TestCase("item.stick", 1, 0.0, 5)]
+        [TestCase("item.rock", 2, 0.0, 5)]
+        [TestCase("item.flint", 1, 0.0, 5)]
         public void RealItems_HaveTheExpectedPlaceholderFields(string itemId, int expectedSize, double expectedFoodValue, int expectedCarryAmount)
         {
             ContentCatalog catalog = LoadCatalog();
@@ -74,6 +77,31 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(expectedSize, item.Size);
             Assert.AreEqual(expectedFoodValue, item.FoodValue);
             Assert.AreEqual(expectedCarryAmount, item.CarryAmount);
+        }
+
+        /// <summary>R15: base goods' prices - 5 sticks or rocks make exactly 1 copper, grubs are 1 copper, flint is 2 copper.</summary>
+        [TestCase("item.grub", 10)]
+        [TestCase("item.stick", 2)]
+        [TestCase("item.rock", 2)]
+        [TestCase("item.flint", 20)]
+        public void RealItems_HaveTheExpectedBaseValue(string itemId, int expectedTenthCopper)
+        {
+            ContentCatalog catalog = LoadCatalog();
+            ItemAsset item = catalog.Items.Single(a => a.Id == itemId);
+
+            Assert.AreEqual(expectedTenthCopper, item.BaseValueTenthCopper);
+        }
+
+        /// <summary>R15: exactly 10 tenth-copper (5 sticks at 2 tenth-copper each) is exactly 1 whole copper - no fraction left over.</summary>
+        [Test]
+        public void FiveSticksOrRocks_PayExactlyOneCopper()
+        {
+            ContentCatalog catalog = LoadCatalog();
+            ItemAsset stick = catalog.Items.Single(a => a.Id == "item.stick");
+            ItemAsset rock = catalog.Items.Single(a => a.Id == "item.rock");
+
+            Assert.AreEqual(10, 5 * stick.BaseValueTenthCopper);
+            Assert.AreEqual(10, 5 * rock.BaseValueTenthCopper);
         }
 
         /// <summary>R12: the real resources yield the expected item, hold the expected amount (or are unlimited), and harvest at 2 h / 1 h / 30 min.</summary>
@@ -109,6 +137,34 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(expectedMaxWorkers, resource.MaxWorkers);
         }
 
+        /// <summary>R15: the tree and stone resources gather sticks and rocks (stone with a 10% bonus chance of flint too) from the ground nearby, within a 3 m radius, with up to 2 gatherers at once.</summary>
+        [TestCase("resource.tree", "item.stick", "", 0.0)]
+        [TestCase("resource.stone", "item.rock", "item.flint", 0.1)]
+        public void RealResources_HaveTheExpectedGatherNearbyFields(string resourceId, string expectedGatherItemId, string expectedBonusItemId, double expectedBonusChance)
+        {
+            ContentCatalog catalog = LoadCatalog();
+            ResourceAsset resource = catalog.ResourceNodes.Single(a => a.Id == resourceId);
+
+            Assert.AreEqual(expectedGatherItemId, resource.GatherItemId);
+            Assert.AreEqual(3, resource.GatherRadiusMeters);
+            Assert.AreEqual(30, resource.GatherTimeUnskilledMinutes);
+            Assert.AreEqual(15, resource.GatherTimeSkilledMinutes);
+            Assert.AreEqual(5, resource.GatherTimeMasterMinutes);
+            Assert.AreEqual(2, resource.GatherMaxConcurrent);
+            Assert.AreEqual(expectedBonusItemId, resource.GatherBonusItemId ?? "");
+            Assert.AreEqual(expectedBonusChance, resource.GatherBonusChance);
+        }
+
+        /// <summary>R15: the grub mound has no gather-nearby behavior - it's still dug directly, the R13 way.</summary>
+        [Test]
+        public void GrubMound_HasNoGatherNearbyBehavior()
+        {
+            ContentCatalog catalog = LoadCatalog();
+            ResourceAsset grubMound = catalog.ResourceNodes.Single(a => a.Id == "resource.grub_mound");
+
+            Assert.IsTrue(string.IsNullOrEmpty(grubMound.GatherItemId));
+        }
+
         [Test]
         public void EveryRealAsset_ValidatesCleanly()
         {
@@ -134,7 +190,7 @@ namespace TheEmptying.Tests.EditMode.Content
             List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog, problems);
 
             Assert.IsEmpty(problems);
-            Assert.AreEqual(8, definitions.Count);
+            Assert.AreEqual(11, definitions.Count);
         }
     }
 }

@@ -96,6 +96,7 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                     { ""id"": ""setting.people.action_history_count"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 10, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.keep_exit_interval_min_seconds"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 3, ""minimum"": 0.1, ""maximum"": 300, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.keep_exit_interval_max_seconds"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 5, ""minimum"": 0.1, ""maximum"": 300, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.crown_starting_treasury_copper"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 5000, ""minimum"": 0, ""maximum"": 1000000, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.time.real_seconds_per_day"", ""label"": ""x"", ""valueType"": ""Number"", ""default"": 1800, ""minimum"": 60, ""maximum"": 7200, ""category"": ""Time"", ""description"": ""x"" }
                 ]
             }");

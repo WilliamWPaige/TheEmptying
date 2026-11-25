@@ -213,7 +213,7 @@ namespace TheEmptying.Presentation.Selection
                     ResourceAsset asset = _decorations.GetAsset(placement.Kind);
                     if (asset != null)
                     {
-                        Select(new ResourceSelectionTarget(_mapModule, asset, placement));
+                        Select(new ResourceSelectionTarget(_mapModule, _content, asset, placement));
                         return;
                     }
                 }

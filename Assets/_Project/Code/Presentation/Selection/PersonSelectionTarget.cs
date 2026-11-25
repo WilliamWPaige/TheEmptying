@@ -65,8 +65,10 @@ namespace TheEmptying.Presentation.Selection
             BuildHungerSection(container, person);
             BuildActionSection(container, person);
             BuildCarryingAndStashSection(container, person);
+            BuildWalletSection(container, person);
             BuildLikesAndDislikesSection(container, person);
             BuildHistorySection(container, person);
+            BuildNotesSection(container, person);
 
             container.Add(SectionHeading("Attributes"));
             foreach (AttributeDefinition attribute in BuiltInContentTypes.OrderedAttributes(_content))
@@ -113,14 +115,26 @@ namespace TheEmptying.Presentation.Selection
             container.Add(new Label($"{person.Hunger:0} / 100") { style = { color = new Color(0.8f, 0.8f, 0.8f), marginLeft = 8, marginBottom = 10 } });
         }
 
-        /// <summary>R13: what they're currently carrying (foraged for the stockpile), and what's in their home stash.</summary>
+        /// <summary>R13: what they're currently carrying (foraged for the stockpile, or an incidental bonus pickup like flint), and what's in their home stash.</summary>
         private void BuildCarryingAndStashSection(VisualElement container, PersonState person)
         {
             container.Add(SectionHeading("Carrying"));
-            container.Add(new Label(person.CarriedAmount > 0 ? $"Carrying {person.CarriedAmount} {DisplayNameForItem(person.CarriedItemId)}" : "(nothing)")
+            if (!person.IsCarryingAnything)
             {
-                style = { color = new Color(0.85f, 0.85f, 0.85f), marginLeft = 8, marginBottom = 10 }
-            });
+                container.Add(new Label("(nothing)") { style = { color = new Color(0.85f, 0.85f, 0.85f), marginLeft = 8, marginBottom = 10 } });
+            }
+            else
+            {
+                foreach (System.Collections.Generic.KeyValuePair<string, int> carried in person.CarriedItems)
+                {
+                    container.Add(new Label($"Carrying {carried.Value} {DisplayNameForItem(carried.Key)}")
+                    {
+                        style = { color = new Color(0.85f, 0.85f, 0.85f), marginLeft = 8, marginBottom = 2 }
+                    });
+                }
+
+                container.Add(new VisualElement { style = { marginBottom = 8 } });
+            }
 
             container.Add(SectionHeading("Home stash"));
             System.Collections.Generic.IReadOnlyDictionary<string, int> homeStash = person.HomeBuildingId.HasValue
@@ -143,6 +157,39 @@ namespace TheEmptying.Presentation.Selection
         }
 
         private static readonly System.Collections.Generic.Dictionary<string, int> EmptyHomeStash = new System.Collections.Generic.Dictionary<string, int>();
+
+        /// <summary>R15: this person's own coin, paid cash on delivery whenever they drop base goods in a crown stockpile.</summary>
+        private static void BuildWalletSection(VisualElement container, PersonState person)
+        {
+            container.Add(SectionHeading("Wallet"));
+            container.Add(new Label(PeopleModule.FormatTenthCopper(person.WalletTenthCopper))
+            {
+                style = { color = new Color(1f, 0.85f, 0.3f), marginLeft = 8, marginBottom = 10 }
+            });
+        }
+
+        /// <summary>R13/R15: short non-action notes (skill level-ups, payment for delivered goods), most recent first.</summary>
+        private static void BuildNotesSection(VisualElement container, PersonState person)
+        {
+            container.Add(SectionHeading("Notes"));
+
+            if (person.Notes.Count == 0)
+            {
+                container.Add(new Label("(nothing yet)") { style = { color = new Color(0.6f, 0.6f, 0.6f), marginLeft = 8, marginBottom = 10 } });
+                return;
+            }
+
+            foreach (PersonNote note in person.Notes)
+            {
+                GameDate date = GameDate.FromTick(note.Tick);
+                container.Add(new Label($"{note.Text} - {date}, {date.ToClockString(false)}")
+                {
+                    style = { color = new Color(0.75f, 0.75f, 0.75f), marginLeft = 8, marginBottom = 2, whiteSpace = WhiteSpace.Normal }
+                });
+            }
+
+            container.Add(new VisualElement { style = { marginBottom = 8 } });
+        }
 
         /// <summary>R13: the kinds of work this person likes and dislikes, rolled once at creation.</summary>
         private void BuildLikesAndDislikesSection(VisualElement container, PersonState person)
@@ -276,6 +323,7 @@ namespace TheEmptying.Presentation.Selection
                 case ActionKind.InsideBuilding: return "Inside";
                 case ActionKind.Eating: return "Eating";
                 case ActionKind.Digging: return "Digging";
+                case ActionKind.Gathering: return "Gathering";
                 default: return "Idle";
             }
         }

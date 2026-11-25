@@ -50,10 +50,50 @@ namespace TheEmptying.Modules.People
         /// <summary>R13: 100 = full, 0 = starving. Drains every tick; restored by eating.</summary>
         public double Hunger { get; set; } = 100.0;
 
-        /// <summary>R13: the item currently being carried (foraged for the stockpile, or extra grubs on the way home); empty when not carrying anything.</summary>
-        public string CarriedItemId { get; set; } = string.Empty;
+        /// <summary>R13: items currently carried (foraged for the stockpile, extra grubs on the way home, or an incidental bonus pickup like flint while gathering rock), by item content Id; empty when carrying nothing. R15 generalized this from a single item+amount pair, since one gathering trip can yield a bonus item alongside the primary good.</summary>
+        public Dictionary<string, int> CarriedItems { get; } = new Dictionary<string, int>();
 
-        public int CarriedAmount { get; set; }
+        public int CarriedAmountOf(string itemContentId) => CarriedItems.TryGetValue(itemContentId, out int amount) ? amount : 0;
+
+        public void AddCarried(string itemContentId, int amount)
+        {
+            if (amount <= 0 || string.IsNullOrEmpty(itemContentId))
+            {
+                return;
+            }
+
+            CarriedItems.TryGetValue(itemContentId, out int current);
+            CarriedItems[itemContentId] = current + amount;
+        }
+
+        public void RemoveCarried(string itemContentId, int amount)
+        {
+            if (!CarriedItems.TryGetValue(itemContentId, out int current))
+            {
+                return;
+            }
+
+            int remaining = current - amount;
+            if (remaining <= 0)
+            {
+                CarriedItems.Remove(itemContentId);
+            }
+            else
+            {
+                CarriedItems[itemContentId] = remaining;
+            }
+        }
+
+        public bool IsCarryingAnything => CarriedItems.Count > 0;
+
+        /// <summary>R15: which item (grub, stick or rock) the current ForagingForStockpile trip is gathering - chosen once when the goal starts, so an interrupted/resumed trip keeps gathering the same thing rather than re-rolling.</summary>
+        public string ForagingItemId { get; set; } = string.Empty;
+
+        /// <summary>R15: true while the current Eating action is eating directly from carried goods (a hungry person carrying grubs eats from them first, wherever they are), rather than from a stockpile or the home stash.</summary>
+        public bool EatingFromCarried { get; set; }
+
+        /// <summary>R15: this person's own coin, in tenths of a copper (so 5 sticks at 0.2 copper each pays out exactly 1 copper, with no fraction ever lost). Paid cash on delivery whenever they drop base goods in a crown stockpile.</summary>
+        public int WalletTenthCopper { get; set; }
 
         /// <summary>R13: the building this person lives in - for now, every founder and the Monarch live in the keep. Null for a person with no home (e.g. the Spawn cheat).</summary>
         public EntityId? HomeBuildingId { get; set; }
@@ -70,7 +110,7 @@ namespace TheEmptying.Modules.People
         /// <summary>R13: true while the current SeekingFood trip's destination is this person's own home stash.</summary>
         public bool TargetIsHome { get; set; }
 
-        /// <summary>R13: true while the current SeekingFood trip's destination is a grub mound (SeekingFood only - ToppingUpHomeStash and ForagingForStockpile always dig at a mound first, decided by carried amount, not this flag).</summary>
+        /// <summary>R13: true while the current SeekingFood trip's destination is a grub mound (SeekingFood only - ToppingUpHomeStash always digs at a mound first, decided by carried amount, not this flag; ForagingForStockpile decides by ForagingItemId instead, since R15 it may be gathering sticks or rocks instead of digging grubs).</summary>
         public bool TargetIsMound { get; set; }
 
         /// <summary>R13: true if the most recent meal (while SeekingFood) was dug at a mound - decides whether becoming full leads into ToppingUpHomeStash.</summary>

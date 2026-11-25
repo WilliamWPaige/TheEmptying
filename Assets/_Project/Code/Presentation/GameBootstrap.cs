@@ -62,6 +62,7 @@ namespace TheEmptying.Presentation
         private VisualElement _hudPanel;
         private Label _dateLabel;
         private Label _speedLabel;
+        private Label _treasuryLabel;
 
         private VisualElement _questionPopupRoot;
         private Label _questionPopupCounter;
@@ -1066,9 +1067,11 @@ namespace TheEmptying.Presentation
 
             _dateLabel = new Label { style = { color = Color.white, marginRight = 16 } };
             _speedLabel = new Label { style = { color = Color.white, marginRight = 16 } };
+            _treasuryLabel = new Label { style = { color = new Color(1f, 0.85f, 0.3f), marginRight = 16 } };
 
             _hudPanel.Add(_dateLabel);
             _hudPanel.Add(_speedLabel);
+            _hudPanel.Add(_treasuryLabel);
             _hudPanel.Add(BuildHudButton("Pause", () => HandleTogglePause()));
             _hudPanel.Add(BuildHudButton("1x", () => HandleSetSpeed(1)));
             _hudPanel.Add(BuildHudButton("2x", () => HandleSetSpeed(2)));
@@ -1132,6 +1135,11 @@ namespace TheEmptying.Presentation
             GameDate date = _simulation.Clock.CurrentDate;
             _dateLabel.text = $"{date}, {date.ToClockString(false)}";
             _speedLabel.text = _paused ? "Paused" : $"{(int)_speed}x";
+
+            if (_treasuryLabel != null && _peopleModule != null)
+            {
+                _treasuryLabel.text = $"Treasury: {PeopleModule.FormatTenthCopper(_peopleModule.TreasuryTenthCopper)}";
+            }
 
             // R14: Zones and Discoveries only make sense once there's a kingdom to draw zones in or discover things about.
             DisplayStyle foundedButtonsDisplay = _buildingsModule != null && _buildingsModule.IsFounded ? DisplayStyle.Flex : DisplayStyle.None;

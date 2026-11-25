@@ -412,6 +412,16 @@
             "description": "TEMPORARY placeholder (R13b). After finding no free spot at a resource (a grub mound, say) or a stockpile, the longest a person waits before trying again, in real seconds at 1x game speed."
         },
         {
+            "id": "setting.people.crown_starting_treasury_copper",
+            "label": "Crown starting treasury",
+            "valueType": "Integer",
+            "default": 5000,
+            "minimum": 0,
+            "maximum": 1000000,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R15). How much copper the crown treasury starts a new game with."
+        },
+        {
             "id": "setting.people.log_decisions",
             "label": "Log person decisions",
             "valueType": "Boolean",

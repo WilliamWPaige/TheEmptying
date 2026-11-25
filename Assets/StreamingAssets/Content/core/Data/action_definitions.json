@@ -25,6 +25,11 @@
             "id": "action.digging",
             "displayName": "Dig",
             "description": "Digging up a grub from a mound, whether to eat it or to carry it elsewhere."
+        },
+        {
+            "id": "action.gathering",
+            "displayName": "Gather",
+            "description": "Gathering a stick or rock (and maybe a bonus flint) from the ground near a tree or stone deposit, to carry elsewhere."
         }
     ]
 }

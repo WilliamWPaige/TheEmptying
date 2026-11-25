@@ -64,7 +64,7 @@ namespace TheEmptying.Presentation.Content
             DisplayName = asset.DisplayName,
             FoodValue = asset.FoodValue,
             CarryAmount = asset.CarryAmount,
-            BaseValueCopper = asset.BaseValueCopper,
+            BaseValueTenthCopper = asset.BaseValueTenthCopper,
             SpoilTimeMinutes = asset.SpoilTimeMinutes,
             Size = asset.Size
         };
@@ -81,7 +81,15 @@ namespace TheEmptying.Presentation.Content
             HarvestTimeUnskilledMinutes = asset.HarvestTimeUnskilledMinutes,
             HarvestTimeSkilledMinutes = asset.HarvestTimeSkilledMinutes,
             HarvestTimeMasterMinutes = asset.HarvestTimeMasterMinutes,
-            MaxWorkers = asset.MaxWorkers
+            MaxWorkers = asset.MaxWorkers,
+            GatherItem = new ContentRef<ItemContent>(asset.GatherItemId),
+            GatherRadiusMeters = asset.GatherRadiusMeters,
+            GatherTimeUnskilledMinutes = asset.GatherTimeUnskilledMinutes,
+            GatherTimeSkilledMinutes = asset.GatherTimeSkilledMinutes,
+            GatherTimeMasterMinutes = asset.GatherTimeMasterMinutes,
+            GatherMaxConcurrent = asset.GatherMaxConcurrent,
+            GatherBonusItem = new ContentRef<ItemContent>(asset.GatherBonusItemId),
+            GatherBonusChance = asset.GatherBonusChance
         };
 
         private static BuildingContent ToRecord(BuildingAsset asset) => new BuildingContent

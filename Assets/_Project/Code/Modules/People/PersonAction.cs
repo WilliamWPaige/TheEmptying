@@ -45,6 +45,18 @@ namespace TheEmptying.Modules.People
         /// <summary>R13: Digging only (for now) - the skill this action's time counts toward, e.g. "skill.foraging". Empty for any action that grants no experience; this field is what lets a future work action grant experience without the action system needing to know its kind.</summary>
         public string SkillId { get; set; } = string.Empty;
 
+        /// <summary>R15: Gathering only - the item this action adds to carried goods on completion (e.g. "item.stick").</summary>
+        public string GatherItemId { get; set; } = string.Empty;
+
+        /// <summary>R15: Gathering only - an optional bonus item also rolled for on completion (e.g. "item.flint" while gathering rock); empty if this gather has no bonus.</summary>
+        public string BonusItemId { get; set; } = string.Empty;
+
+        /// <summary>R15: Gathering only - the chance (0-1) the bonus item is also added on completion.</summary>
+        public double BonusChance { get; set; }
+
+        /// <summary>R15: Gathering only - the resource content Id being gathered near (e.g. "resource.tree"), for the discovery system.</summary>
+        public string ResourceContentId { get; set; } = string.Empty;
+
         /// <summary>0 at the start, 1 once the action is finished - Idle by elapsed ticks, Walk by distance covered; always 0 for InsideBuilding, which has no notion of progress (only the keep-exit timer ends it).</summary>
         public double Progress
         {

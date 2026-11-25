@@ -2,6 +2,7 @@ using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Discovery;
+using TheEmptying.Modules.People;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -115,7 +116,7 @@ namespace TheEmptying.Presentation.Discovery
                 {
                     position = Position.Absolute,
                     left = 512,
-                    top = 56,
+                    top = 64,
                     bottom = 40,
                     width = 460,
                     backgroundColor = new Color(0f, 0f, 0f, 0.65f),
@@ -253,7 +254,7 @@ namespace TheEmptying.Presentation.Discovery
             AddDetailRow("Comes from", string.IsNullOrEmpty(comesFrom) ? "(nothing known)" : comesFrom);
             AddDetailRow("Food value", item.FoodValue.ToString("0.#"));
             AddDetailRow("Carry amount", item.CarryAmount.ToString());
-            AddDetailRow("Base value", $"{item.BaseValueCopper} copper");
+            AddDetailRow("Base value", PeopleModule.FormatTenthCopper(item.BaseValueTenthCopper));
             AddDetailRow("Size", item.Size.ToString());
             AddDetailRow("Spoil time", item.SpoilTimeMinutes <= 0 ? "Never" : $"{item.SpoilTimeMinutes:0.#} min");
             AddDiscoveredRow(tick);
@@ -275,6 +276,20 @@ namespace TheEmptying.Presentation.Discovery
             AddDetailRow("Skilled harvest time", $"{resource.HarvestTimeSkilledMinutes:0.#} min");
             AddDetailRow("Master harvest time", $"{resource.HarvestTimeMasterMinutes:0.#} min");
             AddDetailRow("Max workers", resource.MaxWorkers.ToString());
+
+            if (!resource.GatherItem.IsEmpty)
+            {
+                AddDetailRow("Gather nearby", DisplayNameForItem(resource.GatherItem.Id));
+                AddDetailRow("Gather radius", $"{resource.GatherRadiusMeters:0.#} m");
+                AddDetailRow("Gather max at once", resource.GatherMaxConcurrent.ToString());
+                AddDetailRow("Gather time (Unskilled/Skilled/Master)", $"{resource.GatherTimeUnskilledMinutes:0.#} / {resource.GatherTimeSkilledMinutes:0.#} / {resource.GatherTimeMasterMinutes:0.#} min");
+
+                if (!resource.GatherBonusItem.IsEmpty)
+                {
+                    AddDetailRow("Bonus chance", $"{resource.GatherBonusChance * 100:0.#}% {DisplayNameForItem(resource.GatherBonusItem.Id)}");
+                }
+            }
+
             AddDiscoveredRow(tick);
         }
 

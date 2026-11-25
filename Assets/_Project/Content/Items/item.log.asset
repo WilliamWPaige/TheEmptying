@@ -17,6 +17,6 @@ MonoBehaviour:
   model: {fileID: 7463317834105901944, guid: 9600be4f369890246886ad0eb969bcfd, type: 3}
   foodValue: 0
   carryAmount: 5
-  baseValueCopper: 0
+  baseValueTenthCopper: 0
   spoilTimeMinutes: 0
   size: 4

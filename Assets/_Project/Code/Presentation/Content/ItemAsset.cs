@@ -12,7 +12,10 @@ namespace TheEmptying.Presentation.Content
         [SerializeField] private GameObject model;
         [SerializeField] private double foodValue;
         [SerializeField] private int carryAmount = 1;
-        [SerializeField] private int baseValueCopper;
+
+        /// <summary>R15: tenths of a copper (so a 0.2 copper placeholder value is the exact integer 2) - whole-copper amounts stay exact too (1 copper is 10), and payment math never touches a fraction that isn't a multiple of 0.1 copper.</summary>
+        [SerializeField] private int baseValueTenthCopper;
+
         [SerializeField] private double spoilTimeMinutes;
         [SerializeField] private int size = 1;
 
@@ -23,7 +26,7 @@ namespace TheEmptying.Presentation.Content
         public override GameObject Model => model;
         public double FoodValue => foodValue;
         public int CarryAmount => carryAmount;
-        public int BaseValueCopper => baseValueCopper;
+        public int BaseValueTenthCopper => baseValueTenthCopper;
         public double SpoilTimeMinutes => spoilTimeMinutes;
         public int Size => size;
 
@@ -46,14 +49,14 @@ namespace TheEmptying.Presentation.Content
         }
 
 #if UNITY_EDITOR
-        public void SetForEditor(string id, string displayName, GameObject model, double foodValue, int carryAmount, int baseValueCopper, double spoilTimeMinutes, int size)
+        public void SetForEditor(string id, string displayName, GameObject model, double foodValue, int carryAmount, int baseValueTenthCopper, double spoilTimeMinutes, int size)
         {
             this.id = id;
             this.displayName = displayName;
             this.model = model;
             this.foodValue = foodValue;
             this.carryAmount = carryAmount;
-            this.baseValueCopper = baseValueCopper;
+            this.baseValueTenthCopper = baseValueTenthCopper;
             this.spoilTimeMinutes = spoilTimeMinutes;
             this.size = size;
         }

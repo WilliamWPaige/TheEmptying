@@ -19,8 +19,9 @@ namespace TheEmptying.Core.Content
         [JsonProperty("carryAmount")]
         public int CarryAmount { get; set; }
 
-        [JsonProperty("baseValueCopper")]
-        public int BaseValueCopper { get; set; }
+        /// <summary>R15: tenths of a copper, so placeholder fractional prices (0.2 copper for a stick or rock) stay an exact integer; 10 means 1 whole copper.</summary>
+        [JsonProperty("baseValueTenthCopper")]
+        public int BaseValueTenthCopper { get; set; }
 
         /// <summary>In-game minutes; 0 means it never spoils.</summary>
         [JsonProperty("spoilTimeMinutes")]

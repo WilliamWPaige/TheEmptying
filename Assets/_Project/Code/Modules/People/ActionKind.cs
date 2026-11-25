@@ -18,6 +18,9 @@ namespace TheEmptying.Modules.People
         Eating,
 
         /// <summary>R13: digging one grub at a mound - duration is the resource's harvest time blended by skill (DurationTicks, like Idle). Grants experience in SkillId.</summary>
-        Digging
+        Digging,
+
+        /// <summary>R15: gathering a stick or rock (and maybe a bonus flint) from the ground near a tree or stone deposit - duration is the resource's gather time blended by skill (DurationTicks, like Digging). Grants experience in SkillId.</summary>
+        Gathering
     }
 }

@@ -109,12 +109,13 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(0, discovery.DiscoveredIn(DiscoveryModule.ItemCategory).Count);
         }
 
-        /// <summary>R14: the 5 action kinds (Idle, Walk, Inside a building, Eat, Dig) each load a non-empty display name and description from the shipped content.</summary>
+        /// <summary>R14/R15: the 6 action kinds (Idle, Walk, Inside a building, Eat, Dig, Gather) each load a non-empty display name and description from the shipped content.</summary>
         [TestCase("action.idle")]
         [TestCase("action.walk")]
         [TestCase("action.inside_building")]
         [TestCase("action.eating")]
         [TestCase("action.digging")]
+        [TestCase("action.gathering")]
         public void ActionDescriptions_LoadFromRealContent(string actionId)
         {
             using var core = new TempCoreContentCopy();
@@ -129,14 +130,14 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void RealContent_HasExactlyTheFiveActionKinds()
+        public void RealContent_HasExactlyTheSixActionKinds()
         {
             using var core = new TempCoreContentCopy();
             IModule[] modules = ModuleCatalog.CreateModules();
             (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             CollectionAssert.AreEquivalent(
-                new[] { "action.idle", "action.walk", "action.inside_building", "action.eating", "action.digging" },
+                new[] { "action.idle", "action.walk", "action.inside_building", "action.eating", "action.digging", "action.gathering" },
                 simulation.Content.ListByType(BuiltInContentTypes.ActionDefinitionTypeName).Select(e => e.Definition.Id));
         }
 

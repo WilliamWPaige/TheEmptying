@@ -368,6 +368,7 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(PeopleModule.SpotWaitMinSecondsSettingId, SettingValueType.Number, 10.0, 0.1, 300.0, "People")]
         [TestCase(PeopleModule.SpotWaitMaxSecondsSettingId, SettingValueType.Number, 30.0, 0.1, 300.0, "People")]
         [TestCase(PeopleModule.LogDecisionsSettingId, SettingValueType.Boolean, 0.0, 0.0, 1.0, "People")]
+        [TestCase(PeopleModule.CrownStartingTreasuryCopperSettingId, SettingValueType.Integer, 5000.0, 0.0, 1000000.0, "People")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
@@ -423,8 +424,10 @@ namespace TheEmptying.Tests.EditMode.Modules
             peopleBefore.TryGetPerson(firstId, out PersonState firstPerson);
 
             firstPerson.Hunger = 37.5;
-            firstPerson.CarriedItemId = "item.grub";
-            firstPerson.CarriedAmount = 4;
+            firstPerson.AddCarried("item.grub", 4);
+            firstPerson.ForagingItemId = "item.grub";
+            firstPerson.EatingFromCarried = false;
+            firstPerson.WalletTenthCopper = 13;
             Assert.IsTrue(firstPerson.HomeBuildingId.HasValue);
             peopleBefore.DepositIntoHomeStash(firstPerson.HomeBuildingId.Value, "item.grub", 6);
             firstPerson.Goal = PersonGoal.ForagingForStockpile;
@@ -536,8 +539,10 @@ namespace TheEmptying.Tests.EditMode.Modules
             CollectionAssert.AreEquivalent(a.Attributes, b.Attributes);
 
             Assert.AreEqual(a.Hunger, b.Hunger);
-            Assert.AreEqual(a.CarriedItemId, b.CarriedItemId);
-            Assert.AreEqual(a.CarriedAmount, b.CarriedAmount);
+            CollectionAssert.AreEquivalent(a.CarriedItems, b.CarriedItems);
+            Assert.AreEqual(a.ForagingItemId, b.ForagingItemId);
+            Assert.AreEqual(a.EatingFromCarried, b.EatingFromCarried);
+            Assert.AreEqual(a.WalletTenthCopper, b.WalletTenthCopper);
             Assert.AreEqual(a.HomeBuildingId, b.HomeBuildingId);
             Assert.AreEqual(a.Goal, b.Goal);
             Assert.AreEqual(a.TargetZoneId, b.TargetZoneId);
@@ -691,8 +696,8 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             person.WorldX = stockpile.CenterX;
             person.WorldZ = stockpile.CenterZ;
-            person.CarriedItemId = "item.grub";
-            person.CarriedAmount = 10;
+            person.AddCarried("item.grub", 10);
+            person.ForagingItemId = "item.grub";
             person.Goal = PersonGoal.ForagingForStockpile;
             person.ForagingDeliveryZoneId = stockpileId.Value;
 
@@ -709,8 +714,143 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId.Value, "item.grub");
             Assert.AreEqual(2, amountInStockpile, "Only the room actually available should have been added.");
-            Assert.AreEqual(8, person.CarriedAmount, "The leftover that didn't fit must stay carried, not vanish.");
-            Assert.AreEqual("item.grub", person.CarriedItemId);
+            Assert.AreEqual(8, person.CarriedAmountOf("item.grub"), "The leftover that didn't fit must stay carried, not vanish.");
+        }
+
+        /// <summary>R15: a new game's crown treasury starts at exactly 5,000 copper (the placeholder setting's default), and every founder's wallet starts empty.</summary>
+        [Test]
+        public void NewGame_TreasuryStartsAt5000Copper_AndFoundersStartWithEmptyWallets()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation _, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
+
+            Assert.AreEqual(50000, people.TreasuryTenthCopper);
+            Assert.AreEqual("5000 copper", PeopleModule.FormatTenthCopper(people.TreasuryTenthCopper));
+
+            foreach (PersonState person in people.People.Select(r => r.Value))
+            {
+                Assert.AreEqual(0, person.WalletTenthCopper);
+            }
+        }
+
+        /// <summary>R15: cash on delivery - dropping 5 sticks (0.2 copper each) in a crown stockpile pays out exactly 1 copper, taken from the treasury and credited to the person's wallet, with no fraction lost.</summary>
+        [Test]
+        public void DeliveringFiveSticks_PaysExactlyOneCopper_FromTreasuryToWallet()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var zones = (ZonesModule)modules.First(m => m is ZonesModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            FoundKingdom(map, buildings, people);
+
+            double centerX = map.WorldWidthMeters * 0.5;
+            double centerZ = map.WorldDepthMeters * 0.5;
+            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason);
+            Assert.IsNotNull(stockpileId, reason);
+            Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
+
+            EntityId firstId = people.People.First().Key;
+            people.TryGetPerson(firstId, out PersonState person);
+
+            int treasuryBefore = people.TreasuryTenthCopper;
+
+            person.WorldX = stockpile.CenterX;
+            person.WorldZ = stockpile.CenterZ;
+            person.AddCarried("item.stick", 5);
+            person.ForagingItemId = "item.stick";
+            person.Goal = PersonGoal.ForagingForStockpile;
+            person.ForagingDeliveryZoneId = stockpileId.Value;
+
+            long tick = simulation.Clock.CurrentTick;
+            person.CurrentAction = new PersonAction { Kind = ActionKind.Idle, StartTick = tick, DurationTicks = 1, CurrentTickForProgress = tick };
+
+            simulation.Step();
+
+            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId.Value, "item.stick");
+            Assert.AreEqual(5, amountInStockpile, "All 5 sticks should have fit and been accepted.");
+            Assert.AreEqual(0, person.CarriedAmountOf("item.stick"), "Everything delivered should no longer be carried.");
+            Assert.AreEqual(10, treasuryBefore - people.TreasuryTenthCopper, "5 sticks at 0.2 copper each must cost exactly 1 whole copper (10 tenth-copper), no more and no less.");
+            Assert.AreEqual(10, person.WalletTenthCopper, "The paid amount must be credited to the person's own wallet.");
+        }
+
+        /// <summary>R15: if the treasury can't pay for an item, it isn't accepted at all - a person already carrying unpaid goods keeps them and takes them home instead, rather than losing them or getting paid for nothing.</summary>
+        [Test]
+        public void WhenTheTreasuryCannotPay_GoodsAreNotAcceptedAndStayWithThePerson()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var zones = (ZonesModule)modules.First(m => m is ZonesModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            EntityId keepId = FoundKingdom(map, buildings, people);
+            Assert.IsTrue(buildings.TryGetBuilding(keepId, out BuildingState keep));
+
+            double centerX = map.WorldWidthMeters * 0.5;
+            double centerZ = map.WorldDepthMeters * 0.5;
+            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason);
+            Assert.IsNotNull(stockpileId, reason);
+
+            people.SetTreasuryTenthCopperForTesting(1);
+
+            EntityId firstId = people.People.First().Key;
+            people.TryGetPerson(firstId, out PersonState person);
+            Assert.IsTrue(person.HomeBuildingId.HasValue);
+
+            double cellSize = map.CellSizeMeters;
+            person.WorldX = (keep.DoorCell.X + 0.5) * cellSize;
+            person.WorldZ = (keep.DoorCell.Z + 0.5) * cellSize;
+            person.AddCarried("item.stick", 5);
+            person.ForagingItemId = "item.stick";
+            person.Goal = PersonGoal.ForagingForStockpile;
+            person.ForagingDeliveryZoneId = stockpileId.Value;
+
+            long tick = simulation.Clock.CurrentTick;
+            person.CurrentAction = new PersonAction { Kind = ActionKind.Idle, StartTick = tick, DurationTicks = 1, CurrentTickForProgress = tick };
+
+            simulation.Step();
+
+            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId.Value, "item.stick");
+            Assert.AreEqual(0, amountInStockpile, "Nothing should have been accepted into the stockpile while the treasury can't pay for it.");
+            Assert.AreEqual(0, person.CarriedAmountOf("item.stick"), "Goods that couldn't be sold were taken home, not left carried in limbo.");
+            CollectionAssert.Contains(people.GetHomeStash(keepId).Keys, "item.stick", "Unpaid goods should be deposited at home instead.");
+            Assert.AreEqual(5, people.GetHomeStash(keepId)["item.stick"]);
+            Assert.AreEqual(1, people.TreasuryTenthCopper, "The treasury must not be touched for goods it couldn't afford.");
+            Assert.AreEqual(0, person.WalletTenthCopper, "Nobody is paid for goods the crown never accepted.");
+        }
+
+        /// <summary>R15: the crown treasury and every person's wallet survive a save and load round trip exactly.</summary>
+        [Test]
+        public void TreasuryAndWallets_SurviveASaveAndLoadRoundTrip()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule peopleBefore) = BuildNewGame(core);
+            FoundKingdom(map, buildings, peopleBefore);
+
+            peopleBefore.SetTreasuryTenthCopperForTesting(4321);
+
+            EntityId firstId = peopleBefore.People.First().Key;
+            peopleBefore.TryGetPerson(firstId, out PersonState firstPerson);
+            firstPerson.WalletTenthCopper = 99;
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = peopleBefore.People.Count() }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var peopleAfter = (PeopleModule)loadedModules.First(m => m is PeopleModule);
+
+            Assert.AreEqual(4321, peopleAfter.TreasuryTenthCopper);
+            Assert.IsTrue(peopleAfter.TryGetPerson(firstId, out PersonState loadedPerson));
+            Assert.AreEqual(99, loadedPerson.WalletTenthCopper);
         }
 
         /// <summary>R13b: a home building's shared stash (not any one person's) survives a save and load round trip.</summary>

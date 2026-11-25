@@ -20,6 +20,22 @@ namespace TheEmptying.Presentation.Content
         [SerializeField] private double harvestTimeMasterMinutes;
         [SerializeField] private int maxWorkers = 1;
 
+        /// <summary>R15: "gather nearby" fields - standing on a free ground cell within radius of this resource (never on the resource itself) gathers gatherItemId, instead of harvesting the resource directly. Empty gatherItemId means this resource has no gather-nearby behavior.</summary>
+        [SerializeField] private string gatherItemId;
+
+        [SerializeField] private double gatherRadiusMeters;
+        [SerializeField] private double gatherTimeUnskilledMinutes;
+        [SerializeField] private double gatherTimeSkilledMinutes;
+        [SerializeField] private double gatherTimeMasterMinutes;
+
+        /// <summary>R15: how many people may gather near this resource at once - a resource at its limit is treated as unavailable, the same crowding rule MaxWorkers applies to direct harvesting.</summary>
+        [SerializeField] private int gatherMaxConcurrent = 1;
+
+        /// <summary>R15: an optional extra item (e.g. flint while gathering rock) also given by chance (gatherBonusChance) each time gatherItemId is gathered; empty means no bonus.</summary>
+        [SerializeField] private string gatherBonusItemId;
+
+        [SerializeField] private double gatherBonusChance;
+
         public override string Id => id;
         public override string IdPrefix => "resource.";
         public override string ContentTypeName => BuiltInContentTypes.ResourceTypeName;
@@ -34,6 +50,14 @@ namespace TheEmptying.Presentation.Content
         public double HarvestTimeSkilledMinutes => harvestTimeSkilledMinutes;
         public double HarvestTimeMasterMinutes => harvestTimeMasterMinutes;
         public int MaxWorkers => maxWorkers;
+        public string GatherItemId => gatherItemId;
+        public double GatherRadiusMeters => gatherRadiusMeters;
+        public double GatherTimeUnskilledMinutes => gatherTimeUnskilledMinutes;
+        public double GatherTimeSkilledMinutes => gatherTimeSkilledMinutes;
+        public double GatherTimeMasterMinutes => gatherTimeMasterMinutes;
+        public int GatherMaxConcurrent => gatherMaxConcurrent;
+        public string GatherBonusItemId => gatherBonusItemId;
+        public double GatherBonusChance => gatherBonusChance;
 
         public override IEnumerable<string> ValidateSelf()
         {
@@ -60,6 +84,29 @@ namespace TheEmptying.Presentation.Content
             if (maxWorkers < 1)
             {
                 yield return "Max workers must be at least 1.";
+            }
+
+            if (!string.IsNullOrEmpty(gatherItemId))
+            {
+                if (gatherRadiusMeters <= 0)
+                {
+                    yield return "Gather radius must be greater than 0 when a gather item is set.";
+                }
+
+                if (gatherTimeUnskilledMinutes < 0 || gatherTimeSkilledMinutes < 0 || gatherTimeMasterMinutes < 0)
+                {
+                    yield return "Gather times must not be negative.";
+                }
+
+                if (gatherMaxConcurrent < 1)
+                {
+                    yield return "Gather max concurrent must be at least 1.";
+                }
+            }
+
+            if (gatherBonusChance < 0 || gatherBonusChance > 1)
+            {
+                yield return "Gather bonus chance must be between 0 and 1.";
             }
         }
 
