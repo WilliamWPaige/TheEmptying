@@ -3,6 +3,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Discovery;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Zones;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -139,6 +140,7 @@ namespace TheEmptying.Presentation.Discovery
             AddTabButton(DiscoveryModule.ItemCategory, "Items");
             AddTabButton(DiscoveryModule.BuildingCategory, "Buildings");
             AddTabButton(DiscoveryModule.ActionCategory, "Actions");
+            AddTabButton(DiscoveryModule.ZoneCategory, "Zones");
             _root.Add(_tabRow);
 
             var bodyRow = new VisualElement { style = { flexDirection = FlexDirection.Row, flexGrow = 1 } };
@@ -235,6 +237,10 @@ namespace TheEmptying.Presentation.Discovery
             {
                 BuildActionDetail(_selectedContentId, tick);
             }
+            else if (_activeCategory == DiscoveryModule.ZoneCategory)
+            {
+                BuildZoneDetail(_selectedContentId, tick);
+            }
         }
 
         private void BuildItemDetail(string itemId, long tick)
@@ -317,6 +323,37 @@ namespace TheEmptying.Presentation.Discovery
             AddDiscoveredRow(tick);
         }
 
+        private void BuildZoneDetail(string zoneTypeId, long tick)
+        {
+            if (!_content.TryGet(BuiltInContentTypes.ZoneTypeTypeName, zoneTypeId, out ContentEntry entry) || !(entry.Definition is ZoneTypeDefinition zoneType))
+            {
+                return;
+            }
+
+            AddDetailTitle(zoneType.DisplayName);
+
+            if (ColorUtility.TryParseHtmlString(zoneType.ColorHex, out Color color))
+            {
+                var swatchRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginLeft = 8, marginBottom = 6 } };
+                swatchRow.Add(new VisualElement { style = { width = 14, height = 14, marginRight = 6, backgroundColor = color } });
+                swatchRow.Add(new Label(zoneType.ColorHex) { style = { color = Color.white } });
+                _detailView.Add(swatchRow);
+            }
+
+            _detailView.Add(new Label(zoneType.Description)
+            {
+                style = { color = new Color(0.85f, 0.85f, 0.85f), marginLeft = 8, marginBottom = 8, whiteSpace = WhiteSpace.Normal }
+            });
+
+            if (zoneTypeId == ZonesModule.StockpileTypeId)
+            {
+                AddDetailRow("Area per slot", $"{ZonesModule.SquareMetersPerSlot:0.#} m²");
+                AddDetailRow("Size units per slot", ZonesModule.CapacityUnitsPerSlot.ToString());
+            }
+
+            AddDiscoveredRow(tick);
+        }
+
         private string DisplayNameForItem(string itemId)
         {
             return _content.TryGet(BuiltInContentTypes.ItemTypeName, itemId, out ContentEntry entry) && entry.Definition is ItemContent item
@@ -336,6 +373,7 @@ namespace TheEmptying.Presentation.Discovery
             if (entry.Definition is ResourceContent resource) return resource.DisplayName;
             if (entry.Definition is BuildingContent building) return building.DisplayName;
             if (entry.Definition is ActionDefinitionContent action) return action.DisplayName;
+            if (entry.Definition is ZoneTypeDefinition zoneType) return zoneType.DisplayName;
             return contentId;
         }
 
@@ -345,6 +383,7 @@ namespace TheEmptying.Presentation.Discovery
             if (category == DiscoveryModule.ResourceCategory) return BuiltInContentTypes.ResourceTypeName;
             if (category == DiscoveryModule.BuildingCategory) return BuiltInContentTypes.BuildingTypeName;
             if (category == DiscoveryModule.ActionCategory) return BuiltInContentTypes.ActionDefinitionTypeName;
+            if (category == DiscoveryModule.ZoneCategory) return BuiltInContentTypes.ZoneTypeTypeName;
             return null;
         }
 

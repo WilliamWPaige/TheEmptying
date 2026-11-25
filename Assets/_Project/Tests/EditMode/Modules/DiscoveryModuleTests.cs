@@ -9,8 +9,11 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Discovery;
+using TheEmptying.Modules.Map;
+using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation;
 using TheEmptying.Tests.EditMode.Startup;
+using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Tests.EditMode.Modules
 {
@@ -35,7 +38,8 @@ namespace TheEmptying.Tests.EditMode.Modules
                          "event.zones.item_stored",
                          "event.people.resource_harvested",
                          "event.people.action_performed",
-                         "event.buildings.placed"
+                         "event.buildings.placed",
+                         "event.zones.placed"
                      })
             {
                 simulation.EventDefinitions.Register(new EventDefinition(eventId, EventVisibility.Hidden, 0f, 0f, "test"));
@@ -55,6 +59,7 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase("event.people.resource_harvested", DiscoveryModule.ResourceCategory)]
         [TestCase("event.people.action_performed", DiscoveryModule.ActionCategory)]
         [TestCase("event.buildings.placed", DiscoveryModule.BuildingCategory)]
+        [TestCase("event.zones.placed", DiscoveryModule.ZoneCategory)]
         public void EachTrigger_RecordsItsCategoryOnce_EvenWhenPostedRepeatedly(string eventId, string expectedCategory)
         {
             (Simulation simulation, DiscoveryModule discovery) = BuildBareSimulation();
@@ -67,7 +72,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(1, discovery.DiscoveredIn(expectedCategory).Count, "The same content Id must be recorded exactly once, no matter how many times its trigger fires.");
             Assert.AreEqual(10, discovery.DiscoveredIn(expectedCategory).Single().Tick, "The tick of the FIRST trigger must be kept, not overwritten by later ones.");
 
-            foreach (string otherCategory in new[] { DiscoveryModule.ItemCategory, DiscoveryModule.ResourceCategory, DiscoveryModule.BuildingCategory, DiscoveryModule.ActionCategory })
+            foreach (string otherCategory in new[] { DiscoveryModule.ItemCategory, DiscoveryModule.ResourceCategory, DiscoveryModule.BuildingCategory, DiscoveryModule.ActionCategory, DiscoveryModule.ZoneCategory })
             {
                 if (otherCategory != expectedCategory)
                 {
@@ -94,6 +99,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.Greater(discovery.DiscoveredIn(DiscoveryModule.ResourceCategory).Count, 0, "Sanity check: should have found real resources to discover.");
             Assert.Greater(discovery.DiscoveredIn(DiscoveryModule.BuildingCategory).Count, 0, "Sanity check: should have found real buildings to discover.");
             Assert.Greater(discovery.DiscoveredIn(DiscoveryModule.ActionCategory).Count, 0, "Sanity check: should have found real action kinds to discover.");
+            Assert.Greater(discovery.DiscoveredIn(DiscoveryModule.ZoneCategory).Count, 0, "Sanity check: should have found real zone types to discover.");
         }
 
         [Test]
@@ -160,10 +166,40 @@ namespace TheEmptying.Tests.EditMode.Modules
             GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
             var discoveryAfter = (DiscoveryModule)loadedModules.First(m => m is DiscoveryModule);
 
-            foreach (string category in new[] { DiscoveryModule.ItemCategory, DiscoveryModule.ResourceCategory, DiscoveryModule.BuildingCategory, DiscoveryModule.ActionCategory })
+            foreach (string category in new[] { DiscoveryModule.ItemCategory, DiscoveryModule.ResourceCategory, DiscoveryModule.BuildingCategory, DiscoveryModule.ActionCategory, DiscoveryModule.ZoneCategory })
             {
                 CollectionAssert.AreEquivalent(discoveryBefore.DiscoveredIn(category), discoveryAfter.DiscoveredIn(category), $"Category '{category}' did not round-trip exactly.");
             }
+        }
+
+        /// <summary>R15b: placing a zone for the first time records it as a Zones discovery; placing another of the same type does not record it again.</summary>
+        [Test]
+        public void PlacingAZone_RecordsAZonesDiscoveryOnce()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var zones = (ZonesModule)modules.First(m => m is ZonesModule);
+            var discovery = (DiscoveryModule)modules.First(m => m is DiscoveryModule);
+
+            double centerX = map.WorldWidthMeters * 0.5;
+            double centerZ = map.WorldDepthMeters * 0.5;
+
+            Assert.IsFalse(discovery.IsDiscovered(DiscoveryModule.ZoneCategory, ZonesModule.StockpileTypeId));
+
+            EntityId? first = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX - 20, centerZ, 8, 8, 0), out string reason1);
+            Assert.IsNotNull(first, reason1);
+            simulation.Events.DeliverPending();
+
+            Assert.IsTrue(discovery.IsDiscovered(DiscoveryModule.ZoneCategory, ZonesModule.StockpileTypeId));
+            Assert.AreEqual(1, discovery.DiscoveredIn(DiscoveryModule.ZoneCategory).Count);
+
+            EntityId? second = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason2);
+            Assert.IsNotNull(second, reason2);
+            simulation.Events.DeliverPending();
+
+            Assert.AreEqual(1, discovery.DiscoveredIn(DiscoveryModule.ZoneCategory).Count, "A second stockpile of the same type must not be recorded again.");
         }
     }
 }

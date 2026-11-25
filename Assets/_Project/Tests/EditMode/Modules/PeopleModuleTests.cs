@@ -798,7 +798,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason);
             Assert.IsNotNull(stockpileId, reason);
 
-            people.SetTreasuryTenthCopperForTesting(1);
+            people.SetTreasuryTenthCopper(1);
 
             EntityId firstId = people.People.First().Key;
             people.TryGetPerson(firstId, out PersonState person);
@@ -834,7 +834,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule peopleBefore) = BuildNewGame(core);
             FoundKingdom(map, buildings, peopleBefore);
 
-            peopleBefore.SetTreasuryTenthCopperForTesting(4321);
+            peopleBefore.SetTreasuryTenthCopper(4321);
 
             EntityId firstId = peopleBefore.People.First().Key;
             peopleBefore.TryGetPerson(firstId, out PersonState firstPerson);

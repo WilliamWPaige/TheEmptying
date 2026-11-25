@@ -14,5 +14,9 @@ namespace TheEmptying.Core.Content
 
         [JsonProperty("colorHex")]
         public string ColorHex { get; set; }
+
+        /// <summary>R15b: a short explanation of what this zone type does, shown in the Discoveries window's Zones tab.</summary>
+        [JsonProperty("description")]
+        public string Description { get; set; }
     }
 }

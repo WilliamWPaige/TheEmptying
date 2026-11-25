@@ -24,6 +24,7 @@ namespace TheEmptying.Modules.Discovery
         public const string ResourceCategory = "resource";
         public const string BuildingCategory = "building";
         public const string ActionCategory = "action";
+        public const string ZoneCategory = "zone";
 
         /// <summary>Posted by People: a person dug, carried or ate an item.</summary>
         private const string ItemHeldEventId = "event.people.item_held";
@@ -39,6 +40,9 @@ namespace TheEmptying.Modules.Discovery
 
         /// <summary>Posted by Buildings: a building was placed.</summary>
         private const string BuildingPlacedEventId = "event.buildings.placed";
+
+        /// <summary>Posted by Zones: a zone was placed.</summary>
+        private const string ZonePlacedEventId = "event.zones.placed";
 
         /// <summary>The EventData field name every trigger event above carries its content Id under.</summary>
         private const string ContentIdField = "contentId";
@@ -65,6 +69,7 @@ namespace TheEmptying.Modules.Discovery
             context.Subscribe(ResourceHarvestedEventId, posted => HandleTrigger(ResourceCategory, posted));
             context.Subscribe(ActionPerformedEventId, posted => HandleTrigger(ActionCategory, posted));
             context.Subscribe(BuildingPlacedEventId, posted => HandleTrigger(BuildingCategory, posted));
+            context.Subscribe(ZonePlacedEventId, posted => HandleTrigger(ZoneCategory, posted));
         }
 
         public void Shutdown()
@@ -127,6 +132,11 @@ namespace TheEmptying.Modules.Discovery
             foreach (ContentEntry entry in _context.Content.ListByType(BuiltInContentTypes.ActionDefinitionTypeName))
             {
                 TryRecord(ActionCategory, entry.Definition.Id, tick);
+            }
+
+            foreach (ContentEntry entry in _context.Content.ListByType(BuiltInContentTypes.ZoneTypeTypeName))
+            {
+                TryRecord(ZoneCategory, entry.Definition.Id, tick);
             }
         }
 

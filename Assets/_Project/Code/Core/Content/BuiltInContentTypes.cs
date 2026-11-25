@@ -326,6 +326,11 @@ namespace TheEmptying.Core.Content
             {
                 context.ReportProblem(content.Id, "colorHex", "must not be empty.");
             }
+
+            if (string.IsNullOrEmpty(content.Description))
+            {
+                context.ReportProblem(content.Id, "description", "must not be empty.");
+            }
         }
 
         private static void ValidateNameList(ContentDefinition definition, ContentValidationContext context)

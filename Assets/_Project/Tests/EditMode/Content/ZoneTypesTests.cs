@@ -41,5 +41,18 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.IsNotEmpty(zoneType.DisplayName);
             Assert.AreEqual(expectedColorHex, zoneType.ColorHex);
         }
+
+        /// <summary>R15b: each zone type's description loads from the shipped content, for the Discoveries window's Zones tab.</summary>
+        [TestCase("zone.stockpile")]
+        [TestCase("zone.living_area")]
+        public void ZoneTypes_HaveANonEmptyDescription(string id)
+        {
+            ContentDatabase content = LoadRealContent();
+            List<ZoneTypeDefinition> zoneTypes = BuiltInContentTypes.ZoneTypes(content);
+            ZoneTypeDefinition zoneType = zoneTypes.Find(z => z.Id == id);
+
+            Assert.IsNotNull(zoneType);
+            Assert.IsNotEmpty(zoneType.Description);
+        }
     }
 }

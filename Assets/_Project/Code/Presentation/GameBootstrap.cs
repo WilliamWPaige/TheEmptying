@@ -566,6 +566,7 @@ namespace TheEmptying.Presentation
             new PeopleCheat(_peopleModule, _cameraController, _worldSelection).BuildSections(_cheatMenu);
             new StockpileCheat(_zonesModule, _worldSelection, _simulation.Content, ShowToast).BuildSections(_cheatMenu);
             new DiscoveryCheat(_discoveryModule).BuildSections(_cheatMenu);
+            new TreasuryCheat(_peopleModule).BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()

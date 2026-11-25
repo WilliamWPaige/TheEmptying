@@ -37,6 +37,9 @@ namespace TheEmptying.Modules.Zones
         /// <summary>R14: posted whenever an item is put in a stockpile - feeds the discovery system.</summary>
         private const string ItemStoredEventId = "event.zones.item_stored";
 
+        /// <summary>R15b: posted whenever a zone is placed - feeds the discovery system.</summary>
+        private const string ZonePlacedEventId = "event.zones.placed";
+
         private readonly MapModule _mapModule;
         private readonly BuildingsModule _buildingsModule;
         private EntityRegistry _entities;
@@ -142,6 +145,7 @@ namespace TheEmptying.Modules.Zones
 
             EntityId id = _entities.Create(EntityKind.Zone);
             _zones.Add(id, state);
+            _context.Events.Post(ZonePlacedEventId, _context.CurrentTick, new EventData().SetString("contentId", zoneTypeId));
             return id;
         }
 

@@ -323,8 +323,8 @@ namespace TheEmptying.Modules.People
         /// <summary>R15: the crown treasury's current balance, in tenths of a copper - for the HUD.</summary>
         public int TreasuryTenthCopper => _treasuryTenthCopper;
 
-        /// <summary>For tests only: forces the treasury to an exact balance, so a test can exercise "the treasury can't pay" without draining 5,000 copper one delivery at a time.</summary>
-        public void SetTreasuryTenthCopperForTesting(int tenthCopper) => _treasuryTenthCopper = tenthCopper;
+        /// <summary>R15b: the Treasury cheat (and tests) set the treasury directly; never allowed below zero.</summary>
+        public void SetTreasuryTenthCopper(int tenthCopper) => _treasuryTenthCopper = Math.Max(0, tenthCopper);
 
         /// <summary>R15: formats a tenth-copper amount the way the HUD, info window and payment notes show it - a whole number of copper when it divides exactly, one decimal place otherwise (so a lone 0.2 copper stick never silently rounds to "0 copper").</summary>
         public static string FormatTenthCopper(int tenthCopper)

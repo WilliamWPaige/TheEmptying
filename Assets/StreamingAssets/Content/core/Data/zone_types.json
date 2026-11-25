@@ -4,12 +4,14 @@
         {
             "id": "zone.stockpile",
             "displayName": "Stockpile",
-            "colorHex": "#3DA5D9"
+            "colorHex": "#3DA5D9",
+            "description": "Where people drop off and pick up goods. Crown stockpiles pay for delivered base goods. Holds one item type per 4 square meters."
         },
         {
             "id": "zone.living_area",
             "displayName": "Living Area",
-            "colorHex": "#8BC34A"
+            "colorHex": "#8BC34A",
+            "description": "Where idle people prefer to wander, instead of milling about anywhere nearby."
         }
     ]
 }
