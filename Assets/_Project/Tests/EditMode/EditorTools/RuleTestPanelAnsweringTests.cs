@@ -43,7 +43,7 @@ namespace TheEmptying.Tests.EditMode.EditorTools
             }");
             source.WriteDataFile("zones_manifest.json", @"{
                 ""type"": ""module_manifest"",
-                ""items"": [ { ""id"": ""module.zones"", ""version"": 1, ""dependencies"": [""module.map"", ""module.buildings""], ""enabled"": true } ]
+                ""items"": [ { ""id"": ""module.zones"", ""version"": 1, ""dependencies"": [""module.map"", ""module.buildings"", ""module.ponds""], ""enabled"": true } ]
             }");
             source.WriteDataFile("ponds_manifest.json", @"{
                 ""type"": ""module_manifest"",

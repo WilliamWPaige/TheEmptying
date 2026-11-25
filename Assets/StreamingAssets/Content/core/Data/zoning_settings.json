@@ -40,6 +40,26 @@
             "maximum": 20,
             "category": "Zoning",
             "description": "Placeholder. The zoning brush's largest size, in cells per side."
+        },
+        {
+            "id": "setting.zoning.create_min_square_cells",
+            "label": "Zoning create minimum square",
+            "valueType": "Integer",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 10,
+            "category": "Zoning",
+            "description": "TEMPORARY placeholder (R18b), until the real stockpile layout design exists. Create zone is enabled only once the painted cells fit at least one solid square of this size."
+        },
+        {
+            "id": "setting.zoning.undo_max_steps",
+            "label": "Zoning undo steps",
+            "valueType": "Integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "Zoning",
+            "description": "TEMPORARY placeholder (R18b). How many strokes (press to release, paint or erase, including Erase all) Undo can go back."
         }
     ]
 }

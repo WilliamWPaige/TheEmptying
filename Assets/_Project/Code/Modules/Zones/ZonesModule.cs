@@ -8,16 +8,19 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
+using TheEmptying.Modules.Ponds;
 
 namespace TheEmptying.Modules.Zones
 {
     /// <summary>
-    /// R12: placed zones - rectangles at any angle that can't overlap a
-    /// building or another zone, but may cover trees, stones and grub
+    /// R18b: placed zones - sets of cells (which may form several
+    /// separate pieces), each with its own name and color. Paint can
+    /// never claim a cell already in another zone, a crown building's
+    /// footprint, or pond water, but may cover trees, stones and grub
     /// mounds. Stockpile zones additionally track, per item type, how
     /// much is stored, a keep-on-hand limit and whether it's blocked.
-    /// Depends on Map (to turn its own cell size into meters for the
-    /// building-overlap check) and Buildings (for that check itself).
+    /// Depends on Map (cell size, cell/world conversions), Buildings
+    /// (the crown-building check) and Ponds (the pond-water check).
     /// </summary>
     public sealed class ZonesModule : IModule, ISaveableModule
     {
@@ -25,14 +28,11 @@ namespace TheEmptying.Modules.Zones
         public const string StockpileTypeId = "zone.stockpile";
         public const string LivingAreaTypeId = "zone.living_area";
 
-        /// <summary>Placeholder: one slot per this many square meters.</summary>
-        public const double SquareMetersPerSlot = 4.0;
+        /// <summary>R18b: how many painted cells one stockpile slot holds, placeholder.</summary>
+        public const string CellsPerSlotSettingId = "setting.zones.cells_per_slot";
 
-        /// <summary>Placeholder: how many size-1 capacity units one slot holds.</summary>
+        /// <summary>Placeholder: how many size-1 capacity units one slot holds. Unrelated to cells; not touched by R18b.</summary>
         public const int CapacityUnitsPerSlot = 100;
-
-        /// <summary>Placeholder: the shortest either side of a zone may be.</summary>
-        public const double MinimumSideMeters = 2.0;
 
         /// <summary>R14: posted whenever an item is put in a stockpile - feeds the discovery system.</summary>
         private const string ItemStoredEventId = "event.zones.item_stored";
@@ -42,21 +42,24 @@ namespace TheEmptying.Modules.Zones
 
         private readonly MapModule _mapModule;
         private readonly BuildingsModule _buildingsModule;
+        private readonly PondsModule _pondsModule;
         private EntityRegistry _entities;
         private ContentDatabase _content;
+        private SettingsRegistry _settings;
         private EntityTable<ZoneState> _zones;
         private ModuleContext _context;
 
-        public ZonesModule(MapModule mapModule, BuildingsModule buildingsModule)
+        public ZonesModule(MapModule mapModule, BuildingsModule buildingsModule, PondsModule pondsModule)
         {
             _mapModule = mapModule ?? throw new ArgumentNullException(nameof(mapModule));
             _buildingsModule = buildingsModule ?? throw new ArgumentNullException(nameof(buildingsModule));
+            _pondsModule = pondsModule ?? throw new ArgumentNullException(nameof(pondsModule));
         }
 
         public string Id => ModuleId;
         public int Version => 1;
-        public int SectionVersion => 1;
-        public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId };
+        public int SectionVersion => 2;
+        public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId, PondsModule.ModuleId };
 
         public IEnumerable<KeyValuePair<EntityId, ZoneState>> Zones => _zones.Rows();
 
@@ -66,10 +69,14 @@ namespace TheEmptying.Modules.Zones
 
         public bool TryGetZone(EntityId id, out ZoneState zone) => _zones.TryGet(id, out zone);
 
+        /// <summary>Every existing zone's name - for the zoning menu's default-naming rule.</summary>
+        public IEnumerable<string> ZoneNames => _zones.Rows().Select(r => r.Value.Name).Where(n => n != null);
+
         public void Initialize(ModuleContext context)
         {
             _entities = context.Entities;
             _content = context.Content;
+            _settings = context.Settings;
             _context = context;
             _zones = new EntityTable<ZoneState>(_entities);
         }
@@ -77,8 +84,6 @@ namespace TheEmptying.Modules.Zones
         public void Shutdown()
         {
         }
-
-        public static int SlotCount(double areaSquareMeters) => Math.Max(0, (int)Math.Floor(areaSquareMeters / SquareMetersPerSlot));
 
         public static int CapacityPerSlot(int itemSize) => Math.Max(1, CapacityUnitsPerSlot / Math.Max(1, itemSize));
 
@@ -92,56 +97,84 @@ namespace TheEmptying.Modules.Zones
             return (int)Math.Ceiling(amount / (double)CapacityPerSlot(itemSize));
         }
 
-        /// <summary>Whether a candidate rectangle could be placed: big enough, and overlapping neither a building nor another zone.</summary>
-        public bool CanPlace(OrientedRect candidate, out string reason)
+        /// <summary>One slot per setting.zones.cells_per_slot painted cells, rounded down.</summary>
+        public int SlotCount(int cellCount)
         {
-            if (Math.Abs(candidate.SideALength) < MinimumSideMeters || Math.Abs(candidate.SideBLength) < MinimumSideMeters)
+            int cellsPerSlot = Math.Max(1, (int)_settings.Get(CellsPerSlotSettingId));
+            return Math.Max(0, cellCount / cellsPerSlot);
+        }
+
+        /// <summary>
+        /// Whether this cell is free to paint right now: not already in
+        /// any zone (optionally excluding the zone currently being
+        /// redrawn, once that exists), not inside a crown building's
+        /// footprint, and not pond water. Trees, stones and grub mounds
+        /// never block paint.
+        /// </summary>
+        public bool CanPaintCell(CellCoord cell, EntityId? excludeZoneId = null)
+        {
+            foreach (KeyValuePair<EntityId, ZoneState> row in _zones.Rows())
             {
-                reason = $"Too small - the minimum is {MinimumSideMeters:0.#} by {MinimumSideMeters:0.#} m.";
+                if (excludeZoneId.HasValue && row.Key == excludeZoneId.Value)
+                {
+                    continue;
+                }
+
+                if (row.Value.Cells.Contains(cell))
+                {
+                    return false;
+                }
+            }
+
+            foreach (KeyValuePair<EntityId, BuildingState> row in _buildingsModule.Buildings)
+            {
+                if (row.Value.CoversCell(cell))
+                {
+                    return false;
+                }
+            }
+
+            if (_pondsModule.TryGetPondAt(cell, out _))
+            {
                 return false;
             }
 
-            double cellSize = _mapModule.CellSizeMeters;
-            foreach (KeyValuePair<EntityId, BuildingState> row in _buildingsModule.Buildings)
-            {
-                BuildingState building = row.Value;
-                var buildingRect = new OrientedRect(building.WorldX, building.WorldZ, building.FootprintWidth * cellSize, building.FootprintDepth * cellSize, 0);
-                if (OrientedRect.Overlaps(candidate, buildingRect))
-                {
-                    reason = "Overlaps a building.";
-                    return false;
-                }
-            }
-
-            foreach (KeyValuePair<EntityId, ZoneState> row in _zones.Rows())
-            {
-                if (OrientedRect.Overlaps(candidate, row.Value.Rect))
-                {
-                    reason = "Overlaps another zone.";
-                    return false;
-                }
-            }
-
-            reason = null;
             return true;
         }
 
-        public EntityId? TryPlaceZone(string zoneTypeId, OrientedRect rect, out string reason)
+        /// <summary>The zone (if any) whose painted cells include this cell - the world click router's zone-selection fallback.</summary>
+        public bool TryGetZoneAtCell(CellCoord cell, out EntityId zoneId)
         {
-            if (!CanPlace(rect, out reason))
+            foreach (KeyValuePair<EntityId, ZoneState> row in _zones.Rows())
             {
-                return null;
+                if (row.Value.Cells.Contains(cell))
+                {
+                    zoneId = row.Key;
+                    return true;
+                }
             }
 
-            var state = new ZoneState
+            zoneId = default;
+            return false;
+        }
+
+        /// <summary>
+        /// Creates a new zone from a final painted cell set (the Create
+        /// button's Yes). Only cells CanPaintCell still allows are kept,
+        /// so this stays honest even if called with a stale set.
+        /// </summary>
+        public EntityId CreateZone(string zoneTypeId, string name, string colorHex, IEnumerable<CellCoord> cells)
+        {
+            var state = new ZoneState { ZoneTypeId = zoneTypeId, Name = name, ColorHex = colorHex };
+            foreach (CellCoord cell in cells)
             {
-                ZoneTypeId = zoneTypeId,
-                CenterX = rect.CenterX,
-                CenterZ = rect.CenterZ,
-                SideALength = rect.SideALength,
-                SideBLength = rect.SideBLength,
-                RotationDegrees = rect.RotationDegrees
-            };
+                if (CanPaintCell(cell))
+                {
+                    state.Cells.Add(cell);
+                }
+            }
+
+            RecomputeCentroid(state);
 
             EntityId id = _entities.Create(EntityKind.Zone);
             _zones.Add(id, state);
@@ -157,7 +190,7 @@ namespace TheEmptying.Modules.Zones
             }
         }
 
-        /// <summary>How many people (from the given current set) fall within this zone's rectangle right now. Takes the set as a parameter - this module never reads PeopleModule, so the dependency only ever runs the other way.</summary>
+        /// <summary>How many people (from the given current set) fall within this zone's painted cells right now. Takes the set as a parameter - this module never reads PeopleModule, so the dependency only ever runs the other way.</summary>
         public int CountPeopleInside(EntityId zoneId, IEnumerable<(double WorldX, double WorldZ)> peoplePositions)
         {
             if (!_zones.TryGet(zoneId, out ZoneState zone))
@@ -165,8 +198,29 @@ namespace TheEmptying.Modules.Zones
                 return 0;
             }
 
-            OrientedRect rect = zone.Rect;
-            return peoplePositions.Count(p => rect.Contains(p.WorldX, p.WorldZ));
+            return peoplePositions.Count(p => zone.Cells.Contains(_mapModule.WorldToCell(p.WorldX, p.WorldZ)));
+        }
+
+        private void RecomputeCentroid(ZoneState state)
+        {
+            if (state.Cells.Count == 0)
+            {
+                state.CenterX = 0;
+                state.CenterZ = 0;
+                return;
+            }
+
+            double cellSize = _mapModule.CellSizeMeters;
+            double sumX = 0;
+            double sumZ = 0;
+            foreach (CellCoord cell in state.Cells)
+            {
+                sumX += (cell.X + 0.5) * cellSize;
+                sumZ += (cell.Z + 0.5) * cellSize;
+            }
+
+            state.CenterX = sumX / state.Cells.Count;
+            state.CenterZ = sumZ / state.Cells.Count;
         }
 
         #region Stockpile
@@ -296,7 +350,7 @@ namespace TheEmptying.Modules.Zones
 
         private (int MaxAddBySlots, int MaxAddByLimit) ComputeMaxAdd(ZoneState zone, ItemContent item, string itemContentId, int currentAmount, int limit)
         {
-            int totalSlots = SlotCount(zone.Rect.Area);
+            int totalSlots = SlotCount(zone.Cells.Count);
             int capacityPerSlot = CapacityPerSlot(item.Size);
 
             int slotsUsedByOthers = zone.StockpileItems
@@ -327,7 +381,7 @@ namespace TheEmptying.Modules.Zones
                 return 0;
             }
 
-            return SlotCount(zone.Rect.Area) * CapacityPerSlot(item.Size);
+            return SlotCount(zone.Cells.Count) * CapacityPerSlot(item.Size);
         }
 
         private static StockpileItemEntry GetOrCreateEntry(ZoneState zone, string itemContentId)
@@ -354,21 +408,32 @@ namespace TheEmptying.Modules.Zones
                 ZoneState zone = row.Value;
 
                 writer.WriteString(zone.ZoneTypeId);
+                writer.WriteString(zone.Name ?? string.Empty);
+                writer.WriteString(zone.ColorHex ?? string.Empty);
                 writer.WriteDouble(zone.CenterX);
                 writer.WriteDouble(zone.CenterZ);
-                writer.WriteDouble(zone.SideALength);
-                writer.WriteDouble(zone.SideBLength);
-                writer.WriteDouble(zone.RotationDegrees);
 
-                writer.WriteInt(zone.StockpileItems.Count);
-                foreach (KeyValuePair<string, StockpileItemEntry> kvp in zone.StockpileItems)
+                writer.WriteInt(zone.Cells.Count);
+                foreach (CellCoord cell in zone.Cells.OrderBy(c => c.X).ThenBy(c => c.Z))
                 {
-                    writer.WriteString(kvp.Key);
-                    writer.WriteInt(kvp.Value.AmountStored);
-                    writer.WriteBool(kvp.Value.KeepOnHandLimitOverride.HasValue);
-                    writer.WriteInt(kvp.Value.KeepOnHandLimitOverride ?? 0);
-                    writer.WriteBool(kvp.Value.Blocked);
+                    writer.WriteInt(cell.X);
+                    writer.WriteInt(cell.Z);
                 }
+
+                WriteStockpileItems(writer, zone);
+            }
+        }
+
+        private static void WriteStockpileItems(SaveWriter writer, ZoneState zone)
+        {
+            writer.WriteInt(zone.StockpileItems.Count);
+            foreach (KeyValuePair<string, StockpileItemEntry> kvp in zone.StockpileItems)
+            {
+                writer.WriteString(kvp.Key);
+                writer.WriteInt(kvp.Value.AmountStored);
+                writer.WriteBool(kvp.Value.KeepOnHandLimitOverride.HasValue);
+                writer.WriteInt(kvp.Value.KeepOnHandLimitOverride ?? 0);
+                writer.WriteBool(kvp.Value.Blocked);
             }
         }
 
@@ -378,35 +443,144 @@ namespace TheEmptying.Modules.Zones
             for (int i = 0; i < count; i++)
             {
                 EntityId id = reader.ReadEntityId();
-                var zone = new ZoneState
-                {
-                    ZoneTypeId = reader.ReadString(),
-                    CenterX = reader.ReadDouble(),
-                    CenterZ = reader.ReadDouble(),
-                    SideALength = reader.ReadDouble(),
-                    SideBLength = reader.ReadDouble(),
-                    RotationDegrees = reader.ReadDouble()
-                };
-
-                int itemCount = reader.ReadInt();
-                for (int j = 0; j < itemCount; j++)
-                {
-                    string itemId = reader.ReadString();
-                    int amountStored = reader.ReadInt();
-                    bool hasOverride = reader.ReadBool();
-                    int overrideValue = reader.ReadInt();
-                    bool blocked = reader.ReadBool();
-
-                    zone.StockpileItems[itemId] = new StockpileItemEntry
-                    {
-                        AmountStored = amountStored,
-                        KeepOnHandLimitOverride = hasOverride ? overrideValue : (int?)null,
-                        Blocked = blocked
-                    };
-                }
-
+                ZoneState zone = savedVersion < 2 ? ReadOldRectangleZone(reader) : ReadCellsZone(reader);
+                ReadStockpileItems(reader, zone);
                 _zones.Add(id, zone);
             }
+        }
+
+        private ZoneState ReadCellsZone(SaveReader reader)
+        {
+            var zone = new ZoneState
+            {
+                ZoneTypeId = reader.ReadString(),
+                Name = reader.ReadString(),
+                ColorHex = reader.ReadString(),
+                CenterX = reader.ReadDouble(),
+                CenterZ = reader.ReadDouble()
+            };
+
+            int cellCount = reader.ReadInt();
+            for (int j = 0; j < cellCount; j++)
+            {
+                zone.Cells.Add(new CellCoord(reader.ReadInt(), reader.ReadInt()));
+            }
+
+            return zone;
+        }
+
+        /// <summary>
+        /// R18b: pre-R18b saves stored a rotated rectangle instead of
+        /// cells - rasterized here into the cells it covers, with a
+        /// default name and its type's own tint, since neither existed
+        /// yet. The rotated-rectangle math itself is otherwise gone
+        /// (removed with the old drag tool); this is the one place it's
+        /// still needed, for this one-time conversion.
+        /// </summary>
+        private ZoneState ReadOldRectangleZone(SaveReader reader)
+        {
+            string zoneTypeId = reader.ReadString();
+            double centerX = reader.ReadDouble();
+            double centerZ = reader.ReadDouble();
+            double sideALength = reader.ReadDouble();
+            double sideBLength = reader.ReadDouble();
+            double rotationDegrees = reader.ReadDouble();
+
+            var zone = new ZoneState
+            {
+                ZoneTypeId = zoneTypeId,
+                Name = DefaultNameForType(zoneTypeId),
+                ColorHex = DefaultColorHexForType(zoneTypeId)
+            };
+
+            foreach (CellCoord cell in RasterizeRectangleToCells(centerX, centerZ, sideALength, sideBLength, rotationDegrees, _mapModule.CellSizeMeters))
+            {
+                zone.Cells.Add(cell);
+            }
+
+            RecomputeCentroid(zone);
+            return zone;
+        }
+
+        private static void ReadStockpileItems(SaveReader reader, ZoneState zone)
+        {
+            int itemCount = reader.ReadInt();
+            for (int j = 0; j < itemCount; j++)
+            {
+                string itemId = reader.ReadString();
+                int amountStored = reader.ReadInt();
+                bool hasOverride = reader.ReadBool();
+                int overrideValue = reader.ReadInt();
+                bool blocked = reader.ReadBool();
+
+                zone.StockpileItems[itemId] = new StockpileItemEntry
+                {
+                    AmountStored = amountStored,
+                    KeepOnHandLimitOverride = hasOverride ? overrideValue : (int?)null,
+                    Blocked = blocked
+                };
+            }
+        }
+
+        private string DefaultNameForType(string zoneTypeId)
+        {
+            if (_content.TryGet(BuiltInContentTypes.ZoneTypeTypeName, zoneTypeId, out ContentEntry entry) && entry.Definition is ZoneTypeDefinition zoneType)
+            {
+                return zoneType.DisplayName + " Zone";
+            }
+
+            return "Zone";
+        }
+
+        private string DefaultColorHexForType(string zoneTypeId)
+        {
+            if (_content.TryGet(BuiltInContentTypes.ZoneTypeTypeName, zoneTypeId, out ContentEntry entry) && entry.Definition is ZoneTypeDefinition zoneType)
+            {
+                return zoneType.ColorHex;
+            }
+
+            return "#808080";
+        }
+
+        /// <summary>Save-migration-only: the same rotated-rectangle containment test the old OrientedRect used, inlined here since OrientedRect itself is gone.</summary>
+        private static HashSet<CellCoord> RasterizeRectangleToCells(double centerX, double centerZ, double sideALength, double sideBLength, double rotationDegrees, double cellSizeMeters)
+        {
+            double rad = rotationDegrees * Math.PI / 180.0;
+            double axisAx = Math.Cos(rad);
+            double axisAz = Math.Sin(rad);
+            double axisBx = -axisAz;
+            double axisBz = axisAx;
+            double halfA = Math.Abs(sideALength) * 0.5;
+            double halfB = Math.Abs(sideBLength) * 0.5;
+
+            double extentX = Math.Abs(axisAx) * halfA + Math.Abs(axisBx) * halfB;
+            double extentZ = Math.Abs(axisAz) * halfA + Math.Abs(axisBz) * halfB;
+
+            int minCellX = (int)Math.Floor((centerX - extentX) / cellSizeMeters);
+            int maxCellX = (int)Math.Ceiling((centerX + extentX) / cellSizeMeters);
+            int minCellZ = (int)Math.Floor((centerZ - extentZ) / cellSizeMeters);
+            int maxCellZ = (int)Math.Ceiling((centerZ + extentZ) / cellSizeMeters);
+
+            var cells = new HashSet<CellCoord>();
+            for (int cx = minCellX; cx <= maxCellX; cx++)
+            {
+                for (int cz = minCellZ; cz <= maxCellZ; cz++)
+                {
+                    double worldX = (cx + 0.5) * cellSizeMeters;
+                    double worldZ = (cz + 0.5) * cellSizeMeters;
+                    double dx = worldX - centerX;
+                    double dz = worldZ - centerZ;
+                    double localA = dx * axisAx + dz * axisAz;
+                    double localB = dx * axisBx + dz * axisBz;
+
+                    if (Math.Abs(localA) <= halfA && Math.Abs(localB) <= halfB)
+                    {
+                        cells.Add(new CellCoord(cx, cz));
+                    }
+                }
+            }
+
+            return cells;
         }
 
         #endregion

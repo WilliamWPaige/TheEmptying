@@ -1,0 +1,15 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.zones.cells_per_slot",
+            "label": "Stockpile cells per slot",
+            "valueType": "Integer",
+            "default": 4,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "Zones",
+            "description": "TEMPORARY placeholder (R18b), until the real stockpile layout design exists. How many painted cells one stockpile slot holds, rounded down."
+        }
+    ]
+}

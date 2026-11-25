@@ -14,7 +14,6 @@ using UnityEngine.Rendering;
 using UnityEngine.UIElements;
 using BuildingPresenter = TheEmptying.Presentation.Buildings.BuildingPresenter;
 using ZonePresenter = TheEmptying.Presentation.Zones.ZonePresenter;
-using ZoneDrawingPresenter = TheEmptying.Presentation.Zones.ZoneDrawingPresenter;
 using ZoningMenuPresenter = TheEmptying.Presentation.Zones.ZoningMenuPresenter;
 using EntityId = TheEmptying.Core.Entities.EntityId;
 
@@ -41,7 +40,6 @@ namespace TheEmptying.Presentation.Selection
         private PersonPresenter _personPresenter;
         private BuildingPresenter _buildingPresenter;
         private ZonePresenter _zonePresenter;
-        private ZoneDrawingPresenter _zoneDrawing;
         private TemporaryChunkDecorations _decorations;
         private PondsPresenter _pondsPresenter;
         private Camera _camera;
@@ -82,9 +80,6 @@ namespace TheEmptying.Presentation.Selection
 
         /// <summary>R11: the starting site's marker, while it still exists (set by GameBootstrap; cleared once the kingdom is founded, since it's gone for good).</summary>
         public StartingSiteMarkerPresenter SiteMarker { get; set; }
-
-        /// <summary>R12b: set by GameBootstrap right after both are built. While its tool is armed or dragging, clicks here are ignored - drawing a zone never also selects or deselects anything.</summary>
-        public ZoneDrawingPresenter ZoneDrawingTool { get; set; }
 
         /// <summary>R18: set by GameBootstrap right after both are built. While the zoning menu is open, world clicks are ignored the same way - it hides this window's selection entirely anyway, but this also stops a click from quietly re-selecting something underneath it.</summary>
         public ZoningMenuPresenter ZoningMenu { get; set; }
@@ -223,11 +218,6 @@ namespace TheEmptying.Presentation.Selection
                 return;
             }
 
-            if (ZoneDrawingTool != null && ZoneDrawingTool.IsToolActive)
-            {
-                return;
-            }
-
             if (ZoningMenu != null && ZoningMenu.IsOpen)
             {
                 return;
@@ -283,7 +273,7 @@ namespace TheEmptying.Presentation.Selection
 
                 if (_zonePresenter != null && _zonePresenter.TryGetZoneForInstance(hit.collider.gameObject, out EntityId zoneId))
                 {
-                    Select(new ZoneSelectionTarget(_zonesModule, _peopleModule, _content, zoneId, HandleZoneRemoved));
+                    Select(new ZoneSelectionTarget(_zonesModule, _peopleModule, _content, _mapModule, zoneId, HandleZoneRemoved));
                     return;
                 }
             }

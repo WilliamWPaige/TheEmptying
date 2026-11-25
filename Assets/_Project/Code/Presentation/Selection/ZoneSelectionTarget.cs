@@ -1,6 +1,7 @@
 using System;
 using System.Linq;
 using TheEmptying.Core.Content;
+using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
 using TheEmptying.Modules.Zones;
 using UnityEngine;
@@ -10,40 +11,37 @@ using EntityId = TheEmptying.Core.Entities.EntityId;
 namespace TheEmptying.Presentation.Selection
 {
     /// <summary>
-    /// R12: an info window selection for a placed zone. A Stockpile
-    /// shows its size, slots used/total and a row per known item (amount,
-    /// a keep-on-hand limit field, and a block toggle). A Living Area
-    /// shows its size and how many people are inside it right now. Both
-    /// have a "Remove zone" button.
+    /// R18b: an info window selection for a placed zone - its name, type
+    /// and painted area. A Stockpile shows slots used/total and a row
+    /// per known item (amount, a keep-on-hand limit field, and a block
+    /// toggle). A Living Area shows how many people are inside it right
+    /// now. Both have a "Remove zone" button. A zone's own on-screen
+    /// highlight is its tint brightening in place (ZonePresenter), not
+    /// the generic highlight quad - Footprint is never actually drawn
+    /// from for a zone; see WorldSelectionPresenter.
     /// </summary>
     public sealed class ZoneSelectionTarget : ISelectionTarget
     {
         private readonly ZonesModule _zonesModule;
         private readonly PeopleModule _peopleModule;
         private readonly ContentDatabase _content;
+        private readonly MapModule _mapModule;
         private readonly EntityId _id;
         private readonly Action _onRemoved;
 
         public EntityId Id => _id;
 
-        public ZoneSelectionTarget(ZonesModule zonesModule, PeopleModule peopleModule, ContentDatabase content, EntityId id, Action onRemoved)
+        public ZoneSelectionTarget(ZonesModule zonesModule, PeopleModule peopleModule, ContentDatabase content, MapModule mapModule, EntityId id, Action onRemoved)
         {
             _zonesModule = zonesModule;
             _peopleModule = peopleModule;
             _content = content;
+            _mapModule = mapModule;
             _id = id;
             _onRemoved = onRemoved;
         }
 
-        public Vector2 Footprint
-        {
-            get
-            {
-                return _zonesModule.TryGetZone(_id, out ZoneState zone)
-                    ? new Vector2((float)zone.SideALength, (float)zone.SideBLength)
-                    : Vector2.one;
-            }
-        }
+        public Vector2 Footprint => Vector2.one;
 
         public bool TryGetWorldPosition(out Vector3 worldPosition)
         {
@@ -64,11 +62,11 @@ namespace TheEmptying.Presentation.Selection
                 return;
             }
 
-            container.Add(new Label(DisplayNameForZoneType(zone.ZoneTypeId))
+            container.Add(new Label(string.IsNullOrEmpty(zone.Name) ? DisplayNameForZoneType(zone.ZoneTypeId) : zone.Name)
             {
                 style = { color = Color.white, fontSize = 20, unityFontStyleAndWeight = FontStyle.Bold, marginBottom = 4 }
             });
-            container.Add(new Label($"Size: {zone.SideALength:0.#} x {zone.SideBLength:0.#} m")
+            container.Add(new Label($"{DisplayNameForZoneType(zone.ZoneTypeId)} - {AreaSquareMeters(zone):0.#} m²")
             {
                 style = { color = new Color(0.8f, 0.8f, 0.8f), marginBottom = 10 }
             });
@@ -85,9 +83,15 @@ namespace TheEmptying.Presentation.Selection
             container.Add(new Button(RemoveZone) { text = "Remove zone", style = { marginTop = 14, width = 140 } });
         }
 
+        private double AreaSquareMeters(ZoneState zone)
+        {
+            double cellSize = _mapModule.CellSizeMeters;
+            return zone.Cells.Count * cellSize * cellSize;
+        }
+
         private void BuildStockpileContent(VisualElement container, ZoneState zone)
         {
-            int totalSlots = ZonesModule.SlotCount(zone.Rect.Area);
+            int totalSlots = _zonesModule.SlotCount(zone.Cells.Count);
             int usedSlots = zone.StockpileItems
                 .Where(kv => kv.Value.AmountStored > 0)
                 .Sum(kv => ZonesModule.SlotsNeededFor(kv.Value.AmountStored, SizeOf(kv.Key)));

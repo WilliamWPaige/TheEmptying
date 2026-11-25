@@ -1,23 +1,26 @@
+using System.Collections.Generic;
 using System.IO;
 using System.Linq;
 using NUnit.Framework;
 using TheEmptying.Core;
+using TheEmptying.Core.Entities;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
+using TheEmptying.Modules.Ponds;
 using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation;
+using TheEmptying.Presentation.Zones;
 using TheEmptying.Tests.EditMode.Startup;
-using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Tests.EditMode.Modules
 {
-    /// <summary>R12: slot/capacity math, overlap rules, the stockpile add logic (slots, sizes, blocks, limits) and the save/load round trip - all against the real shipped content.</summary>
+    /// <summary>R18b: zones as painted cells - paint validity, slot/capacity math from cells, default naming against real zones, the old-rectangle-save migration, and the save/load round trip.</summary>
     public class ZonesModuleTests
     {
-        private static (Simulation Simulation, MapModule Map, BuildingsModule Buildings, ZonesModule Zones) BuildNewGame(TempCoreContentCopy core, ulong seed = 1)
+        private static (Simulation Simulation, MapModule Map, BuildingsModule Buildings, PondsModule Ponds, ZonesModule Zones) BuildNewGame(TempCoreContentCopy core, ulong seed = 1)
         {
             IModule[] modules = ModuleCatalog.CreateModules();
             (Simulation simulation, StartupReport _) = SimulationBuilder.Build(seed, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
@@ -25,18 +28,37 @@ namespace TheEmptying.Tests.EditMode.Modules
                 simulation,
                 (MapModule)modules.First(m => m is MapModule),
                 (BuildingsModule)modules.First(m => m is BuildingsModule),
+                (PondsModule)modules.First(m => m is PondsModule),
                 (ZonesModule)modules.First(m => m is ZonesModule));
         }
 
-        #region Slot and capacity math
-
-        [TestCase(16.0, 4)]
-        [TestCase(10.0, 2)]
-        [TestCase(3.9, 0)]
-        [TestCase(0.0, 0)]
-        public void SlotCount_IsAreaDividedByFourRoundedDown(double area, int expectedSlots)
+        private static HashSet<CellCoord> RectCells(MapModule map, double centerX, double centerZ, int width, int depth)
         {
-            Assert.AreEqual(expectedSlots, ZonesModule.SlotCount(area));
+            CellCoord center = map.WorldToCell(centerX, centerZ);
+            var cells = new HashSet<CellCoord>();
+            for (int dx = 0; dx < width; dx++)
+            {
+                for (int dz = 0; dz < depth; dz++)
+                {
+                    cells.Add(new CellCoord(center.X + dx, center.Z + dz));
+                }
+            }
+
+            return cells;
+        }
+
+        #region Slot and capacity math (now from cell count)
+
+        [TestCase(16, 4)]
+        [TestCase(10, 2)]
+        [TestCase(3, 0)]
+        [TestCase(0, 0)]
+        public void SlotCount_IsCellCountDividedByCellsPerSlotRoundedDown(int cellCount, int expectedSlots)
+        {
+            using var core = new TempCoreContentCopy();
+            (_, _, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            Assert.AreEqual(expectedSlots, zones.SlotCount(cellCount));
         }
 
         [TestCase(1, 100)]
@@ -51,7 +73,6 @@ namespace TheEmptying.Tests.EditMode.Modules
         [Test]
         public void SlotsNeededFor_AnItemCanSpanSeveralSlots()
         {
-            // Size-1 item: 100 per slot. 250 of them need 3 slots (100 + 100 + 50).
             Assert.AreEqual(3, ZonesModule.SlotsNeededFor(250, itemSize: 1));
             Assert.AreEqual(1, ZonesModule.SlotsNeededFor(100, itemSize: 1));
             Assert.AreEqual(0, ZonesModule.SlotsNeededFor(0, itemSize: 1));
@@ -59,96 +80,121 @@ namespace TheEmptying.Tests.EditMode.Modules
 
         #endregion
 
-        #region Placement rules
+        #region Zones are cells, which may be several separate pieces
 
         [Test]
-        public void CanPlace_RejectsARectangleSmallerThanTheMinimum()
+        public void CreateZone_StoresExactlyTheGivenCells_IncludingSeveralSeparatePieces()
         {
             using var core = new TempCoreContentCopy();
-            (_, _, _, ZonesModule zones) = BuildNewGame(core);
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
 
-            var tooSmall = new OrientedRect(100, 100, 1.5, 3, 0);
-            Assert.IsFalse(zones.CanPlace(tooSmall, out string reason));
-            Assert.IsNotEmpty(reason);
+            CellCoord pieceA = map.WorldToCell(map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5);
+            CellCoord pieceB = new CellCoord(pieceA.X + 50, pieceA.Z + 50); // far enough to never touch pieceA
+
+            EntityId id = zones.CreateZone(ZonesModule.LivingAreaTypeId, "Living Area Zone", "#8BC34A", new[] { pieceA, pieceB });
+
+            Assert.IsTrue(zones.TryGetZone(id, out ZoneState zone));
+            Assert.AreEqual(2, zone.Cells.Count);
+            Assert.IsTrue(zone.Cells.Contains(pieceA));
+            Assert.IsTrue(zone.Cells.Contains(pieceB));
         }
 
         [Test]
-        public void CanPlace_RejectsOverlappingABuilding()
+        public void CreateZone_StoresNameAndColor()
         {
             using var core = new TempCoreContentCopy();
-            (_, MapModule map, BuildingsModule buildings, ZonesModule zones) = BuildNewGame(core);
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            EntityId id = zones.CreateZone(ZonesModule.StockpileTypeId, "My Stockpile", "#112233", RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4));
+
+            Assert.IsTrue(zones.TryGetZone(id, out ZoneState zone));
+            Assert.AreEqual("My Stockpile", zone.Name);
+            Assert.AreEqual("#112233", zone.ColorHex);
+        }
+
+        #endregion
+
+        #region Paint validity
+
+        [Test]
+        public void CanPaintCell_RejectsACellAlreadyInAnotherZone()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            HashSet<CellCoord> cells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", cells);
+
+            CellCoord claimed = cells.First();
+            Assert.IsFalse(zones.CanPaintCell(claimed));
+
+            CellCoord free = new CellCoord(claimed.X + 100, claimed.Z + 100);
+            Assert.IsTrue(zones.CanPaintCell(free));
+        }
+
+        [Test]
+        public void CanPaintCell_RejectsACellInsideACrownBuilding()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, BuildingsModule buildings, _, ZonesModule zones) = BuildNewGame(core);
 
             double centerX = map.WorldWidthMeters * 0.5;
             double centerZ = map.WorldDepthMeters * 0.5;
             buildings.PlaceBuilding(BuildingsModule.KeepContentId, centerX, centerZ, 12, 12);
 
-            var overlapping = new OrientedRect(centerX, centerZ, 4, 4, 0);
-            Assert.IsFalse(zones.CanPlace(overlapping, out string reason));
-            Assert.IsNotEmpty(reason);
+            CellCoord insideKeep = map.WorldToCell(centerX, centerZ);
+            Assert.IsFalse(zones.CanPaintCell(insideKeep));
         }
 
         [Test]
-        public void CanPlace_RejectsOverlappingAnotherZone()
+        public void CanPaintCell_RejectsPondWater()
         {
             using var core = new TempCoreContentCopy();
-            (_, MapModule map, _, ZonesModule zones) = BuildNewGame(core);
+            (_, MapModule map, _, PondsModule ponds, ZonesModule zones) = BuildNewGame(core);
 
-            double centerX = map.WorldWidthMeters * 0.5;
-            double centerZ = map.WorldDepthMeters * 0.5;
-            var first = new OrientedRect(centerX, centerZ, 6, 6, 0);
-            Assert.IsNotNull(zones.TryPlaceZone(ZonesModule.StockpileTypeId, first, out _));
+            PondState pond = ponds.Ponds.First().Value;
+            CellCoord pondCenterCell = map.WorldToCell(pond.CenterX, pond.CenterZ);
 
-            var overlapping = new OrientedRect(centerX + 2, centerZ, 6, 6, 0);
-            Assert.IsFalse(zones.CanPlace(overlapping, out string reason));
-            Assert.IsNotEmpty(reason);
-        }
-
-        /// <summary>Zones may cover trees, stones and grub mounds - there's deliberately no check against MapModule's placements.</summary>
-        [Test]
-        public void CanPlace_AllowsOverlappingMapResourcePlacements()
-        {
-            using var core = new TempCoreContentCopy();
-            (_, MapModule map, _, ZonesModule zones) = BuildNewGame(core);
-
-            map.GetOrCreateChunk(new ChunkCoord(5, 9)); // force the chunk (and whatever it placed) to exist first.
-            double originX = 5 * map.ChunkSizeMeters;
-            double originZ = 9 * map.ChunkSizeMeters;
-
-            var rect = new OrientedRect(originX + 10, originZ + 10, 6, 6, 0);
-            Assert.IsTrue(zones.CanPlace(rect, out string reason), reason);
+            Assert.IsFalse(zones.CanPaintCell(pondCenterCell));
         }
 
         [Test]
-        public void TryPlaceZone_FailingPlacement_CreatesNoZone()
+        public void CanPaintCell_AllowsAnEmptyCell()
         {
             using var core = new TempCoreContentCopy();
-            (_, _, _, ZonesModule zones) = BuildNewGame(core);
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
 
-            var tooSmall = new OrientedRect(100, 100, 1, 1, 0);
-            EntityId? id = zones.TryPlaceZone(ZonesModule.StockpileTypeId, tooSmall, out string reason);
-
-            Assert.IsNull(id);
-            Assert.IsNotEmpty(reason);
-            Assert.AreEqual(0, zones.Zones.Count());
+            // Far from the guaranteed starting pond and anything else.
+            CellCoord farCell = map.WorldToCell(map.WorldWidthMeters * 0.1, map.WorldDepthMeters * 0.1);
+            Assert.IsTrue(zones.CanPaintCell(farCell));
         }
 
         #endregion
 
-        #region Stockpile add logic
+        #region Default naming against real zones
 
-        private static EntityId PlaceStockpile(ZonesModule zones, double centerX, double centerZ, double sideA, double sideB)
+        [Test]
+        public void ZoneNames_ThenNextDefaultName_CountsUpAgainstRealZones()
         {
-            EntityId? id = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX, centerZ, sideA, sideB, 0), out string reason);
-            Assert.IsNotNull(id, reason);
-            return id.Value;
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4));
+
+            string nextName = ZoneNaming.NextDefaultName("Stockpile Zone", zones.ZoneNames);
+            Assert.AreEqual("Stockpile Zone 2", nextName);
         }
+
+        #endregion
+
+        #region Stockpile add logic (capacity now from cell count)
 
         [Test]
         public void TryAddItemToStockpile_ANewStockpileStartsEmpty()
         {
             using var core = new TempCoreContentCopy();
-            (_, MapModule map, _, ZonesModule zones) = BuildNewGame(core);
-            EntityId zoneId = PlaceStockpile(zones, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4));
 
             (int amount, int limit, bool blocked) = zones.GetStockpileItemInfo(zoneId, "item.grub");
             Assert.AreEqual(0, amount);
@@ -160,10 +206,10 @@ namespace TheEmptying.Tests.EditMode.Modules
         public void TryAddItemToStockpile_AddsUpToSlotCapacity_AndReportsWhatDidNotFit()
         {
             using var core = new TempCoreContentCopy();
-            (_, MapModule map, _, ZonesModule zones) = BuildNewGame(core);
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
 
-            // 4 x 4 m = 16 sq m = 4 slots; item.grub is size 1, so 100 per slot = 400 max.
-            EntityId zoneId = PlaceStockpile(zones, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            // 16 cells / 4 per slot = 4 slots; item.grub is size 1, so 100 per slot = 400 max.
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4));
 
             (int added, int didNotFit, string reason) = zones.TryAddItemToStockpile(zoneId, "item.grub", 450);
 
@@ -176,30 +222,11 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void TryAddItemToStockpile_AnItemCanSpanSeveralSlots_AndLeaveRoomForAnother()
-        {
-            using var core = new TempCoreContentCopy();
-            (_, MapModule map, _, ZonesModule zones) = BuildNewGame(core);
-
-            // 4 slots total. 250 grubs (size 1, 100/slot) need 3 slots, leaving 1 slot (25 units) for item.log (size 4, 25/slot).
-            EntityId zoneId = PlaceStockpile(zones, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
-
-            (int grubAdded, int grubDidNotFit, _) = zones.TryAddItemToStockpile(zoneId, "item.grub", 250);
-            Assert.AreEqual(250, grubAdded);
-            Assert.AreEqual(0, grubDidNotFit);
-
-            (int logAdded, int logDidNotFit, string logReason) = zones.TryAddItemToStockpile(zoneId, "item.log", 30);
-            Assert.AreEqual(25, logAdded);
-            Assert.AreEqual(5, logDidNotFit);
-            Assert.IsNotEmpty(logReason);
-        }
-
-        [Test]
         public void TryAddItemToStockpile_RespectsTheKeepOnHandLimit()
         {
             using var core = new TempCoreContentCopy();
-            (_, MapModule map, _, ZonesModule zones) = BuildNewGame(core);
-            EntityId zoneId = PlaceStockpile(zones, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4));
 
             zones.SetKeepOnHandLimit(zoneId, "item.grub", 10);
 
@@ -214,8 +241,8 @@ namespace TheEmptying.Tests.EditMode.Modules
         public void TryAddItemToStockpile_RespectsABlock()
         {
             using var core = new TempCoreContentCopy();
-            (_, MapModule map, _, ZonesModule zones) = BuildNewGame(core);
-            EntityId zoneId = PlaceStockpile(zones, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4));
 
             zones.SetBlocked(zoneId, "item.grub", true);
 
@@ -239,15 +266,15 @@ namespace TheEmptying.Tests.EditMode.Modules
         public void SaveAndLoad_ZonesAndStockpileContentsLimitsAndBlocks_SurviveTheRoundTrip()
         {
             using var core = new TempCoreContentCopy();
-            (Simulation simulation, MapModule map, BuildingsModule buildings, ZonesModule zones) = BuildNewGame(core);
+            (Simulation simulation, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
 
-            EntityId stockpileId = PlaceStockpile(zones, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 6, 4);
+            EntityId stockpileId = zones.CreateZone(ZonesModule.StockpileTypeId, "Grub Stockpile", "#3DA5D9", RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 6, 4));
             zones.TryAddItemToStockpile(stockpileId, "item.grub", 120);
             zones.SetKeepOnHandLimit(stockpileId, "item.grub", 300);
             zones.SetBlocked(stockpileId, "item.log", true);
 
-            EntityId? livingAreaId = zones.TryPlaceZone(ZonesModule.LivingAreaTypeId, new OrientedRect(map.WorldWidthMeters * 0.5 + 50, map.WorldDepthMeters * 0.5, 10, 8, 37.5), out _);
-            Assert.IsNotNull(livingAreaId);
+            HashSet<CellCoord> livingAreaCells = RectCells(map, map.WorldWidthMeters * 0.5 + 50, map.WorldDepthMeters * 0.5, 10, 8);
+            EntityId livingAreaId = zones.CreateZone(ZonesModule.LivingAreaTypeId, "My Living Area", "#8BC34A", livingAreaCells);
 
             using var stream = new MemoryStream();
             GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = 0 }, stream);
@@ -261,8 +288,9 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             Assert.IsTrue(loadedZones.TryGetZone(stockpileId, out ZoneState stockpile));
             Assert.AreEqual(ZonesModule.StockpileTypeId, stockpile.ZoneTypeId);
-            Assert.AreEqual(6, stockpile.SideALength);
-            Assert.AreEqual(4, stockpile.SideBLength);
+            Assert.AreEqual("Grub Stockpile", stockpile.Name);
+            Assert.AreEqual("#3DA5D9", stockpile.ColorHex);
+            Assert.AreEqual(24, stockpile.Cells.Count);
 
             (int amount, int limit, bool grubBlocked) = loadedZones.GetStockpileItemInfo(stockpileId, "item.grub");
             Assert.AreEqual(120, amount);
@@ -272,9 +300,43 @@ namespace TheEmptying.Tests.EditMode.Modules
             (_, _, bool logBlocked) = loadedZones.GetStockpileItemInfo(stockpileId, "item.log");
             Assert.IsTrue(logBlocked);
 
-            Assert.IsTrue(loadedZones.TryGetZone(livingAreaId.Value, out ZoneState livingArea));
+            Assert.IsTrue(loadedZones.TryGetZone(livingAreaId, out ZoneState livingArea));
             Assert.AreEqual(ZonesModule.LivingAreaTypeId, livingArea.ZoneTypeId);
-            Assert.AreEqual(37.5, livingArea.RotationDegrees);
+            Assert.AreEqual("My Living Area", livingArea.Name);
+            Assert.AreEqual(livingAreaCells.Count, livingArea.Cells.Count);
+            CollectionAssert.AreEquivalent(livingAreaCells, livingArea.Cells);
+        }
+
+        [Test]
+        public void Read_OldRectangleFormat_ConvertsToCellsWithDefaultNameAndTypeTint()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            EntityId id = simulation.Entities.Create(EntityKind.Zone);
+
+            using var stream = new MemoryStream();
+            var writer = new SaveWriter(stream);
+            writer.WriteInt(1);
+            writer.WriteEntityId(id);
+            writer.WriteString(ZonesModule.StockpileTypeId);
+            writer.WriteDouble(map.WorldWidthMeters * 0.5);
+            writer.WriteDouble(map.WorldDepthMeters * 0.5);
+            writer.WriteDouble(6);
+            writer.WriteDouble(4);
+            writer.WriteDouble(0);
+            writer.WriteInt(0);
+
+            stream.Position = 0;
+            var reader = new SaveReader(stream);
+            zones.Read(reader, savedVersion: 1);
+
+            Assert.AreEqual(1, zones.Zones.Count());
+            Assert.IsTrue(zones.TryGetZone(id, out ZoneState zone));
+            Assert.AreEqual(ZonesModule.StockpileTypeId, zone.ZoneTypeId);
+            Assert.Greater(zone.Cells.Count, 0);
+            Assert.AreEqual("Stockpile Zone", zone.Name);
+            Assert.AreEqual("#3DA5D9", zone.ColorHex);
         }
 
         #endregion

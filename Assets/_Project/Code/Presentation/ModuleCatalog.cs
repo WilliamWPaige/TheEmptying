@@ -21,8 +21,8 @@ namespace TheEmptying.Presentation
         {
             var map = new MapModule();
             var buildings = new BuildingsModule(map);
-            var zones = new ZonesModule(map, buildings);
             var ponds = new PondsModule(map);
+            var zones = new ZonesModule(map, buildings, ponds);
             return new IModule[] { map, buildings, zones, ponds, new PeopleModule(map, buildings, zones, ponds), new DiscoveryModule() };
         }
     }

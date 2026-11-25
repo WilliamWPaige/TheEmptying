@@ -1110,17 +1110,18 @@ namespace TheEmptying.Modules.People
             return null;
         }
 
+        /// <summary>R18b: a random painted cell of this zone (which may be several separate pieces) that's currently free to stand on.</summary>
         private CellCoord? TryPickCellInZone(SimRandom random, ZoneState area, double cellSizeMeters, EntityId selfId)
         {
+            if (area.Cells.Count == 0)
+            {
+                return null;
+            }
+
+            CellCoord[] cells = area.Cells.ToArray();
             for (int attempt = 0; attempt < WanderTargetAttempts; attempt++)
             {
-                double localA = (random.NextFloat() - 0.5f) * area.SideALength;
-                double localB = (random.NextFloat() - 0.5f) * area.SideBLength;
-                double rad = area.RotationDegrees * Math.PI / 180.0;
-                double worldX = area.CenterX + localA * Math.Cos(rad) - localB * Math.Sin(rad);
-                double worldZ = area.CenterZ + localA * Math.Sin(rad) + localB * Math.Cos(rad);
-
-                CellCoord candidate = _mapModule.WorldToCell(worldX, worldZ);
+                CellCoord candidate = cells[random.NextInt(0, cells.Length)];
                 if (IsCellFreeForPerson(candidate, selfId))
                 {
                     return candidate;
@@ -1168,13 +1169,9 @@ namespace TheEmptying.Modules.People
         /// <summary>R13b: stockpiles are drop-off and pick-up only - an idle wander target never lands inside one.</summary>
         private bool IsInsideAnyStockpile(CellCoord cell)
         {
-            double cellSize = _mapModule.CellSizeMeters;
-            double worldX = (cell.X + 0.5) * cellSize;
-            double worldZ = (cell.Z + 0.5) * cellSize;
-
             foreach (KeyValuePair<EntityId, ZoneState> row in _zonesModule.Stockpiles)
             {
-                if (row.Value.Rect.Contains(worldX, worldZ))
+                if (row.Value.Cells.Contains(cell))
                 {
                     return true;
                 }
@@ -2200,15 +2197,7 @@ namespace TheEmptying.Modules.People
 
         private bool IsInsideZone(CellCoord cell, EntityId zoneId)
         {
-            if (!_zonesModule.TryGetZone(zoneId, out ZoneState zone))
-            {
-                return false;
-            }
-
-            double cellSize = _mapModule.CellSizeMeters;
-            double worldX = (cell.X + 0.5) * cellSize;
-            double worldZ = (cell.Z + 0.5) * cellSize;
-            return zone.Rect.Contains(worldX, worldZ);
+            return _zonesModule.TryGetZone(zoneId, out ZoneState zone) && zone.Cells.Contains(cell);
         }
 
         private static IEnumerable<CellCoord> Neighbors8(CellCoord cell)

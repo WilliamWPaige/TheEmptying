@@ -347,7 +347,6 @@ namespace TheEmptying.Presentation.Discovery
 
             if (zoneTypeId == ZonesModule.StockpileTypeId)
             {
-                AddDetailRow("Area per slot", $"{ZonesModule.SquareMetersPerSlot:0.#} m²");
                 AddDetailRow("Size units per slot", ZonesModule.CapacityUnitsPerSlot.ToString());
             }
 

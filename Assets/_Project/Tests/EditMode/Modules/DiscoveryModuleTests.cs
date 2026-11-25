@@ -188,15 +188,15 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             Assert.IsFalse(discovery.IsDiscovered(DiscoveryModule.ZoneCategory, ZonesModule.StockpileTypeId));
 
-            EntityId? first = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX - 20, centerZ, 8, 8, 0), out string reason1);
-            Assert.IsNotNull(first, reason1);
+            CellCoord firstCell = map.WorldToCell(centerX - 20, centerZ);
+            zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", new[] { firstCell });
             simulation.Events.DeliverPending();
 
             Assert.IsTrue(discovery.IsDiscovered(DiscoveryModule.ZoneCategory, ZonesModule.StockpileTypeId));
             Assert.AreEqual(1, discovery.DiscoveredIn(DiscoveryModule.ZoneCategory).Count);
 
-            EntityId? second = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason2);
-            Assert.IsNotNull(second, reason2);
+            CellCoord secondCell = map.WorldToCell(centerX + 20, centerZ);
+            zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone 2", "#3DA5D9", new[] { secondCell });
             simulation.Events.DeliverPending();
 
             Assert.AreEqual(1, discovery.DiscoveredIn(DiscoveryModule.ZoneCategory).Count, "A second stockpile of the same type must not be recorded again.");

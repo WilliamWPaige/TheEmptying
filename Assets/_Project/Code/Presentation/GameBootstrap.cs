@@ -99,14 +99,16 @@ namespace TheEmptying.Presentation
         private BuildingPresenter _buildingPresenter;
         private ZonesModule _zonesModule;
         private ZonePresenter _zonePresenter;
-        private ZoneDrawingPresenter _zoneDrawing;
         private ZoningMenuPresenter _zoningMenu;
+        private OverlaysMenuPresenter _overlaysMenu;
+        private bool _zonesOverlayVisible = true;
         private PondsModule _pondsModule;
         private PondsPresenter _pondsPresenter;
         private DiscoveryModule _discoveryModule;
         private DiscoveriesWindowPresenter _discoveriesWindow;
         private Button _zonesButton;
         private Button _discoveriesButton;
+        private Button _overlaysButton;
 
         /// <summary>R11: only set before founding; destroyed for good once the kingdom is founded.</summary>
         private StartingSiteMarkerPresenter _siteMarker;
@@ -198,6 +200,8 @@ namespace TheEmptying.Presentation
             BuildDebugWindow();
             BuildDiscoveriesWindow();
             BuildZoningMenu();
+            BuildOverlaysMenu();
+            RefreshZoneVisibility();
             BuildEscapeMenu();
             BuildFoundingPopup();
             SetupNewGameBeforeFounding();
@@ -475,19 +479,8 @@ namespace TheEmptying.Presentation
             _buildingPresenter.Initialize(_floatingOrigin);
 
             _zonePresenter = gameObject.AddComponent<ZonePresenter>();
-            _zonePresenter.Initialize(_floatingOrigin, _simulation.Content);
+            _zonePresenter.Initialize(_floatingOrigin, _simulation.Content, _mapModule);
             _zonePresenter.Rebuild(_zonesModule);
-
-            _zoneDrawing = gameObject.AddComponent<ZoneDrawingPresenter>();
-            _zoneDrawing.Initialize(
-                _floatingOrigin,
-                camera,
-                _uiDocument.rootVisualElement,
-                _zonesModule,
-                _zonePresenter,
-                _simulation.Content,
-                ShowToast,
-                () => _zonePresenter.Rebuild(_zonesModule));
 
             _worldSelection = gameObject.AddComponent<WorldSelectionPresenter>();
             _worldSelection.Initialize(
@@ -506,7 +499,6 @@ namespace TheEmptying.Presentation
                 _pondsPresenter,
                 camera,
                 _uiDocument.rootVisualElement);
-            _worldSelection.ZoneDrawingTool = _zoneDrawing;
         }
 
         /// <summary>
@@ -601,6 +593,7 @@ namespace TheEmptying.Presentation
             _zoningMenu.Initialize(
                 _cameraController,
                 _mapModule,
+                _zonesModule,
                 _simulation.Content,
                 _simulation.Settings,
                 _floatingOrigin,
@@ -613,9 +606,28 @@ namespace TheEmptying.Presentation
                 _debugWindow,
                 _discoveriesWindow,
                 _worldSelection,
-                HideToastNow);
+                HideToastNow,
+                () => _zonePresenter.Rebuild(_zonesModule),
+                RefreshZoneVisibility);
 
             _worldSelection.ZoningMenu = _zoningMenu;
+        }
+
+        /// <summary>R18b: the small Overlays button's popup - for now, just "Toggle zones".</summary>
+        private void BuildOverlaysMenu()
+        {
+            _overlaysMenu = new OverlaysMenuPresenter();
+            _overlaysMenu.Initialize(_uiDocument.rootVisualElement, _zonesOverlayVisible, visible =>
+            {
+                _zonesOverlayVisible = visible;
+                RefreshZoneVisibility();
+            });
+        }
+
+        /// <summary>R18b: zones show whenever the overlay toggle says to, and always while the zoning view is open regardless of that toggle.</summary>
+        private void RefreshZoneVisibility()
+        {
+            _zonePresenter?.SetVisible(_zonesOverlayVisible || (_zoningMenu != null && _zoningMenu.IsOpen));
         }
 
         /// <summary>R4: Resume/Main Menu/Options/Exit Game, with the shared Options panel and the two Yes/No confirmations.</summary>
@@ -807,9 +819,9 @@ namespace TheEmptying.Presentation
                 return;
             }
 
-            if (_zoneDrawing != null && _zoneDrawing.IsOpen)
+            if (_overlaysMenu != null && _overlaysMenu.IsOpen)
             {
-                _zoneDrawing.HandleEscapePressed();
+                _overlaysMenu.Close();
                 return;
             }
 
@@ -1134,6 +1146,8 @@ namespace TheEmptying.Presentation
             _hudPanel.Add(BuildHudButton("3x", () => HandleSetSpeed(3)));
             _zonesButton = BuildHudButton("Zones", () => _zoningMenu?.Open());
             _hudPanel.Add(_zonesButton);
+            _overlaysButton = BuildHudButton("Overlays", () => _overlaysMenu?.Toggle());
+            _hudPanel.Add(_overlaysButton);
             _discoveriesButton = BuildHudButton("Discoveries", () => _discoveriesWindow?.Toggle());
             _hudPanel.Add(_discoveriesButton);
             _hudPanel.Add(BuildErrorBadge());
@@ -1207,6 +1221,11 @@ namespace TheEmptying.Presentation
             if (_discoveriesButton != null)
             {
                 _discoveriesButton.style.display = foundedButtonsDisplay;
+            }
+
+            if (_overlaysButton != null)
+            {
+                _overlaysButton.style.display = foundedButtonsDisplay;
             }
         }
 
@@ -1301,16 +1320,16 @@ namespace TheEmptying.Presentation
                 _worldMapView?.Rebind(_mapModule, _pondsModule, _simulation.Settings);
                 _personPresenter?.Rebind(_peopleModule, _mapModule);
                 _pondsPresenter?.Rebind(_pondsModule, _mapModule, _simulation.Settings);
-                _zonePresenter?.Rebind(_simulation.Content);
+                _zonePresenter?.Rebind(_simulation.Content, _mapModule);
                 _zonePresenter?.Rebuild(_zonesModule);
-                _zoneDrawing?.Rebind(_zonesModule, _simulation.Content);
-                _zoningMenu?.Rebind(_mapModule, _simulation.Content, _simulation.Settings);
+                _zoningMenu?.Rebind(_mapModule, _zonesModule, _simulation.Content, _simulation.Settings);
                 _worldSelection?.Rebind(_peopleModule, _mapModule, _buildingsModule, _zonesModule, _pondsModule, _simulation.Content);
                 _buildingPresenter?.Rebuild(_buildingsModule);
                 ShowSiteMarkerIfNotFounded();
                 BuildCheatMenu();
                 _debugWindow?.RebuildCheatsStructure();
                 RefreshHud();
+                RefreshZoneVisibility();
 
                 var sb = new StringBuilder();
                 sb.Append($"Loaded '{name}': {header.KingdomName}, {header.InGameDate}, tick {header.CurrentTick}, population {header.Population}.");

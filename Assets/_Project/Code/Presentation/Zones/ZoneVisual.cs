@@ -1,4 +1,5 @@
-using TheEmptying.Modules.Zones;
+using System.Collections.Generic;
+using TheEmptying.Modules.Map;
 using TheEmptying.Presentation.World;
 using UnityEngine;
 using UnityEngine.Rendering;
@@ -6,107 +7,119 @@ using UnityEngine.Rendering;
 namespace TheEmptying.Presentation.Zones
 {
     /// <summary>
-    /// R12/R12b: a tinted, outlined rectangle drawn flat on the ground -
-    /// shared by the live drawing preview and every placed zone. One
-    /// quad per zone: the "outline" comes from a shared, color-neutral
-    /// generated texture (a darker border baked around a lighter fill),
-    /// tinted per instance through the material's color (so SetColor -
-    /// used live while dragging, and to brighten a selected zone's
-    /// outline - never touches a texture).
+    /// R18b: a zone's painted cells drawn as a merged, transparent-
+    /// tinted mesh (one quad per cell) flat on the ground, through the
+    /// floating origin - shared by the live paint-in-progress preview
+    /// and every placed zone. A zone's cells may be several separate
+    /// pieces; one mesh covers all of them at once. The GameObject sits
+    /// at its parent's local origin - the parent (ZonePresenter's or
+    /// ZoningMenuPresenter's shared root) is what the floating origin
+    /// shifts, so every vertex here is baked in render space once, at
+    /// UpdateGeometry time, and stays correct until the next shift moves
+    /// the whole parent.
     /// </summary>
     public sealed class ZoneVisual
     {
-        private static Texture2D s_sharedTexture;
-
-        private readonly GameObject _quad;
+        private readonly GameObject _instance;
+        private readonly MeshFilter _meshFilter;
+        private readonly MeshCollider _meshCollider;
         private readonly Material _material;
+        private readonly Mesh _mesh;
 
-        public GameObject GameObject => _quad;
+        public GameObject GameObject => _instance;
 
         public ZoneVisual(Transform parent, Color color, bool collidable)
         {
-            _quad = GameObject.CreatePrimitive(PrimitiveType.Quad);
-            _quad.name = "Zone";
-            _quad.transform.SetParent(parent, worldPositionStays: true);
-            _quad.transform.rotation = Quaternion.Euler(90f, 0f, 0f);
+            _instance = new GameObject("Zone");
+            _instance.transform.SetParent(parent, worldPositionStays: true);
+            _instance.transform.localPosition = Vector3.zero;
+            _instance.transform.localRotation = Quaternion.identity;
 
-            if (!collidable)
-            {
-                Collider collider = _quad.GetComponent<Collider>();
-                if (collider != null)
-                {
-                    Object.Destroy(collider);
-                }
-            }
+            _mesh = new Mesh { name = "ZoneCellsMesh" };
+            _meshFilter = _instance.AddComponent<MeshFilter>();
+            _meshFilter.sharedMesh = _mesh;
 
-            var renderer = _quad.GetComponent<MeshRenderer>();
-            _material = BuildMaterial();
-            renderer.material = _material;
+            var renderer = _instance.AddComponent<MeshRenderer>();
+            _material = BuildTransparentMaterial();
+            renderer.sharedMaterial = _material;
             renderer.shadowCastingMode = ShadowCastingMode.Off;
             renderer.receiveShadows = false;
+
+            if (collidable)
+            {
+                _meshCollider = _instance.AddComponent<MeshCollider>();
+            }
 
             SetColor(color);
         }
 
-        public void SetActive(bool active) => _quad.SetActive(active);
+        public void SetActive(bool active) => _instance.SetActive(active);
 
-        public void Destroy() => Object.Destroy(_quad);
+        public void Destroy() => Object.Destroy(_instance);
 
-        /// <summary>The texture is color-neutral (gray fill, darker gray border); this tint multiplies both at once, so changing color is just a material property - cheap enough to call every frame while dragging.</summary>
+        /// <summary>The fill color's alpha is the transparent tint's own strength; callers pass a color already at the tint alpha they want.</summary>
         public void SetColor(Color color) => _material.color = color;
 
-        /// <summary>Positions, sizes and rotates the quad to match this rectangle, through the floating origin.</summary>
-        public void UpdateGeometry(OrientedRect rect, FloatingOrigin floatingOrigin)
+        /// <summary>Rebuilds the mesh (and, if collidable, the collider) from this exact cell set - one quad per cell, merged into a single mesh so several separate pieces still draw and select as one zone.</summary>
+        public void UpdateGeometry(IEnumerable<CellCoord> cells, double cellSizeMeters, FloatingOrigin floatingOrigin)
         {
-            var worldCenter = new Vector3((float)rect.CenterX, 0.02f, (float)rect.CenterZ);
-            Vector3 renderCenter = floatingOrigin.WorldToRender(worldCenter);
+            var vertices = new List<Vector3>();
+            var triangles = new List<int>();
+            float size = (float)cellSizeMeters;
 
-            _quad.transform.position = renderCenter;
-            _quad.transform.rotation = Quaternion.Euler(90f, (float)-rect.RotationDegrees, 0f);
-            _quad.transform.localScale = new Vector3((float)rect.SideALength, (float)rect.SideBLength, 1f);
+            foreach (CellCoord cell in cells)
+            {
+                var worldMin = new Vector3((float)(cell.X * cellSizeMeters), 0.02f, (float)(cell.Z * cellSizeMeters));
+                Vector3 renderMin = floatingOrigin.WorldToRender(worldMin);
+
+                int baseIndex = vertices.Count;
+                vertices.Add(renderMin);
+                vertices.Add(renderMin + new Vector3(0f, 0f, size));
+                vertices.Add(renderMin + new Vector3(size, 0f, size));
+                vertices.Add(renderMin + new Vector3(size, 0f, 0f));
+
+                triangles.Add(baseIndex);
+                triangles.Add(baseIndex + 1);
+                triangles.Add(baseIndex + 2);
+                triangles.Add(baseIndex);
+                triangles.Add(baseIndex + 2);
+                triangles.Add(baseIndex + 3);
+            }
+
+            _mesh.Clear();
+            _mesh.SetVertices(vertices);
+            _mesh.SetTriangles(triangles, 0);
+            _mesh.RecalculateNormals();
+            _mesh.RecalculateBounds();
+
+            if (_meshCollider != null)
+            {
+                // A MeshCollider only rebuilds its collision data when sharedMesh actually changes reference,
+                // so this re-assigns even though it's already set, to pick up every rebuilt geometry.
+                _meshCollider.sharedMesh = null;
+                _meshCollider.sharedMesh = _mesh;
+            }
         }
 
-        /// <summary>Opaque by design - no shader transparency setup to get wrong. Per-instance (not shared) so SetColor never bleeds across zones.</summary>
-        private static Material BuildMaterial()
+        /// <summary>Transparent so the ground, ponds and anything else underneath a zone's tint still show through - the standard URP script recipe for toggling a Lit/Unlit material's Surface Type to Transparent.</summary>
+        private static Material BuildTransparentMaterial()
         {
-            Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Texture");
+            Shader shader = Shader.Find("Universal Render Pipeline/Unlit") ?? Shader.Find("Unlit/Transparent");
             var material = new Material(shader) { name = "ZoneMaterial" };
-            material.mainTexture = GetSharedTexture();
+
+            if (material.HasProperty("_Surface"))
+            {
+                material.SetFloat("_Surface", 1f);
+                material.SetOverrideTag("RenderType", "Transparent");
+                material.SetInt("_SrcBlend", (int)BlendMode.SrcAlpha);
+                material.SetInt("_DstBlend", (int)BlendMode.OneMinusSrcAlpha);
+                material.SetInt("_ZWrite", 0);
+                material.DisableKeyword("_ALPHATEST_ON");
+                material.EnableKeyword("_SURFACE_TYPE_TRANSPARENT");
+                material.renderQueue = (int)RenderQueue.Transparent;
+            }
+
             return material;
-        }
-
-        private static Texture2D GetSharedTexture()
-        {
-            if (s_sharedTexture != null)
-            {
-                return s_sharedTexture;
-            }
-
-            const int size = 32;
-            const int borderThickness = 3;
-
-            var fill = new Color(0.72f, 0.72f, 0.72f);
-            var border = new Color(0.3f, 0.3f, 0.3f);
-
-            var texture = new Texture2D(size, size, TextureFormat.RGBA32, mipChain: false)
-            {
-                name = "ZoneTexture",
-                filterMode = FilterMode.Bilinear,
-                wrapMode = TextureWrapMode.Clamp
-            };
-
-            for (int y = 0; y < size; y++)
-            {
-                for (int x = 0; x < size; x++)
-                {
-                    bool onBorder = x < borderThickness || y < borderThickness || x >= size - borderThickness || y >= size - borderThickness;
-                    texture.SetPixel(x, y, onBorder ? border : fill);
-                }
-            }
-
-            texture.Apply();
-            s_sharedTexture = texture;
-            return texture;
         }
     }
 }

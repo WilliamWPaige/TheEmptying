@@ -48,6 +48,31 @@ namespace TheEmptying.Tests.EditMode.Modules
                 (PeopleModule)modules.First(m => m is PeopleModule));
         }
 
+        /// <summary>R18b: a simple rectangular blob of cells, for tests that just need a working zone of roughly this size - not testing zone shape itself.</summary>
+        private static HashSet<CellCoord> RectCells(MapModule map, double centerX, double centerZ, double sideA, double sideB)
+        {
+            double cellSize = map.CellSizeMeters;
+            CellCoord center = map.WorldToCell(centerX, centerZ);
+            int halfW = Math.Max(1, (int)Math.Round(sideA / cellSize / 2.0));
+            int halfD = Math.Max(1, (int)Math.Round(sideB / cellSize / 2.0));
+
+            var cells = new HashSet<CellCoord>();
+            for (int dx = -halfW; dx < halfW; dx++)
+            {
+                for (int dz = -halfD; dz < halfD; dz++)
+                {
+                    cells.Add(new CellCoord(center.X + dx, center.Z + dz));
+                }
+            }
+
+            return cells;
+        }
+
+        private static EntityId PlaceZone(ZonesModule zones, MapModule map, string zoneTypeId, double centerX, double centerZ, double sideA, double sideB)
+        {
+            return zones.CreateZone(zoneTypeId, zoneTypeId + " Zone", "#808080", RectCells(map, centerX, centerZ, sideA, sideB));
+        }
+
         /// <summary>Places the keep at the map center and spawns the starting group (Monarch and founders waiting inside, Commoners appearing outside) - the same sequence the founding popup's Yes triggers.</summary>
         private static EntityId FoundKingdom(MapModule map, BuildingsModule buildings, PeopleModule people)
         {
@@ -91,8 +116,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             // Well clear of the 12x12 keep at the map center, and large enough that pathfinding and wander-target picking both have plenty of room.
             double livingAreaCenterX = map.WorldWidthMeters * 0.5 + 40;
             double livingAreaCenterZ = map.WorldDepthMeters * 0.5;
-            EntityId? livingAreaId = zones.TryPlaceZone(ZonesModule.LivingAreaTypeId, new OrientedRect(livingAreaCenterX, livingAreaCenterZ, 20, 20, 0), out string reason);
-            Assert.IsNotNull(livingAreaId, reason);
+            EntityId livingAreaId = PlaceZone(zones, map, ZonesModule.LivingAreaTypeId, livingAreaCenterX, livingAreaCenterZ, 20, 20);
 
             RunUntilEveryoneHasLeftTheKeep(simulation, people);
 
@@ -101,15 +125,11 @@ namespace TheEmptying.Tests.EditMode.Modules
                 simulation.Step();
             }
 
-            Assert.IsTrue(zones.TryGetZone(livingAreaId.Value, out ZoneState livingArea));
-            OrientedRect rect = livingArea.Rect;
-            double cellSize = map.CellSizeMeters;
+            Assert.IsTrue(zones.TryGetZone(livingAreaId, out ZoneState livingArea));
 
             foreach (PersonState person in people.People.Select(r => r.Value))
             {
-                double cellCenterX = (person.ReservedCell.X + 0.5) * cellSize;
-                double cellCenterZ = (person.ReservedCell.Z + 0.5) * cellSize;
-                Assert.IsTrue(rect.Contains(cellCenterX, cellCenterZ), $"{person.Name}'s reserved cell {person.ReservedCell} is outside the Living Area.");
+                Assert.IsTrue(livingArea.Cells.Contains(person.ReservedCell), $"{person.Name}'s reserved cell {person.ReservedCell} is outside the Living Area.");
             }
         }
 
@@ -619,8 +639,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             FoundKingdom(map, buildings, people);
 
             // So foraging-for-the-stockpile is actually chosen as work, not just eating at a mound when hungry.
-            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 10, 10, 0), out string reason);
-            Assert.IsNotNull(stockpileId, reason);
+            PlaceZone(zones, map, ZonesModule.StockpileTypeId, centerX + 20, centerZ, 10, 10);
 
             Assert.IsTrue(simulation.Content.TryGet(BuiltInContentTypes.ResourceTypeName, "resource.grub_mound", out ContentEntry entry));
             var moundResource = (ResourceContent)entry.Definition;
@@ -688,17 +707,14 @@ namespace TheEmptying.Tests.EditMode.Modules
             FoundKingdom(map, buildings, people);
 
             // Several small, close and tightly capped stockpiles, so people deliver to and eat from all of them constantly - clear of the 12x12 keep at the map center.
-            var rects = new List<OrientedRect>();
+            var stockpiles = new List<ZoneState>();
             foreach ((double offsetX, double offsetZ) in new[] { (15.0, 0.0), (-15.0, 0.0), (0.0, 15.0) })
             {
-                EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + offsetX, centerZ + offsetZ, 8, 8, 0), out string reason);
-                Assert.IsNotNull(stockpileId, reason);
-                zones.SetKeepOnHandLimit(stockpileId.Value, "item.grub", 3);
-                Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
-                rects.Add(stockpile.Rect);
+                EntityId stockpileId = PlaceZone(zones, map, ZonesModule.StockpileTypeId, centerX + offsetX, centerZ + offsetZ, 8, 8);
+                zones.SetKeepOnHandLimit(stockpileId, "item.grub", 3);
+                Assert.IsTrue(zones.TryGetZone(stockpileId, out ZoneState stockpile));
+                stockpiles.Add(stockpile);
             }
-
-            double cellSize = map.CellSizeMeters;
 
             RunUntilEveryoneHasLeftTheKeep(simulation, people);
 
@@ -713,12 +729,9 @@ namespace TheEmptying.Tests.EditMode.Modules
                         continue;
                     }
 
-                    double worldX = (person.ReservedCell.X + 0.5) * cellSize;
-                    double worldZ = (person.ReservedCell.Z + 0.5) * cellSize;
-
-                    foreach (OrientedRect rect in rects)
+                    foreach (ZoneState stockpile in stockpiles)
                     {
-                        Assert.IsFalse(rect.Contains(worldX, worldZ), $"{person.Name} was idling inside a stockpile at tick {tick} (thought: '{person.CurrentAction.Thought}').");
+                        Assert.IsFalse(stockpile.Cells.Contains(person.ReservedCell), $"{person.Name} was idling inside a stockpile at tick {tick} (thought: '{person.CurrentAction.Thought}').");
                     }
                 }
             }
@@ -740,9 +753,8 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             double centerX = map.WorldWidthMeters * 0.5;
             double centerZ = map.WorldDepthMeters * 0.5;
-            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 15, centerZ, 8, 8, 0), out string reason);
-            Assert.IsNotNull(stockpileId, reason);
-            Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
+            EntityId stockpileId = PlaceZone(zones, map, ZonesModule.StockpileTypeId, centerX + 15, centerZ, 8, 8);
+            Assert.IsTrue(zones.TryGetZone(stockpileId, out ZoneState stockpile));
 
             EntityId firstId = people.People.First().Key;
             people.TryGetPerson(firstId, out PersonState person);
@@ -768,10 +780,7 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             Assert.AreEqual(ActionKind.Walk, loadedPerson.CurrentAction.Kind, "A single tick after load should already have started stepping them out.");
 
-            double cellSize = map.CellSizeMeters;
-            double worldX = (loadedPerson.ReservedCell.X + 0.5) * cellSize;
-            double worldZ = (loadedPerson.ReservedCell.Z + 0.5) * cellSize;
-            Assert.IsFalse(stockpile.Rect.Contains(worldX, worldZ), "The cell they're now walking toward must not be inside the stockpile.");
+            Assert.IsFalse(stockpile.Cells.Contains(loadedPerson.ReservedCell), "The cell they're now walking toward must not be inside the stockpile.");
         }
 
         /// <summary>R13b: goods never vanish - when a stockpile can't take everything being delivered, only what fit is removed from what's carried; the rest stays carried for the next trip.</summary>
@@ -790,11 +799,10 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             double centerX = map.WorldWidthMeters * 0.5;
             double centerZ = map.WorldDepthMeters * 0.5;
-            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason);
-            Assert.IsNotNull(stockpileId, reason);
-            zones.SetKeepOnHandLimit(stockpileId.Value, "item.grub", 2);
+            EntityId stockpileId = PlaceZone(zones, map, ZonesModule.StockpileTypeId, centerX + 20, centerZ, 8, 8);
+            zones.SetKeepOnHandLimit(stockpileId, "item.grub", 2);
 
-            Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
+            Assert.IsTrue(zones.TryGetZone(stockpileId, out ZoneState stockpile));
 
             EntityId firstId = people.People.First().Key;
             people.TryGetPerson(firstId, out PersonState person);
@@ -804,7 +812,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             person.AddCarried("item.grub", 10);
             person.ForagingItemId = "item.grub";
             person.Goal = PersonGoal.ForagingForStockpile;
-            person.ForagingDeliveryZoneId = stockpileId.Value;
+            person.ForagingDeliveryZoneId = stockpileId;
 
             // A Walk that's already "arrived" (TotalDistanceMeters 0), not an Idle one - R16's central stockpile-exit check would otherwise immediately walk them back out before this decision ever runs, since nobody's Idle action is ever allowed to stand inside a stockpile.
             long tick = simulation.Clock.CurrentTick;
@@ -818,7 +826,7 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             simulation.Step();
 
-            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId.Value, "item.grub");
+            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId, "item.grub");
             Assert.AreEqual(2, amountInStockpile, "Only the room actually available should have been added.");
             Assert.AreEqual(8, person.CarriedAmountOf("item.grub"), "The leftover that didn't fit must stay carried, not vanish.");
         }
@@ -863,9 +871,8 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             double centerX = map.WorldWidthMeters * 0.5;
             double centerZ = map.WorldDepthMeters * 0.5;
-            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason);
-            Assert.IsNotNull(stockpileId, reason);
-            Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
+            EntityId stockpileId = PlaceZone(zones, map, ZonesModule.StockpileTypeId, centerX + 20, centerZ, 8, 8);
+            Assert.IsTrue(zones.TryGetZone(stockpileId, out ZoneState stockpile));
 
             EntityId firstId = people.People.First().Key;
             people.TryGetPerson(firstId, out PersonState person);
@@ -877,7 +884,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             person.AddCarried("item.stick", 5);
             person.ForagingItemId = "item.stick";
             person.Goal = PersonGoal.ForagingForStockpile;
-            person.ForagingDeliveryZoneId = stockpileId.Value;
+            person.ForagingDeliveryZoneId = stockpileId;
 
             // A Walk that's already "arrived" (TotalDistanceMeters 0), not an Idle one - see the comment in DeliveringMoreThanAStockpileCanHold_KeepsTheLeftoverCarried.
             long tick = simulation.Clock.CurrentTick;
@@ -885,7 +892,7 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             simulation.Step();
 
-            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId.Value, "item.stick");
+            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId, "item.stick");
             Assert.AreEqual(5, amountInStockpile, "All 5 sticks should have fit and been accepted.");
             Assert.AreEqual(0, person.CarriedAmountOf("item.stick"), "Everything delivered should no longer be carried.");
             Assert.AreEqual(10, treasuryBefore - people.TreasuryTenthCopper, "5 sticks at 0.2 copper each must cost exactly 1 whole copper (10 tenth-copper), no more and no less.");
@@ -909,8 +916,7 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             double centerX = map.WorldWidthMeters * 0.5;
             double centerZ = map.WorldDepthMeters * 0.5;
-            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 20, centerZ, 8, 8, 0), out string reason);
-            Assert.IsNotNull(stockpileId, reason);
+            EntityId stockpileId = PlaceZone(zones, map, ZonesModule.StockpileTypeId, centerX + 20, centerZ, 8, 8);
 
             people.SetTreasuryTenthCopper(1);
 
@@ -924,14 +930,14 @@ namespace TheEmptying.Tests.EditMode.Modules
             person.AddCarried("item.stick", 5);
             person.ForagingItemId = "item.stick";
             person.Goal = PersonGoal.ForagingForStockpile;
-            person.ForagingDeliveryZoneId = stockpileId.Value;
+            person.ForagingDeliveryZoneId = stockpileId;
 
             long tick = simulation.Clock.CurrentTick;
             person.CurrentAction = new PersonAction { Kind = ActionKind.Idle, StartTick = tick, DurationTicks = 1, CurrentTickForProgress = tick };
 
             simulation.Step();
 
-            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId.Value, "item.stick");
+            (int amountInStockpile, _, _) = zones.GetStockpileItemInfo(stockpileId, "item.stick");
             Assert.AreEqual(0, amountInStockpile, "Nothing should have been accepted into the stockpile while the treasury can't pay for it.");
             Assert.AreEqual(0, person.CarriedAmountOf("item.stick"), "Goods that couldn't be sold were taken home, not left carried in limbo.");
             CollectionAssert.Contains(people.GetHomeStash(keepId).Keys, "item.stick", "Unpaid goods should be deposited at home instead.");
