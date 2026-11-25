@@ -55,21 +55,21 @@
             "id": "setting.map.trees_per_chunk",
             "label": "Trees per chunk",
             "valueType": "Integer",
-            "default": 20,
+            "default": 60,
             "minimum": 0,
             "maximum": 500,
             "category": "Map",
-            "description": "TEMPORARY placeholder (R6b), until the real map design exists. How many trees are randomly placed in a chunk when it's first created."
+            "description": "TEMPORARY placeholder (R6b), until the real map design exists. How many trees are randomly placed in a chunk when it's first created. R17: raised from 20 to 60 (3x), per design."
         },
         {
             "id": "setting.map.stones_per_chunk",
             "label": "Stones per chunk",
             "valueType": "Integer",
-            "default": 3,
+            "default": 5,
             "minimum": 0,
             "maximum": 500,
             "category": "Map",
-            "description": "TEMPORARY placeholder (R6b), until the real map design exists. How many stones are randomly placed in a chunk when it's first created."
+            "description": "TEMPORARY placeholder (R6b), until the real map design exists. How many stones are randomly placed in a chunk when it's first created. R17: raised from 3 to 5 (1.5x is 4.5, rounded up), per design."
         },
         {
             "id": "setting.map.grub_mounds_per_chunk",

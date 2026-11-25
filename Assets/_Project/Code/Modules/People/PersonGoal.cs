@@ -19,6 +19,9 @@ namespace TheEmptying.Modules.People
         ToppingUpHomeStash,
 
         /// <summary>Work, chosen while not hungry: dig at a mound up to carry amount or the target stockpile's room, walk there, drop off.</summary>
-        ForagingForStockpile
+        ForagingForStockpile,
+
+        /// <summary>R17: thirsty (below the drink threshold, or at zero): walking to and drinking at the nearest reachable non-dry pond, until full. Whichever of hunger and thirst is lower is served first.</summary>
+        SeekingWater
     }
 }

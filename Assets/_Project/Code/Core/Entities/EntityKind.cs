@@ -7,6 +7,9 @@ namespace TheEmptying.Core.Entities
         Item,
         Group,
         Site,
-        Zone
+        Zone,
+
+        /// <summary>R17: a pond - the only resource with mutable per-instance state (current drinks), so it's a real entity rather than a stateless map placement.</summary>
+        Pond
     }
 }

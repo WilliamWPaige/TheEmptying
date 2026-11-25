@@ -6,12 +6,14 @@ namespace TheEmptying.Modules.People
 {
     /// <summary>
     /// R10: A* over the cell grid, 8-directional, stepping around any cell
-    /// isWalkable rejects (trees, stones, grub mounds). Bounded to a
-    /// square box of maxDistanceMeters around the start, so a single
-    /// search can never run away over a big, mostly-empty map. Purely
-    /// deterministic - fixed step order, no dictionary-order dependence,
-    /// no randomness - so the same start, target and obstacles always
-    /// give the same path.
+    /// cellCost reports as blocked (double.PositiveInfinity - trees,
+    /// stones, grub mounds) and preferring to detour around any cell it
+    /// reports as merely costly (R17: pond water) when a reasonable
+    /// detour exists. Bounded to a square box of maxDistanceMeters around
+    /// the start, so a single search can never run away over a big,
+    /// mostly-empty map. Purely deterministic - fixed step order, no
+    /// dictionary-order dependence, no randomness - so the same start,
+    /// target and obstacles always give the same path.
     /// </summary>
     public static class CellPathFinder
     {
@@ -24,13 +26,18 @@ namespace TheEmptying.Modules.People
 
         /// <summary>
         /// Null if start and target are the same cell, or the target itself
-        /// isn't walkable. Otherwise the cells from (not including) start to
-        /// (including) target, or an empty list if the target is genuinely
-        /// unreachable within maxDistanceMeters.
+        /// is blocked (cellCost returns double.PositiveInfinity). Otherwise
+        /// the cells from (not including) start to (including) target, or
+        /// an empty list if the target is genuinely unreachable within
+        /// maxDistanceMeters. cellCost's return multiplies a step's own
+        /// distance cost - 1.0 is normal ground, anything higher (R17:
+        /// pond water) is wadeable but avoided when a same-length-ish
+        /// detour exists, since A* will always prefer the cheaper total
+        /// path.
         /// </summary>
-        public static List<CellCoord> FindPath(CellCoord start, CellCoord target, double maxDistanceMeters, double cellSizeMeters, Func<CellCoord, bool> isWalkable)
+        public static List<CellCoord> FindPath(CellCoord start, CellCoord target, double maxDistanceMeters, double cellSizeMeters, Func<CellCoord, double> cellCost)
         {
-            if (start == target || !isWalkable(target))
+            if (start == target || double.IsPositiveInfinity(cellCost(target)))
             {
                 return null;
             }
@@ -58,12 +65,18 @@ namespace TheEmptying.Modules.People
                 {
                     var neighbor = new CellCoord(current.X + dx, current.Z + dz);
 
-                    if (closed.Contains(neighbor) || OutOfRange(neighbor, start, maxCells) || !isWalkable(neighbor))
+                    if (closed.Contains(neighbor) || OutOfRange(neighbor, start, maxCells))
                     {
                         continue;
                     }
 
-                    double tentativeG = gScore[current] + cost;
+                    double neighborCost = cellCost(neighbor);
+                    if (double.IsPositiveInfinity(neighborCost))
+                    {
+                        continue;
+                    }
+
+                    double tentativeG = gScore[current] + cost * neighborCost;
                     if (gScore.TryGetValue(neighbor, out double existingG) && tentativeG >= existingG)
                     {
                         continue;

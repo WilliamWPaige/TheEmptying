@@ -24,6 +24,7 @@ namespace TheEmptying.Presentation.DevTools
             CheatSection people = registry.AddSection("People");
             people.AddButton("Spawn person at camera", SpawnAtCamera);
             people.AddButton("Remove selected person", RemoveSelected);
+            people.AddButton("Make everyone thirsty", _peopleModule.MakeEveryoneThirsty);
         }
 
         private void SpawnAtCamera()

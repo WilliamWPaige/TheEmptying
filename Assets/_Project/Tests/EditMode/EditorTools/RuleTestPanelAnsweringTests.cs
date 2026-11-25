@@ -45,9 +45,13 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                 ""type"": ""module_manifest"",
                 ""items"": [ { ""id"": ""module.zones"", ""version"": 1, ""dependencies"": [""module.map"", ""module.buildings""], ""enabled"": true } ]
             }");
+            source.WriteDataFile("ponds_manifest.json", @"{
+                ""type"": ""module_manifest"",
+                ""items"": [ { ""id"": ""module.ponds"", ""version"": 1, ""dependencies"": [""module.map""], ""enabled"": true } ]
+            }");
             source.WriteDataFile("people_manifest.json", @"{
                 ""type"": ""module_manifest"",
-                ""items"": [ { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map"", ""module.buildings"", ""module.zones""], ""enabled"": true } ]
+                ""items"": [ { ""id"": ""module.people"", ""version"": 1, ""dependencies"": [""module.map"", ""module.buildings"", ""module.zones"", ""module.ponds""], ""enabled"": true } ]
             }");
             source.WriteDataFile("discovery_manifest.json", @"{
                 ""type"": ""module_manifest"",

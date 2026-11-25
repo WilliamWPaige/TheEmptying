@@ -11,6 +11,7 @@ using TheEmptying.Core.Scheduling;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
+using TheEmptying.Modules.Ponds;
 using TheEmptying.Modules.Zones;
 
 namespace TheEmptying.Modules.People
@@ -138,6 +139,21 @@ namespace TheEmptying.Modules.People
         /// <summary>R13b: debug - logs each person's goal, chosen target (and why) and any failure reason every time they decide their next action. On by default in the Editor.</summary>
         public const string LogDecisionsSettingId = "setting.people.log_decisions";
 
+        /// <summary>R17: how many game days it takes a full person's thirst to drain to zero (TEMPORARY placeholder).</summary>
+        public const string ThirstDrainDaysSettingId = "setting.people.thirst_drain_days";
+
+        /// <summary>R17: below this thirst value, a person goes to drink at the next action boundary (TEMPORARY placeholder).</summary>
+        public const string ThirstDrinkThresholdSettingId = "setting.people.thirst_drink_threshold";
+
+        /// <summary>R17: how long drinking at a pond's edge takes, in game minutes (TEMPORARY placeholder).</summary>
+        public const string DrinkingDurationMinutesSettingId = "setting.people.drinking_duration_minutes";
+
+        /// <summary>R17: the "Make everyone thirsty" cheat sets every thirst meter to this value (TEMPORARY placeholder).</summary>
+        public const string MakeEveryoneThirstyMeterSettingId = "setting.people.make_everyone_thirsty_meter";
+
+        /// <summary>R17: owned by ponds_settings.json, not by the Ponds module - People reads it for pathfinding cost, the same way it reads setting.time.real_seconds_per_day.</summary>
+        public const string PondPathCostMultiplierSettingId = "setting.ponds.path_cost_multiplier";
+
         /// <summary>Owned by time_settings.json, not by any module - the same real-time-to-tick conversion the presentation layer's tick rate uses.</summary>
         private const string RealSecondsPerDaySettingId = "setting.time.real_seconds_per_day";
 
@@ -185,6 +201,15 @@ namespace TheEmptying.Modules.People
         /// <summary>R13: hunger's own maximum - a full person.</summary>
         private const double FullHunger = 100.0;
 
+        /// <summary>R17: thirst's own maximum - a fully-watered person.</summary>
+        private const double FullThirst = 100.0;
+
+        /// <summary>R17: the one resource kind thirst drinks from - not a setting, the design names ponds specifically.</summary>
+        private const string PondResourceId = "resource.pond";
+
+        /// <summary>R17: how many chunk-rings outward to search for the nearest reachable non-dry pond before giving up.</summary>
+        private const int PondSearchMaxChunkRadius = 8;
+
         /// <summary>Placeholder for "a few meters apart" - cells and meters are the same at the default 1 m cell size.</summary>
         private const int FounderSpacingCells = 3;
 
@@ -197,6 +222,7 @@ namespace TheEmptying.Modules.People
         private readonly MapModule _mapModule;
         private readonly BuildingsModule _buildingsModule;
         private readonly ZonesModule _zonesModule;
+        private readonly PondsModule _pondsModule;
         private EntityRegistry _entities;
         private SettingsRegistry _settings;
         private RandomService _randomService;
@@ -221,17 +247,18 @@ namespace TheEmptying.Modules.People
         /// <summary>R13b: where LogDecision sends its lines, set by the presentation layer; null (the default) means decisions are never logged, regardless of the setting.</summary>
         private Action<string> _decisionLogSink;
 
-        public PeopleModule(MapModule mapModule, BuildingsModule buildingsModule, ZonesModule zonesModule)
+        public PeopleModule(MapModule mapModule, BuildingsModule buildingsModule, ZonesModule zonesModule, PondsModule pondsModule)
         {
             _mapModule = mapModule ?? throw new ArgumentNullException(nameof(mapModule));
             _buildingsModule = buildingsModule ?? throw new ArgumentNullException(nameof(buildingsModule));
             _zonesModule = zonesModule ?? throw new ArgumentNullException(nameof(zonesModule));
+            _pondsModule = pondsModule ?? throw new ArgumentNullException(nameof(pondsModule));
         }
 
         public string Id => ModuleId;
         public int Version => 1;
-        public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId, ZonesModule.ModuleId };
-        public int SectionVersion => 7;
+        public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId, ZonesModule.ModuleId, PondsModule.ModuleId };
+        public int SectionVersion => 8;
 
         /// <summary>Every current person's Id and state, in ascending entity index order.</summary>
         public IEnumerable<KeyValuePair<EntityId, PersonState>> People => _people.Rows();
@@ -330,12 +357,27 @@ namespace TheEmptying.Modules.People
                 case ActionKind.InsideBuilding: return "action.inside_building";
                 case ActionKind.Eating: return "action.eating";
                 case ActionKind.Digging: return "action.digging";
+                case ActionKind.Gathering: return "action.gathering";
+                case ActionKind.Drinking: return "action.drinking";
                 default: return "action.unknown";
             }
         }
 
         /// <summary>R13: the live hunger-eat-threshold value, for the info window's hunger bar color.</summary>
         public double HungerEatThreshold => _settings.Get(HungerEatThresholdSettingId);
+
+        /// <summary>R17: the live thirst-drink-threshold value, for the info window's thirst bar color.</summary>
+        public double ThirstDrinkThreshold => _settings.Get(ThirstDrinkThresholdSettingId);
+
+        /// <summary>R17: the "Make everyone thirsty" cheat - sets every current person's thirst to the placeholder value, immediately.</summary>
+        public void MakeEveryoneThirsty()
+        {
+            double meter = _settings.Get(MakeEveryoneThirstyMeterSettingId);
+            foreach (KeyValuePair<EntityId, PersonState> row in _people.Rows())
+            {
+                row.Value.Thirst = meter;
+            }
+        }
 
         /// <summary>R15: the crown treasury's current balance, in tenths of a copper - for the HUD.</summary>
         public int TreasuryTenthCopper => _treasuryTenthCopper;
@@ -759,6 +801,24 @@ namespace TheEmptying.Modules.People
             return _mapModule.IsCellFree(cell) && !_buildingsModule.IsCellBlocked(cell);
         }
 
+        /// <summary>
+        /// R17: the one thing every pathfinding call passes to CellPathFinder
+        /// - double.PositiveInfinity for a blocked cell, PondPathCostMultiplierSettingId
+        /// (placeholder 10x) for a pond's water, 1.0 for ordinary ground.
+        /// Nobody drowns wading through a pond; it's just avoided when a
+        /// reasonable detour exists, since A* always prefers the cheaper
+        /// total path.
+        /// </summary>
+        private double CellTraversalCost(CellCoord cell)
+        {
+            if (!IsWalkable(cell))
+            {
+                return double.PositiveInfinity;
+            }
+
+            return _pondsModule.TryGetPondAt(cell, out PondState _) ? _settings.Get(PondPathCostMultiplierSettingId) : 1.0;
+        }
+
         /// <summary>How many meters a Walk action covers in one tick at 1x - a tick is always the same slice of in-game time, so running more ticks per real second (2x, 3x) is the entire "scaled by game speed" effect; this value itself never changes with speed.</summary>
         private double ComputeMetersPerTick()
         {
@@ -873,10 +933,15 @@ namespace TheEmptying.Modules.People
             if (action.Kind != ActionKind.InsideBuilding)
             {
                 ApplyHungerDrain(person);
+                ApplyThirstDrain(person);
             }
 
-            bool alreadySeekingFood = person.Goal == PersonGoal.SeekingFood || person.Goal == PersonGoal.ToppingUpHomeStash;
-            if (person.Hunger <= 0.0 && action.Kind != ActionKind.InsideBuilding && !alreadySeekingFood)
+            bool currentGoalIsFood = person.Goal == PersonGoal.SeekingFood || person.Goal == PersonGoal.ToppingUpHomeStash;
+            bool currentGoalIsWater = person.Goal == PersonGoal.SeekingWater;
+            bool hungerCritical = person.Hunger <= 0.0 && !currentGoalIsFood;
+            bool thirstCritical = person.Thirst <= 0.0 && !currentGoalIsWater;
+
+            if ((hungerCritical || thirstCritical) && action.Kind != ActionKind.InsideBuilding)
             {
                 long interruptedDuration = tick - action.StartTick;
                 PushHistory(person, new PersonActionHistoryEntry(action.Kind, action.Thought, action.StartTick, interruptedDuration));
@@ -1035,7 +1100,7 @@ namespace TheEmptying.Modules.People
                     continue;
                 }
 
-                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Value, maxDistanceMeters, cellSize, IsWalkable);
+                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Value, maxDistanceMeters, cellSize, CellTraversalCost);
                 if (path != null && path.Count > 0)
                 {
                     return candidate;
@@ -1132,6 +1197,19 @@ namespace TheEmptying.Modules.People
 
             double drainPerTick = FullHunger / (drainDays * CalendarConstants.TicksPerDay);
             person.Hunger = Math.Max(0.0, person.Hunger - drainPerTick);
+        }
+
+        /// <summary>R17: thirst drains exactly like hunger, just on its own setting and over its own (shorter) placeholder span.</summary>
+        private void ApplyThirstDrain(PersonState person)
+        {
+            double drainDays = _settings.Get(ThirstDrainDaysSettingId);
+            if (drainDays <= 0)
+            {
+                return;
+            }
+
+            double drainPerTick = FullThirst / (drainDays * CalendarConstants.TicksPerDay);
+            person.Thirst = Math.Max(0.0, person.Thirst - drainPerTick);
         }
 
         private void GrantExperienceIfApplicable(PersonState person, PersonAction action, long durationTicks, long tick)
@@ -1260,8 +1338,26 @@ namespace TheEmptying.Modules.People
                         person.AddCarried(action.BonusItemId, 1);
                     }
                 }
+
+                return;
+            }
+
+            if (action.Kind == ActionKind.Drinking)
+            {
+                PostResourceHarvested(PondResourceId);
+
+                if (person.TargetPondId.HasValue)
+                {
+                    _pondsModule.Drink(person.TargetPondId.Value);
+                }
+
+                person.Thirst = FullThirst;
+                person.TargetPondId = null;
             }
         }
+
+        /// <summary>R17: "whichever meter is lower first" - a tie (equal) favors food, same as always checking hunger first elsewhere in this file.</summary>
+        private static PersonGoal LowerMeterGoal(double hunger, double thirst) => hunger <= thirst ? PersonGoal.SeekingFood : PersonGoal.SeekingWater;
 
         /// <summary>
         /// R13: re-decided from scratch every time an action ends (or
@@ -1272,17 +1368,42 @@ namespace TheEmptying.Modules.People
         private void DecideNextAction(EntityId id, PersonState person, long tick)
         {
             double eatThreshold = _settings.Get(HungerEatThresholdSettingId);
-            bool alreadySeekingFood = person.Goal == PersonGoal.SeekingFood || person.Goal == PersonGoal.ToppingUpHomeStash;
+            double drinkThreshold = _settings.Get(ThirstDrinkThresholdSettingId);
 
-            if (!alreadySeekingFood && person.Hunger < eatThreshold)
+            bool currentGoalIsFood = person.Goal == PersonGoal.SeekingFood || person.Goal == PersonGoal.ToppingUpHomeStash;
+            bool currentGoalIsWater = person.Goal == PersonGoal.SeekingWater;
+
+            // Whichever meter is lower is served first - but a goal already under way keeps going (no thrashing) unless the OTHER need has become critical (0), which drops everything, the same as hunger at 0.
+            bool hungerIsCritical = person.Hunger <= 0.0 && !currentGoalIsFood;
+            bool thirstIsCritical = person.Thirst <= 0.0 && !currentGoalIsWater;
+
+            if (hungerIsCritical || thirstIsCritical)
             {
-                person.Goal = PersonGoal.SeekingFood;
+                person.Goal = hungerIsCritical && thirstIsCritical
+                    ? LowerMeterGoal(person.Hunger, person.Thirst)
+                    : hungerIsCritical ? PersonGoal.SeekingFood : PersonGoal.SeekingWater;
+            }
+            else if (!currentGoalIsFood && !currentGoalIsWater)
+            {
+                bool hungry = person.Hunger < eatThreshold;
+                bool thirsty = person.Thirst < drinkThreshold;
+
+                if (hungry || thirsty)
+                {
+                    person.Goal = hungry && thirsty
+                        ? LowerMeterGoal(person.Hunger, person.Thirst)
+                        : hungry ? PersonGoal.SeekingFood : PersonGoal.SeekingWater;
+                }
             }
 
             switch (person.Goal)
             {
                 case PersonGoal.SeekingFood:
                     DecideSeekingFood(id, person, tick);
+                    return;
+
+                case PersonGoal.SeekingWater:
+                    DecideSeekingWater(id, person, tick);
                     return;
 
                 case PersonGoal.ToppingUpHomeStash:
@@ -1430,6 +1551,45 @@ namespace TheEmptying.Modules.People
                     ? (starving ? "Starving - digging up anything to eat." : "Off to dig up something to eat.")
                     : (starving ? "Starving - rushing to the stockpile." : "Off to the stockpile to find something to eat.");
             LogDecision(person, $"heading to {(isHome ? "home" : isMound ? "a mound" : "a stockpile")} ({approachCell}) to eat - {thought}");
+            StartWalk(id, person, approachCell, thought, tick);
+        }
+
+        /// <summary>R17: no carrying water and no home/stockpile source - the whole trip is just "walk to a free edge cell next to a non-dry pond, then drink," mirroring DecideSeekingFood without the home/stockpile/mound branches it doesn't need.</summary>
+        private void DecideSeekingWater(EntityId id, PersonState person, long tick)
+        {
+            if (person.Thirst >= FullThirst)
+            {
+                LogDecision(person, "no longer thirsty - back to whatever comes next.");
+                person.Goal = PersonGoal.None;
+                person.TargetPondId = null;
+                DecideNextAction(id, person, tick);
+                return;
+            }
+
+            CellCoord currentCell = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
+
+            if (person.TargetPondId.HasValue && _pondsModule.TryGetPond(person.TargetPondId.Value, out PondState targetPond) &&
+                targetPond.DrinksCurrent > 0 && IsAdjacentToPondWater(currentCell, targetPond))
+            {
+                LogDecision(person, "drinking.");
+                StartDrinkingAction(id, person, tick, "Drinking.");
+                return;
+            }
+
+            double maxDistanceMeters = _settings.Get(PathfindingMaxDistanceMetersSettingId);
+            if (!TryFindNearestReachablePond(id, currentCell, maxDistanceMeters, out EntityId pondId, out CellCoord approachCell))
+            {
+                LogDecision(person, "thirsty, but no free pond right now - waiting for a spot to free up.");
+                person.TargetPondId = null;
+                StartWaitingForSpot(id, person, tick);
+                return;
+            }
+
+            person.TargetPondId = pondId;
+
+            bool parched = person.Thirst <= 0.0;
+            string thought = parched ? "Parched - rushing to drink." : "Thirsty, going to drink.";
+            LogDecision(person, $"heading to {approachCell} to drink - {thought}");
             StartWalk(id, person, approachCell, thought, tick);
         }
 
@@ -1762,7 +1922,7 @@ namespace TheEmptying.Modules.People
 
             foreach (var candidate in candidates.OrderBy(c => c.DistanceSq))
             {
-                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Approach, maxDistanceMeters, cellSize, IsWalkable);
+                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Approach, maxDistanceMeters, cellSize, CellTraversalCost);
                 if (path == null)
                 {
                     continue;
@@ -1801,7 +1961,7 @@ namespace TheEmptying.Modules.People
                     continue;
                 }
 
-                List<CellCoord> path = CellPathFinder.FindPath(startCell, cell.Value, maxDistanceMeters, cellSize, IsWalkable);
+                List<CellCoord> path = CellPathFinder.FindPath(startCell, cell.Value, maxDistanceMeters, cellSize, CellTraversalCost);
                 if (path == null)
                 {
                     continue;
@@ -1860,7 +2020,7 @@ namespace TheEmptying.Modules.People
 
             foreach (var candidate in candidates.OrderBy(c => c.DistanceSq))
             {
-                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Approach, maxDistanceMeters, cellSize, IsWalkable);
+                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Approach, maxDistanceMeters, cellSize, CellTraversalCost);
                 if (path == null)
                 {
                     continue;
@@ -1922,6 +2082,113 @@ namespace TheEmptying.Modules.People
             }
 
             return false;
+        }
+
+        /// <summary>R17: standing right next to (not in) a pond's water - the "edge cell" a person drinks from.</summary>
+        private bool IsAdjacentToPondWater(CellCoord cell, PondState pond)
+        {
+            double cellSize = _mapModule.CellSizeMeters;
+            foreach (CellCoord neighbor in Neighbors8(cell))
+            {
+                double worldX = (neighbor.X + 0.5) * cellSize;
+                double worldZ = (neighbor.Z + 0.5) * cellSize;
+                if (Distance(worldX, worldZ, pond.CenterX, pond.CenterZ) <= pond.RadiusMeters)
+                {
+                    return true;
+                }
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// The nearest non-dry pond with a free edge cell this person
+        /// could reserve - no crowding cap (R17: "no limit on drinkers at
+        /// once"), so unlike mounds, any free, non-water cell within one
+        /// step of the water works. Same chunk-ring expansion as
+        /// TryFindNearestReachableMound.
+        /// </summary>
+        private bool TryFindNearestReachablePond(EntityId selfId, CellCoord startCell, double maxDistanceMeters, out EntityId pondId, out CellCoord approachCell)
+        {
+            pondId = default;
+            approachCell = default;
+            ChunkCoord startChunk = _mapModule.CellToChunk(startCell);
+            double cellSize = _mapModule.CellSizeMeters;
+
+            var candidates = new List<(double DistanceSq, EntityId PondId, CellCoord Approach)>();
+
+            for (int radius = 0; radius <= PondSearchMaxChunkRadius; radius++)
+            {
+                foreach (ChunkCoord chunkCoord in ChunkRing(startChunk, radius))
+                {
+                    foreach (EntityId candidatePondId in _pondsModule.GetOrCreatePondsForChunk(chunkCoord))
+                    {
+                        if (!_pondsModule.TryGetPond(candidatePondId, out PondState pond) || pond.DrinksCurrent <= 0)
+                        {
+                            continue;
+                        }
+
+                        CellCoord? approach = TryFindFreeEdgeCell(pond, selfId);
+                        if (!approach.HasValue)
+                        {
+                            continue;
+                        }
+
+                        double worldX = (approach.Value.X + 0.5) * cellSize;
+                        double worldZ = (approach.Value.Z + 0.5) * cellSize;
+                        double startWorldX = (startCell.X + 0.5) * cellSize;
+                        double startWorldZ = (startCell.Z + 0.5) * cellSize;
+                        candidates.Add((DistanceSquared(startWorldX, startWorldZ, worldX, worldZ), candidatePondId, approach.Value));
+                    }
+                }
+            }
+
+            foreach (var candidate in candidates.OrderBy(c => c.DistanceSq))
+            {
+                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Approach, maxDistanceMeters, cellSize, CellTraversalCost);
+                if (path == null)
+                {
+                    continue;
+                }
+
+                pondId = candidate.PondId;
+                approachCell = candidate.Approach;
+                return true;
+            }
+
+            return false;
+        }
+
+        /// <summary>A free (not reserved by someone else), walkable, non-water cell just outside this pond's edge - null if none is free anywhere around it. No cap on how many people may each hold a different edge cell.</summary>
+        private CellCoord? TryFindFreeEdgeCell(PondState pond, EntityId selfId)
+        {
+            double cellSize = _mapModule.CellSizeMeters;
+            int radiusCells = (int)Math.Ceiling(pond.RadiusMeters / cellSize) + 1;
+            CellCoord center = _mapModule.WorldToCell(pond.CenterX, pond.CenterZ);
+
+            for (int dx = -radiusCells; dx <= radiusCells; dx++)
+            {
+                for (int dz = -radiusCells; dz <= radiusCells; dz++)
+                {
+                    var candidate = new CellCoord(center.X + dx, center.Z + dz);
+                    double worldX = (candidate.X + 0.5) * cellSize;
+                    double worldZ = (candidate.Z + 0.5) * cellSize;
+                    double distance = Distance(worldX, worldZ, pond.CenterX, pond.CenterZ);
+
+                    // Outside the water itself, but with a neighbor inside it - the exact same test DecideSeekingWater uses to confirm someone has actually arrived.
+                    if (distance <= pond.RadiusMeters || !IsAdjacentToPondWater(candidate, pond))
+                    {
+                        continue;
+                    }
+
+                    if (IsCellFreeForPerson(candidate, selfId))
+                    {
+                        return candidate;
+                    }
+                }
+            }
+
+            return null;
         }
 
         private bool IsAtHome(PersonState person, CellCoord currentCell)
@@ -1996,6 +2263,24 @@ namespace TheEmptying.Modules.People
             };
 
             PostActionPerformed(ActionKind.Eating);
+        }
+
+        /// <summary>R17: drinking at a pond's edge - a short, fixed-duration action, exactly like StartEatingAction.</summary>
+        private void StartDrinkingAction(EntityId id, PersonState person, long tick, string thought)
+        {
+            double minutes = _settings.Get(DrinkingDurationMinutesSettingId);
+            long durationTicks = Math.Max(1, (long)Math.Round(minutes * CalendarConstants.TicksPerMinute));
+
+            person.CurrentAction = new PersonAction
+            {
+                Kind = ActionKind.Drinking,
+                Thought = thought,
+                StartTick = tick,
+                DurationTicks = durationTicks,
+                CurrentTickForProgress = tick
+            };
+
+            PostActionPerformed(ActionKind.Drinking);
         }
 
         private void StartDiggingAction(EntityId id, PersonState person, long tick, string thought)
@@ -2311,7 +2596,7 @@ namespace TheEmptying.Modules.People
 
             foreach (var candidate in candidates.OrderBy(c => c.DistanceSq))
             {
-                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Approach, maxDistanceMeters, cellSize, IsWalkable);
+                List<CellCoord> path = CellPathFinder.FindPath(startCell, candidate.Approach, maxDistanceMeters, cellSize, CellTraversalCost);
                 if (path == null)
                 {
                     continue;
@@ -2412,7 +2697,7 @@ namespace TheEmptying.Modules.People
             double maxDistanceMeters = _settings.Get(PathfindingMaxDistanceMetersSettingId);
             double cellSize = _mapModule.CellSizeMeters;
 
-            List<CellCoord> path = CellPathFinder.FindPath(startCell, targetCell, maxDistanceMeters, cellSize, IsWalkable);
+            List<CellCoord> path = CellPathFinder.FindPath(startCell, targetCell, maxDistanceMeters, cellSize, CellTraversalCost);
             if (path == null || path.Count == 0)
             {
                 LogDecision(person, $"walk to {targetCell} failed - no path within range.");
@@ -2520,6 +2805,7 @@ namespace TheEmptying.Modules.People
                 WriteNotes(writer, state.Notes);
 
                 writer.WriteDouble(state.Hunger);
+                writer.WriteDouble(state.Thirst);
                 WriteStringIntMap(writer, state.CarriedItems);
                 writer.WriteString(state.ForagingItemId);
                 writer.WriteBool(state.EatingFromCarried);
@@ -2530,6 +2816,7 @@ namespace TheEmptying.Modules.People
                 writer.WriteEntityId(state.ForagingDeliveryZoneId ?? EntityId.None);
                 writer.WriteBool(state.TargetIsHome);
                 writer.WriteBool(state.TargetIsMound);
+                writer.WriteEntityId(state.TargetPondId ?? EntityId.None);
                 writer.WriteBool(state.LastAteFromMound);
                 writer.WriteStringList(state.LikedSkillIds);
                 writer.WriteStringList(state.DislikedSkillIds);
@@ -2574,6 +2861,7 @@ namespace TheEmptying.Modules.People
                 ReadNotes(reader, state.Notes);
 
                 state.Hunger = reader.ReadDouble();
+                state.Thirst = reader.ReadDouble();
                 foreach (KeyValuePair<string, int> carried in ReadStringIntMap(reader))
                 {
                     state.CarriedItems[carried.Key] = carried.Value;
@@ -2591,6 +2879,8 @@ namespace TheEmptying.Modules.People
                 state.ForagingDeliveryZoneId = foragingDeliveryZoneRaw.IsNone ? (EntityId?)null : foragingDeliveryZoneRaw;
                 state.TargetIsHome = reader.ReadBool();
                 state.TargetIsMound = reader.ReadBool();
+                EntityId targetPondRaw = reader.ReadEntityId();
+                state.TargetPondId = targetPondRaw.IsNone ? (EntityId?)null : targetPondRaw;
                 state.LastAteFromMound = reader.ReadBool();
                 state.LikedSkillIds.AddRange(reader.ReadStringList());
                 state.DislikedSkillIds.AddRange(reader.ReadStringList());

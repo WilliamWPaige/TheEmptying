@@ -1,6 +1,6 @@
 {
     "type": "module_manifest",
     "items": [
-        { "id": "module.people", "version": 1, "dependencies": ["module.map", "module.buildings", "module.zones"], "enabled": true }
+        { "id": "module.people", "version": 1, "dependencies": ["module.map", "module.buildings", "module.zones", "module.ponds"], "enabled": true }
     ]
 }

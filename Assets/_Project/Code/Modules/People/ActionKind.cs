@@ -21,6 +21,9 @@ namespace TheEmptying.Modules.People
         Digging,
 
         /// <summary>R15: gathering a stick or rock (and maybe a bonus flint) from the ground near a tree or stone deposit - duration is the resource's gather time blended by skill (DurationTicks, like Digging). Grants experience in SkillId.</summary>
-        Gathering
+        Gathering,
+
+        /// <summary>R17: drinking at a pond's edge - a short, fixed-duration action (DurationTicks, like Eating). Fills thirst to full and takes 1 drink from the pond.</summary>
+        Drinking
     }
 }

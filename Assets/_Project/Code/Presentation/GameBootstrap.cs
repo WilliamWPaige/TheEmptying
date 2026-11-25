@@ -15,6 +15,7 @@ using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Discovery;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Ponds;
 using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation.Buildings;
 using TheEmptying.Presentation.Content;
@@ -99,6 +100,8 @@ namespace TheEmptying.Presentation
         private ZonesModule _zonesModule;
         private ZonePresenter _zonePresenter;
         private ZoneDrawingPresenter _zoneDrawing;
+        private PondsModule _pondsModule;
+        private PondsPresenter _pondsPresenter;
         private DiscoveryModule _discoveryModule;
         private DiscoveriesWindowPresenter _discoveriesWindow;
         private Button _zonesButton;
@@ -355,6 +358,7 @@ namespace TheEmptying.Presentation
             _mapModule = modules.OfType<MapModule>().First();
             _buildingsModule = modules.OfType<BuildingsModule>().First();
             _zonesModule = modules.OfType<ZonesModule>().First();
+            _pondsModule = modules.OfType<PondsModule>().First();
             _peopleModule = modules.OfType<PeopleModule>().First();
             _discoveryModule = modules.OfType<DiscoveryModule>().First();
             WireUpPersonDecisionLog();
@@ -462,6 +466,9 @@ namespace TheEmptying.Presentation
             _personPresenter = gameObject.AddComponent<PersonPresenter>();
             _personPresenter.Initialize(_peopleModule, _mapModule, _floatingOrigin, _worldMapView);
 
+            _pondsPresenter = gameObject.AddComponent<PondsPresenter>();
+            _pondsPresenter.Initialize(_pondsModule, _mapModule, _simulation.Settings, _floatingOrigin, _cameraController);
+
             _buildingPresenter = gameObject.AddComponent<BuildingPresenter>();
             _buildingPresenter.Initialize(_floatingOrigin);
 
@@ -486,6 +493,7 @@ namespace TheEmptying.Presentation
                 _mapModule,
                 _buildingsModule,
                 _zonesModule,
+                _pondsModule,
                 _simulation.Content,
                 _floatingOrigin,
                 _cameraController,
@@ -493,6 +501,7 @@ namespace TheEmptying.Presentation
                 _buildingPresenter,
                 _zonePresenter,
                 _worldMapView.Decorations,
+                _pondsPresenter,
                 camera,
                 _uiDocument.rootVisualElement);
             _worldSelection.ZoneDrawingTool = _zoneDrawing;
@@ -567,6 +576,7 @@ namespace TheEmptying.Presentation
             new StockpileCheat(_zonesModule, _worldSelection, _simulation.Content, ShowToast).BuildSections(_cheatMenu);
             new DiscoveryCheat(_discoveryModule).BuildSections(_cheatMenu);
             new TreasuryCheat(_peopleModule).BuildSections(_cheatMenu);
+            new ResourceCheat(_pondsModule, _worldSelection, ShowToast).BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()
@@ -663,6 +673,7 @@ namespace TheEmptying.Presentation
             {
                 var maxExclusive = new CellCoord(keep.MinCell.X + keep.FootprintWidth, keep.MinCell.Z + keep.FootprintDepth);
                 _mapModule.RemovePlacementsOverlapping(keep.MinCell, maxExclusive);
+                _pondsModule.RemovePondsOverlapping(keep.MinCell, maxExclusive);
             }
 
             _peopleModule.SpawnFoundersInside(keepId);
@@ -1230,6 +1241,7 @@ namespace TheEmptying.Presentation
                 _mapModule = modules.OfType<MapModule>().First();
                 _buildingsModule = modules.OfType<BuildingsModule>().First();
                 _zonesModule = modules.OfType<ZonesModule>().First();
+                _pondsModule = modules.OfType<PondsModule>().First();
                 _peopleModule = modules.OfType<PeopleModule>().First();
                 if (_discoveryModule != null)
                 {
@@ -1244,10 +1256,11 @@ namespace TheEmptying.Presentation
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
                 _worldMapView?.Rebind(_mapModule, _simulation.Settings);
                 _personPresenter?.Rebind(_peopleModule, _mapModule);
+                _pondsPresenter?.Rebind(_pondsModule, _mapModule, _simulation.Settings);
                 _zonePresenter?.Rebind(_simulation.Content);
                 _zonePresenter?.Rebuild(_zonesModule);
                 _zoneDrawing?.Rebind(_zonesModule, _simulation.Content);
-                _worldSelection?.Rebind(_peopleModule, _mapModule, _buildingsModule, _zonesModule, _simulation.Content);
+                _worldSelection?.Rebind(_peopleModule, _mapModule, _buildingsModule, _zonesModule, _pondsModule, _simulation.Content);
                 _buildingPresenter?.Rebuild(_buildingsModule);
                 ShowSiteMarkerIfNotFounded();
                 BuildCheatMenu();

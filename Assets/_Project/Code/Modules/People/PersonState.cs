@@ -50,6 +50,9 @@ namespace TheEmptying.Modules.People
         /// <summary>R13: 100 = full, 0 = starving. Drains every tick; restored by eating.</summary>
         public double Hunger { get; set; } = 100.0;
 
+        /// <summary>R17: 100 = full, 0 = parched. Drains every tick; restored by drinking.</summary>
+        public double Thirst { get; set; } = 100.0;
+
         /// <summary>R13: items currently carried (foraged for the stockpile, extra grubs on the way home, or an incidental bonus pickup like flint while gathering rock), by item content Id; empty when carrying nothing. R15 generalized this from a single item+amount pair, since one gathering trip can yield a bonus item alongside the primary good.</summary>
         public Dictionary<string, int> CarriedItems { get; } = new Dictionary<string, int>();
 
@@ -115,6 +118,9 @@ namespace TheEmptying.Modules.People
 
         /// <summary>R13: true if the most recent meal (while SeekingFood) was dug at a mound - decides whether becoming full leads into ToppingUpHomeStash.</summary>
         public bool LastAteFromMound { get; set; }
+
+        /// <summary>R17: the pond currently being walked to/drunk from, while SeekingWater; null otherwise. Ponds are real entities (unlike grub mounds), so a specific one can be tracked directly rather than re-searched each time.</summary>
+        public EntityId? TargetPondId { get; set; }
 
         /// <summary>R13: skills this person likes doing - rolled once at creation from the world seed. Never overlaps DislikedSkillIds.</summary>
         public List<string> LikedSkillIds { get; } = new List<string>();

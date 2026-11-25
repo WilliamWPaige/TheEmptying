@@ -3,6 +3,7 @@ using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Discovery;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Ponds;
 using TheEmptying.Modules.Zones;
 
 namespace TheEmptying.Presentation
@@ -21,7 +22,8 @@ namespace TheEmptying.Presentation
             var map = new MapModule();
             var buildings = new BuildingsModule(map);
             var zones = new ZonesModule(map, buildings);
-            return new IModule[] { map, buildings, zones, new PeopleModule(map, buildings, zones), new DiscoveryModule() };
+            var ponds = new PondsModule(map);
+            return new IModule[] { map, buildings, zones, ponds, new PeopleModule(map, buildings, zones, ponds), new DiscoveryModule() };
         }
     }
 }

@@ -5,7 +5,8 @@
         "TheEmptying.Core",
         "TheEmptying.Modules.Map",
         "TheEmptying.Modules.Buildings",
-        "TheEmptying.Modules.Zones"
+        "TheEmptying.Modules.Zones",
+        "TheEmptying.Modules.Ponds"
     ],
     "includePlatforms": [],
     "excludePlatforms": [],

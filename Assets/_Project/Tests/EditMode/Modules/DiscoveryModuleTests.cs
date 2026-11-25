@@ -136,14 +136,14 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         [Test]
-        public void RealContent_HasExactlyTheSixActionKinds()
+        public void RealContent_HasExactlyTheSevenActionKinds()
         {
             using var core = new TempCoreContentCopy();
             IModule[] modules = ModuleCatalog.CreateModules();
             (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
 
             CollectionAssert.AreEquivalent(
-                new[] { "action.idle", "action.walk", "action.inside_building", "action.eating", "action.digging", "action.gathering" },
+                new[] { "action.idle", "action.walk", "action.inside_building", "action.eating", "action.digging", "action.gathering", "action.drinking" },
                 simulation.Content.ListByType(BuiltInContentTypes.ActionDefinitionTypeName).Select(e => e.Definition.Id));
         }
 

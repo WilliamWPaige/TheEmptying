@@ -64,6 +64,7 @@ namespace TheEmptying.Presentation.Selection
             }
 
             BuildHungerSection(container, person);
+            BuildThirstSection(container, person);
             BuildActionSection(container, person);
             BuildCarryingAndStashSection(container, person);
             BuildWalletSection(container, person);
@@ -114,6 +115,31 @@ namespace TheEmptying.Presentation.Selection
             });
             container.Add(outer);
             container.Add(new Label($"{person.Hunger:0} / 100") { style = { color = new Color(0.8f, 0.8f, 0.8f), marginLeft = 8, marginBottom = 10 } });
+        }
+
+        /// <summary>R17: 100 (full) to 0 (parched), the same bar as Hunger - green while watered, red once below the drink threshold.</summary>
+        private void BuildThirstSection(VisualElement container, PersonState person)
+        {
+            container.Add(SectionHeading("Thirst"));
+
+            double fraction = System.Math.Clamp(person.Thirst / 100.0, 0.0, 1.0);
+            bool thirsty = person.Thirst < _peopleModule.ThirstDrinkThreshold;
+
+            var outer = new VisualElement
+            {
+                style = { height = 10, marginLeft = 8, marginBottom = 4, backgroundColor = new Color(1f, 1f, 1f, 0.15f) }
+            };
+            outer.Add(new VisualElement
+            {
+                style =
+                {
+                    height = 10,
+                    width = Length.Percent((float)(fraction * 100.0)),
+                    backgroundColor = thirsty ? new Color(0.85f, 0.25f, 0.25f) : new Color(0.3f, 0.6f, 0.85f)
+                }
+            });
+            container.Add(outer);
+            container.Add(new Label($"{person.Thirst:0} / 100") { style = { color = new Color(0.8f, 0.8f, 0.8f), marginLeft = 8, marginBottom = 10 } });
         }
 
         /// <summary>R13: what they're currently carrying (foraged for the stockpile, or an incidental bonus pickup like flint), and what's in their home stash.</summary>
@@ -325,6 +351,7 @@ namespace TheEmptying.Presentation.Selection
                 case ActionKind.Eating: return "Eating";
                 case ActionKind.Digging: return "Digging";
                 case ActionKind.Gathering: return "Gathering";
+                case ActionKind.Drinking: return "Drinking";
                 default: return "Idle";
             }
         }

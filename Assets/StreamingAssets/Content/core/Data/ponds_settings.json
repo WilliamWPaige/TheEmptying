@@ -1,0 +1,85 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.ponds.ponds_per_chunk",
+            "label": "Ponds per chunk",
+            "valueType": "Integer",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 20,
+            "category": "Ponds",
+            "description": "TEMPORARY placeholder (R17), until the real map design exists. How many ponds are randomly scattered in a chunk when it's first created, on top of the one guaranteed pond near the starting site."
+        },
+        {
+            "id": "setting.ponds.min_radius_meters",
+            "label": "Pond min radius",
+            "valueType": "Number",
+            "default": 1.5,
+            "minimum": 0.5,
+            "maximum": 20,
+            "category": "Ponds",
+            "description": "Placeholder. A pond's smallest possible radius, in meters (half of the smallest 3 m across)."
+        },
+        {
+            "id": "setting.ponds.max_radius_meters",
+            "label": "Pond max radius",
+            "valueType": "Number",
+            "default": 4,
+            "minimum": 0.5,
+            "maximum": 20,
+            "category": "Ponds",
+            "description": "Placeholder. A pond's largest possible radius, in meters (half of the largest 8 m across)."
+        },
+        {
+            "id": "setting.ponds.max_drinks",
+            "label": "Pond max drinks",
+            "valueType": "Integer",
+            "default": 20,
+            "minimum": 1,
+            "maximum": 1000,
+            "category": "Ponds",
+            "description": "Placeholder. How many drinks a full pond holds."
+        },
+        {
+            "id": "setting.ponds.refill_drinks_per_hour",
+            "label": "Pond refill per hour",
+            "valueType": "Integer",
+            "default": 1,
+            "minimum": 0,
+            "maximum": 100,
+            "category": "Ponds",
+            "description": "Placeholder. How many drinks a pond refills per game hour, up to full."
+        },
+        {
+            "id": "setting.ponds.path_cost_multiplier",
+            "label": "Pond pathfinding cost",
+            "valueType": "Number",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 1000,
+            "category": "Ponds",
+            "description": "Placeholder. How many times more a pond's water costs to path through than normal ground - walkable, but avoided when a reasonable detour exists. Read by People, not by Ponds, the same way setting.time.real_seconds_per_day is read by People but owned by time_settings.json."
+        },
+        {
+            "id": "setting.ponds.starting_pond_min_distance_meters",
+            "label": "Starting pond min distance",
+            "valueType": "Number",
+            "default": 20,
+            "minimum": 0,
+            "maximum": 1000,
+            "category": "Ponds",
+            "description": "Placeholder. The guaranteed starting pond's shortest possible distance from the starting site, in meters."
+        },
+        {
+            "id": "setting.ponds.starting_pond_max_distance_meters",
+            "label": "Starting pond max distance",
+            "valueType": "Number",
+            "default": 50,
+            "minimum": 0,
+            "maximum": 1000,
+            "category": "Ponds",
+            "description": "Placeholder. The guaranteed starting pond's longest possible distance from the starting site, in meters."
+        }
+    ]
+}

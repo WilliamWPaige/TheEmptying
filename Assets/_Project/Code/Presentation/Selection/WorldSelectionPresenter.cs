@@ -3,6 +3,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Ponds;
 using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation.Content;
 using TheEmptying.Presentation.People;
@@ -32,6 +33,7 @@ namespace TheEmptying.Presentation.Selection
         private MapModule _mapModule;
         private BuildingsModule _buildingsModule;
         private ZonesModule _zonesModule;
+        private PondsModule _pondsModule;
         private ContentDatabase _content;
         private FloatingOrigin _floatingOrigin;
         private StrategyCameraController _cameraController;
@@ -40,6 +42,7 @@ namespace TheEmptying.Presentation.Selection
         private ZonePresenter _zonePresenter;
         private ZoneDrawingPresenter _zoneDrawing;
         private TemporaryChunkDecorations _decorations;
+        private PondsPresenter _pondsPresenter;
         private Camera _camera;
         private VisualElement _uiRoot;
 
@@ -55,6 +58,9 @@ namespace TheEmptying.Presentation.Selection
 
         /// <summary>R12: the selected zone's Id, for the Stockpile cheat's "add to selected stockpile"; null if nothing is selected or the selection isn't a zone.</summary>
         public EntityId? SelectedZoneId => _current is ZoneSelectionTarget zone ? zone.Id : (EntityId?)null;
+
+        /// <summary>R17: the selected pond's Id, for the Resources cheat's "Empty pond"/"Fill pond"; null if nothing is selected or the selection isn't a pond.</summary>
+        public EntityId? SelectedPondId => _current is PondSelectionTarget pond ? pond.Id : (EntityId?)null;
 
         public bool IsOpen => _infoWindow.IsOpen;
 
@@ -72,6 +78,7 @@ namespace TheEmptying.Presentation.Selection
             MapModule mapModule,
             BuildingsModule buildingsModule,
             ZonesModule zonesModule,
+            PondsModule pondsModule,
             ContentDatabase content,
             FloatingOrigin floatingOrigin,
             StrategyCameraController cameraController,
@@ -79,6 +86,7 @@ namespace TheEmptying.Presentation.Selection
             BuildingPresenter buildingPresenter,
             ZonePresenter zonePresenter,
             TemporaryChunkDecorations decorations,
+            PondsPresenter pondsPresenter,
             Camera camera,
             VisualElement uiRoot)
         {
@@ -86,6 +94,7 @@ namespace TheEmptying.Presentation.Selection
             _mapModule = mapModule;
             _buildingsModule = buildingsModule;
             _zonesModule = zonesModule;
+            _pondsModule = pondsModule;
             _content = content;
             _floatingOrigin = floatingOrigin;
             _cameraController = cameraController;
@@ -93,6 +102,7 @@ namespace TheEmptying.Presentation.Selection
             _buildingPresenter = buildingPresenter;
             _zonePresenter = zonePresenter;
             _decorations = decorations;
+            _pondsPresenter = pondsPresenter;
             _camera = camera;
             _uiRoot = uiRoot;
 
@@ -101,12 +111,13 @@ namespace TheEmptying.Presentation.Selection
         }
 
         /// <summary>After a load, the simulation (and its modules) are new instances; the old selection no longer means anything.</summary>
-        public void Rebind(PeopleModule peopleModule, MapModule mapModule, BuildingsModule buildingsModule, ZonesModule zonesModule, ContentDatabase content)
+        public void Rebind(PeopleModule peopleModule, MapModule mapModule, BuildingsModule buildingsModule, ZonesModule zonesModule, PondsModule pondsModule, ContentDatabase content)
         {
             _peopleModule = peopleModule;
             _mapModule = mapModule;
             _buildingsModule = buildingsModule;
             _zonesModule = zonesModule;
+            _pondsModule = pondsModule;
             _content = content;
             ClearSelection();
         }
@@ -216,6 +227,12 @@ namespace TheEmptying.Presentation.Selection
                         Select(new ResourceSelectionTarget(_mapModule, _content, asset, placement));
                         return;
                     }
+                }
+
+                if (_pondsPresenter != null && _pondsPresenter.TryGetPondForInstance(hit.collider.gameObject, out EntityId pondId))
+                {
+                    Select(new PondSelectionTarget(_pondsModule, pondId));
+                    return;
                 }
 
                 if (_buildingPresenter != null && _buildingPresenter.TryGetBuildingForInstance(hit.collider.gameObject, out EntityId buildingId))

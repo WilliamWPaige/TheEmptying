@@ -1,0 +1,17 @@
+{
+    "name": "TheEmptying.Modules.Ponds",
+    "rootNamespace": "TheEmptying.Modules.Ponds",
+    "references": [
+        "TheEmptying.Core",
+        "TheEmptying.Modules.Map"
+    ],
+    "includePlatforms": [],
+    "excludePlatforms": [],
+    "allowUnsafeCode": false,
+    "overrideReferences": false,
+    "precompiledReferences": [],
+    "autoReferenced": true,
+    "defineConstraints": [],
+    "versionDefines": [],
+    "noEngineReferences": false
+}

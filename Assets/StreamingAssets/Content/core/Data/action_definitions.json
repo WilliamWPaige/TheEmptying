@@ -30,6 +30,11 @@
             "id": "action.gathering",
             "displayName": "Gather",
             "description": "Gathering a stick or rock (and maybe a bonus flint) from the ground near a tree or stone deposit, to carry elsewhere."
+        },
+        {
+            "id": "action.drinking",
+            "displayName": "Drink",
+            "description": "Drinking at a pond's edge to satisfy thirst."
         }
     ]
 }

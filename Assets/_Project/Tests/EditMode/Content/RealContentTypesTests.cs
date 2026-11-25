@@ -23,7 +23,7 @@ namespace TheEmptying.Tests.EditMode.Content
             ContentCatalog catalog = LoadCatalog();
 
             CollectionAssert.AreEquivalent(new[] { "unit.person" }, catalog.Units.Select(a => a.Id));
-            CollectionAssert.AreEquivalent(new[] { "resource.tree", "resource.stone", "resource.grub_mound" }, catalog.ResourceNodes.Select(a => a.Id));
+            CollectionAssert.AreEquivalent(new[] { "resource.tree", "resource.stone", "resource.grub_mound", "resource.pond" }, catalog.ResourceNodes.Select(a => a.Id));
             CollectionAssert.AreEquivalent(new[] { "item.log", "item.stone", "item.grub", "item.stick", "item.rock", "item.flint" }, catalog.Items.Select(a => a.Id));
             CollectionAssert.AreEquivalent(new[] { "building.keep" }, catalog.Buildings.Select(a => a.Id));
         }
@@ -190,7 +190,7 @@ namespace TheEmptying.Tests.EditMode.Content
             List<ContentAssetDefinition> definitions = ContentAssetConverter.BuildDefinitions(catalog, problems);
 
             Assert.IsEmpty(problems);
-            Assert.AreEqual(11, definitions.Count);
+            Assert.AreEqual(12, definitions.Count);
         }
     }
 }

@@ -8,9 +8,11 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Modules;
 using TheEmptying.Core.Saves;
 using TheEmptying.Core.Startup;
+using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
 using TheEmptying.Modules.People;
+using TheEmptying.Modules.Ponds;
 using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation;
 using TheEmptying.Tests.EditMode.Startup;
@@ -407,6 +409,10 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(PeopleModule.SpotWaitMaxSecondsSettingId, SettingValueType.Number, 30.0, 0.1, 300.0, "People")]
         [TestCase(PeopleModule.LogDecisionsSettingId, SettingValueType.Boolean, 0.0, 0.0, 1.0, "People")]
         [TestCase(PeopleModule.CrownStartingTreasuryCopperSettingId, SettingValueType.Integer, 5000.0, 0.0, 1000000.0, "People")]
+        [TestCase(PeopleModule.ThirstDrainDaysSettingId, SettingValueType.Number, 2.0, 0.1, 30.0, "People")]
+        [TestCase(PeopleModule.ThirstDrinkThresholdSettingId, SettingValueType.Number, 50.0, 0.0, 99.0, "People")]
+        [TestCase(PeopleModule.DrinkingDurationMinutesSettingId, SettingValueType.Number, 5.0, 0.1, 120.0, "People")]
+        [TestCase(PeopleModule.MakeEveryoneThirstyMeterSettingId, SettingValueType.Number, 40.0, 0.0, 100.0, "People")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
@@ -462,6 +468,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             peopleBefore.TryGetPerson(firstId, out PersonState firstPerson);
 
             firstPerson.Hunger = 37.5;
+            firstPerson.Thirst = 62.5;
             firstPerson.AddCarried("item.grub", 4);
             firstPerson.ForagingItemId = "item.grub";
             firstPerson.EatingFromCarried = false;
@@ -577,6 +584,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             CollectionAssert.AreEquivalent(a.Attributes, b.Attributes);
 
             Assert.AreEqual(a.Hunger, b.Hunger);
+            Assert.AreEqual(a.Thirst, b.Thirst);
             CollectionAssert.AreEquivalent(a.CarriedItems, b.CarriedItems);
             Assert.AreEqual(a.ForagingItemId, b.ForagingItemId);
             Assert.AreEqual(a.EatingFromCarried, b.EatingFromCarried);
@@ -584,6 +592,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(a.HomeBuildingId, b.HomeBuildingId);
             Assert.AreEqual(a.Goal, b.Goal);
             Assert.AreEqual(a.TargetZoneId, b.TargetZoneId);
+            Assert.AreEqual(a.TargetPondId, b.TargetPondId);
             Assert.AreEqual(a.ForagingDeliveryZoneId, b.ForagingDeliveryZoneId);
             Assert.AreEqual(a.TargetIsHome, b.TargetIsHome);
             Assert.AreEqual(a.TargetIsMound, b.TargetIsMound);
@@ -978,6 +987,174 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             CollectionAssert.AreEquivalent(peopleBefore.GetHomeStash(keepId), peopleAfter.GetHomeStash(keepId));
             Assert.AreEqual(11, peopleAfter.GetHomeStash(keepId)["item.grub"]);
+        }
+
+        /// <summary>R17: thirst drains by exactly FullThirst / (drainDays * ticksPerDay) each tick a person isn't inside a building - the same math as hunger, on its own setting.</summary>
+        [Test]
+        public void ThirstDrain_ReducesAtTheRateImpliedByTheSetting()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
+            RunUntilEveryoneHasLeftTheKeep(simulation, people);
+
+            EntityId firstId = people.People.First().Key;
+            people.TryGetPerson(firstId, out PersonState person);
+            person.Thirst = 100.0;
+
+            double drainDays = simulation.Settings.Get(PeopleModule.ThirstDrainDaysSettingId);
+            double expectedDrainPerTick = 100.0 / (drainDays * CalendarConstants.TicksPerDay);
+
+            simulation.Step();
+
+            Assert.AreEqual(100.0 - expectedDrainPerTick, person.Thirst, 1e-6);
+        }
+
+        /// <summary>R17: whichever meter is lower is served first, whether that's hunger or thirst.</summary>
+        [Test]
+        public void WhenBothHungerAndThirstAreBelowThreshold_TheLowerMeterIsServedFirst()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
+            RunUntilEveryoneHasLeftTheKeep(simulation, people);
+
+            EntityId firstId = people.People.First().Key;
+            people.TryGetPerson(firstId, out PersonState person);
+
+            long tick = simulation.Clock.CurrentTick;
+            person.Hunger = 30;
+            person.Thirst = 20;
+            person.Goal = PersonGoal.None;
+            person.CurrentAction = new PersonAction { Kind = ActionKind.Idle, StartTick = tick - 1000, DurationTicks = 1, CurrentTickForProgress = tick };
+            simulation.Step();
+            Assert.AreEqual(PersonGoal.SeekingWater, person.Goal, "Thirst (20) is lower than Hunger (30), so water should be served first.");
+
+            tick = simulation.Clock.CurrentTick;
+            person.Hunger = 20;
+            person.Thirst = 30;
+            person.Goal = PersonGoal.None;
+            person.CurrentAction = new PersonAction { Kind = ActionKind.Idle, StartTick = tick - 1000, DurationTicks = 1, CurrentTickForProgress = tick };
+            simulation.Step();
+            Assert.AreEqual(PersonGoal.SeekingFood, person.Goal, "Hunger (20) is lower than Thirst (30), so food should be served first.");
+        }
+
+        /// <summary>R17: walking to a pond's edge and drinking fills thirst to exactly full and takes exactly 1 drink from the pond drunk from.</summary>
+        [Test]
+        public void WhenThirsty_PersonWalksToAPondAndDrinksToFull_TakingExactlyOneDrinkFromIt()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var ponds = (PondsModule)modules.First(m => m is PondsModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            FoundKingdom(map, buildings, people);
+            RunUntilEveryoneHasLeftTheKeep(simulation, people);
+
+            EntityId firstId = people.People.First().Key;
+            people.TryGetPerson(firstId, out PersonState person);
+            person.Thirst = 5;
+
+            EntityId? targetPondId = null;
+            int drinksWhenStarted = 0;
+
+            for (int tick = 0; tick < 50000; tick++)
+            {
+                simulation.Step();
+
+                if (targetPondId == null && person.CurrentAction.Kind == ActionKind.Drinking)
+                {
+                    targetPondId = person.TargetPondId;
+                    Assert.IsTrue(targetPondId.HasValue);
+                    Assert.IsTrue(ponds.TryGetPond(targetPondId.Value, out PondState pondAtStart));
+                    drinksWhenStarted = pondAtStart.DrinksCurrent;
+                }
+
+                if (targetPondId.HasValue && person.Thirst >= 100.0)
+                {
+                    break;
+                }
+            }
+
+            Assert.IsTrue(targetPondId.HasValue, "The thirsty person should have started drinking within the tick budget.");
+            Assert.AreEqual(100.0, person.Thirst);
+            Assert.IsTrue(ponds.TryGetPond(targetPondId.Value, out PondState pondAfter));
+            Assert.AreEqual(drinksWhenStarted - 1, pondAfter.DrinksCurrent);
+        }
+
+        /// <summary>R17: a dry pond (0 drinks) is never targeted for drinking - a thirsty person finds a different, non-dry pond instead.</summary>
+        [Test]
+        public void WhenTheNearestPondIsDry_PersonNeverDrinksFromIt()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var ponds = (PondsModule)modules.First(m => m is PondsModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            FoundKingdom(map, buildings, people);
+            RunUntilEveryoneHasLeftTheKeep(simulation, people);
+
+            EntityId dryPondId = ponds.Ponds.First().Key;
+            ponds.SetDrinks(dryPondId, 0);
+            Assert.IsTrue(ponds.TryGetPond(dryPondId, out PondState dryPond));
+            Assert.IsTrue(dryPond.IsDry);
+
+            EntityId firstId = people.People.First().Key;
+            people.TryGetPerson(firstId, out PersonState person);
+            person.Thirst = 5;
+
+            bool drankFromTheDryPond = false;
+            bool drankAtAll = false;
+
+            for (int tick = 0; tick < 50000; tick++)
+            {
+                simulation.Step();
+
+                if (person.CurrentAction.Kind == ActionKind.Drinking)
+                {
+                    drankAtAll = true;
+                    if (person.TargetPondId == dryPondId)
+                    {
+                        drankFromTheDryPond = true;
+                    }
+                }
+
+                if (drankAtAll && person.Thirst >= 100.0)
+                {
+                    break;
+                }
+            }
+
+            Assert.IsFalse(drankFromTheDryPond, "A dry pond must never be targeted for drinking.");
+            Assert.IsTrue(drankAtAll, "A reachable, non-dry pond should still have been found and used.");
+        }
+
+        /// <summary>R17: the "Make everyone thirsty" cheat sets every current person's thirst to the placeholder meter value, immediately.</summary>
+        [Test]
+        public void MakeEveryoneThirsty_SetsEveryonesThirstToThePlaceholderMeter()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
+            FoundKingdom(map, buildings, people);
+
+            foreach (PersonState person in people.People.Select(r => r.Value))
+            {
+                person.Thirst = 100.0;
+            }
+
+            people.MakeEveryoneThirsty();
+
+            double expectedMeter = simulation.Settings.Get(PeopleModule.MakeEveryoneThirstyMeterSettingId);
+            foreach (PersonState person in people.People.Select(r => r.Value))
+            {
+                Assert.AreEqual(expectedMeter, person.Thirst);
+            }
         }
     }
 }

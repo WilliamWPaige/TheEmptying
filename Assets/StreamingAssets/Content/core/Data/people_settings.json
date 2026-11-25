@@ -532,6 +532,46 @@
             "description": "TEMPORARY placeholder (R15). How much copper the crown treasury starts a new game with."
         },
         {
+            "id": "setting.people.thirst_drain_days",
+            "label": "Thirst drain days",
+            "valueType": "Number",
+            "default": 2,
+            "minimum": 0.1,
+            "maximum": 30,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R17). How many game days it takes a full person's thirst meter to drain to zero."
+        },
+        {
+            "id": "setting.people.thirst_drink_threshold",
+            "label": "Thirst drink threshold",
+            "valueType": "Number",
+            "default": 50,
+            "minimum": 0,
+            "maximum": 99,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R17). Below this thirst value, a person stops what they're doing at the next action boundary and goes to drink."
+        },
+        {
+            "id": "setting.people.drinking_duration_minutes",
+            "label": "Drinking duration",
+            "valueType": "Number",
+            "default": 5,
+            "minimum": 0.1,
+            "maximum": 120,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R17). How long drinking at a pond's edge takes, in game minutes."
+        },
+        {
+            "id": "setting.people.make_everyone_thirsty_meter",
+            "label": "Make everyone thirsty meter",
+            "valueType": "Number",
+            "default": 40,
+            "minimum": 0,
+            "maximum": 100,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R17). The \"Make everyone thirsty\" cheat sets every person's thirst meter to this value."
+        },
+        {
             "id": "setting.people.log_decisions",
             "label": "Log person decisions",
             "valueType": "Boolean",

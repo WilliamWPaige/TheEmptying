@@ -38,8 +38,8 @@ namespace TheEmptying.Tests.EditMode.Modules
         [TestCase(MapModule.CellSizeSettingId, SettingValueType.Number, 1.0, 0.1, 100.0, "Map")]
         [TestCase(MapModule.ChunkSizeSettingId, SettingValueType.Number, 256.0, 8.0, 4096.0, "Map")]
         [TestCase(WorldMapView.ViewDistanceChunksSettingId, SettingValueType.Integer, 3.0, 1.0, 6.0, "Map")]
-        [TestCase(MapModule.TreesPerChunkSettingId, SettingValueType.Integer, 20.0, 0.0, 500.0, "Map")]
-        [TestCase(MapModule.StonesPerChunkSettingId, SettingValueType.Integer, 3.0, 0.0, 500.0, "Map")]
+        [TestCase(MapModule.TreesPerChunkSettingId, SettingValueType.Integer, 60.0, 0.0, 500.0, "Map")]
+        [TestCase(MapModule.StonesPerChunkSettingId, SettingValueType.Integer, 5.0, 0.0, 500.0, "Map")]
         [TestCase(MapModule.GrubMoundsPerChunkSettingId, SettingValueType.Integer, 2.0, 0.0, 500.0, "Map")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
@@ -175,8 +175,8 @@ namespace TheEmptying.Tests.EditMode.Modules
             MapModule map = BuildFromRealContent();
             ChunkData chunk = map.GetOrCreateChunk(new ChunkCoord(1, 1));
 
-            Assert.AreEqual(20, chunk.Placements.Count(p => p.Kind == PlacementKind.Tree));
-            Assert.AreEqual(3, chunk.Placements.Count(p => p.Kind == PlacementKind.Stone));
+            Assert.AreEqual(60, chunk.Placements.Count(p => p.Kind == PlacementKind.Tree));
+            Assert.AreEqual(5, chunk.Placements.Count(p => p.Kind == PlacementKind.Stone));
             Assert.AreEqual(2, chunk.Placements.Count(p => p.Kind == PlacementKind.GrubMound));
         }
 
