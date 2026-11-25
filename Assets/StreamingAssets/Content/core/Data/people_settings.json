@@ -5,11 +5,21 @@
             "id": "setting.people.founder_count",
             "label": "Founder count",
             "valueType": "Integer",
-            "default": 9,
+            "default": 4,
             "minimum": 1,
             "maximum": 100,
             "category": "People",
-            "description": "Placeholder. How many people spawn near the world center at the start of a new game."
+            "description": "Placeholder (R16). How many founders (the first of whom is the Advisor) wait inside the keep at founding, coming out one at a time - not counting the Monarch, who is always exactly 1."
+        },
+        {
+            "id": "setting.people.commoner_count",
+            "label": "Commoner count",
+            "valueType": "Integer",
+            "default": 4,
+            "minimum": 0,
+            "maximum": 100,
+            "category": "People",
+            "description": "Placeholder (R16). How many regular people (\"Commoner\" role) appear just outside the keep, on free cells near the door, at the same moment as founding."
         },
         {
             "id": "setting.people.founder_age_min",
@@ -190,6 +200,106 @@
             "maximum": 20,
             "category": "People",
             "description": "Placeholder. The Monarch's highest possible value in every attribute."
+        },
+        {
+            "id": "setting.people.commoner_skill_min",
+            "label": "Commoner skill min",
+            "valueType": "Integer",
+            "default": 3,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's lowest possible value in every skill except their one random trade."
+        },
+        {
+            "id": "setting.people.commoner_skill_max",
+            "label": "Commoner skill max",
+            "valueType": "Integer",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's highest possible value in every skill except their one random trade."
+        },
+        {
+            "id": "setting.people.commoner_trade_skill_min",
+            "label": "Commoner trade skill min",
+            "valueType": "Integer",
+            "default": 11,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's lowest possible value in their one random trade skill (shown highlighted, labeled \"Trade\")."
+        },
+        {
+            "id": "setting.people.commoner_trade_skill_max",
+            "label": "Commoner trade skill max",
+            "valueType": "Integer",
+            "default": 15,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's highest possible value in their one random trade skill."
+        },
+        {
+            "id": "setting.people.commoner_attribute_min",
+            "label": "Commoner attribute min",
+            "valueType": "Integer",
+            "default": 6,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's lowest possible value in every attribute."
+        },
+        {
+            "id": "setting.people.commoner_attribute_max",
+            "label": "Commoner attribute max",
+            "valueType": "Integer",
+            "default": 14,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's highest possible value in every attribute."
+        },
+        {
+            "id": "setting.people.commoner_age_min",
+            "label": "Commoner age min",
+            "valueType": "Integer",
+            "default": 18,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's lowest possible starting age, in years."
+        },
+        {
+            "id": "setting.people.commoner_age_max",
+            "label": "Commoner age max",
+            "valueType": "Integer",
+            "default": 45,
+            "minimum": 1,
+            "maximum": 100,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's highest possible starting age, in years."
+        },
+        {
+            "id": "setting.people.commoner_wallet_min_copper",
+            "label": "Commoner wallet min",
+            "valueType": "Integer",
+            "default": 20,
+            "minimum": 0,
+            "maximum": 100000,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's lowest possible starting wallet, in copper."
+        },
+        {
+            "id": "setting.people.commoner_wallet_max_copper",
+            "label": "Commoner wallet max",
+            "valueType": "Integer",
+            "default": 100,
+            "minimum": 0,
+            "maximum": 100000,
+            "category": "People",
+            "description": "Placeholder (R16). A Commoner's highest possible starting wallet, in copper."
         },
         {
             "id": "setting.people.walk_speed_mps",

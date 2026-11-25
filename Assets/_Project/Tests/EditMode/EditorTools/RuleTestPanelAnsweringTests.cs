@@ -70,6 +70,7 @@ namespace TheEmptying.Tests.EditMode.EditorTools
                     { ""id"": ""setting.map.stones_per_chunk"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 500, ""category"": ""Map"", ""description"": ""x"" },
                     { ""id"": ""setting.map.grub_mounds_per_chunk"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 500, ""category"": ""Map"", ""description"": ""x"" },
                     { ""id"": ""setting.people.founder_count"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 1, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
+                    { ""id"": ""setting.people.commoner_count"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 0, ""minimum"": 0, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.founder_age_min"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 20, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.founder_age_max"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 40, ""minimum"": 1, ""maximum"": 100, ""category"": ""People"", ""description"": ""x"" },
                     { ""id"": ""setting.people.founder_core_trade_min"", ""label"": ""x"", ""valueType"": ""Integer"", ""default"": 14, ""minimum"": 1, ""maximum"": 20, ""category"": ""People"", ""description"": ""x"" },

@@ -46,7 +46,7 @@ namespace TheEmptying.Tests.EditMode.Modules
                 (PeopleModule)modules.First(m => m is PeopleModule));
         }
 
-        /// <summary>Places the keep at the map center and spawns the 9 founders inside it - the same sequence the founding popup's Yes triggers.</summary>
+        /// <summary>Places the keep at the map center and spawns the starting group (Monarch and founders waiting inside, Commoners appearing outside) - the same sequence the founding popup's Yes triggers.</summary>
         private static EntityId FoundKingdom(MapModule map, BuildingsModule buildings, PeopleModule people)
         {
             double centerX = map.WorldWidthMeters * 0.5;
@@ -120,22 +120,37 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(0, people.People.Count());
         }
 
+        /// <summary>R16: the Monarch and founders (Advisor included) wait inside the keep; the Commoners appear outside, already Idle, at the same moment.</summary>
         [Test]
-        public void Founding_SpawnsTheConfiguredFounderCount_AllWaitingInsideTheKeep()
+        public void Founding_SpawnsTheConfiguredGroup_FoundersWaitInside_CommonersAppearOutside()
         {
             using var core = new TempCoreContentCopy();
             (_, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
             EntityId keepId = FoundKingdom(map, buildings, people);
 
             Assert.AreEqual(9, people.People.Count());
-            foreach (PersonState person in people.People.Select(r => r.Value))
+
+            List<PersonState> all = people.People.Select(r => r.Value).ToList();
+            List<PersonState> insideGroup = all.Where(p => p.Role != PersonRole.Commoner).ToList();
+            List<PersonState> commoners = all.Where(p => p.Role == PersonRole.Commoner).ToList();
+
+            Assert.AreEqual(5, insideGroup.Count, "Monarch + 4 founders (one the Advisor) = 5.");
+            Assert.AreEqual(4, commoners.Count);
+
+            foreach (PersonState person in insideGroup)
             {
                 Assert.AreEqual(ActionKind.InsideBuilding, person.CurrentAction.Kind);
                 Assert.AreEqual(keepId, person.CurrentAction.BuildingId);
                 Assert.AreEqual("Waiting to head out.", person.CurrentAction.Thought);
             }
 
-            Assert.AreEqual(9, people.GetPeopleInside(keepId).Count());
+            Assert.AreEqual(5, people.GetPeopleInside(keepId).Count());
+
+            foreach (PersonState commoner in commoners)
+            {
+                Assert.AreNotEqual(ActionKind.InsideBuilding, commoner.CurrentAction.Kind, "Commoners appear already outside, not waiting in the keep.");
+                Assert.IsFalse(commoner.HomeBuildingId.HasValue, "Commoners have no home.");
+            }
         }
 
         [Test]
@@ -184,8 +199,9 @@ namespace TheEmptying.Tests.EditMode.Modules
             }
         }
 
+        /// <summary>R16: founding makes exactly 1 Monarch, 1 Advisor, 3 other Founders and 4 Commoners.</summary>
         [Test]
-        public void Founding_HasExactlyOneMonarchAndOneAdvisor()
+        public void Founding_HasExactlyOneMonarchOneAdvisorThreeFoundersAndFourCommoners()
         {
             using var core = new TempCoreContentCopy();
             (_, MapModule map, BuildingsModule buildings, PeopleModule people) = BuildNewGame(core);
@@ -195,7 +211,8 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             Assert.AreEqual(1, all.Count(p => p.Role == PersonRole.Monarch));
             Assert.AreEqual(1, all.Count(p => p.Role == PersonRole.Advisor));
-            Assert.AreEqual(all.Count - 2, all.Count(p => p.Role == PersonRole.Founder));
+            Assert.AreEqual(3, all.Count(p => p.Role == PersonRole.Founder));
+            Assert.AreEqual(4, all.Count(p => p.Role == PersonRole.Commoner));
         }
 
         [Test]
@@ -208,12 +225,21 @@ namespace TheEmptying.Tests.EditMode.Modules
             foreach (PersonState person in people.People.Select(r => r.Value))
             {
                 bool isMonarch = person.Role == PersonRole.Monarch;
+                bool isCommoner = person.Role == PersonRole.Commoner;
 
-                Assert.That(person.AgeYears, isMonarch ? Is.InRange(25, 50) : Is.InRange(20, 40), $"{person.Role} age out of range.");
+                if (isCommoner)
+                {
+                    Assert.That(person.AgeYears, Is.InRange(18, 45), "Commoner age out of range.");
+                }
+                else
+                {
+                    Assert.That(person.AgeYears, isMonarch ? Is.InRange(25, 50) : Is.InRange(20, 40), $"{person.Role} age out of range.");
+                }
 
                 foreach (KeyValuePair<string, int> kvp in person.Attributes)
                 {
-                    Assert.That(kvp.Value, isMonarch ? Is.InRange(6, 14) : Is.InRange(10, 16), $"{person.Role} attribute {kvp.Key} out of range.");
+                    (int Lower, int Upper) expected = isMonarch || isCommoner ? (6, 14) : (10, 16);
+                    Assert.That(kvp.Value, Is.InRange(expected.Lower, expected.Upper), $"{person.Role} attribute {kvp.Key} out of range.");
                 }
 
                 if (isMonarch)
@@ -225,6 +251,18 @@ namespace TheEmptying.Tests.EditMode.Modules
                     }
 
                     Assert.IsEmpty(person.SpecialtySkillId);
+                }
+                else if (isCommoner)
+                {
+                    Assert.IsNotEmpty(person.SpecialtySkillId, "A Commoner's trade skill must be set.");
+
+                    foreach (KeyValuePair<string, int> kvp in person.Skills)
+                    {
+                        Assert.That(kvp.Value, kvp.Key == person.SpecialtySkillId ? Is.InRange(11, 15) : Is.InRange(3, 10), $"Commoner skill {kvp.Key} out of range.");
+                    }
+
+                    Assert.That(person.WalletTenthCopper, Is.InRange(200, 1000), "Commoner wallet (in tenth-copper) out of the 20-100 copper range.");
+                    Assert.IsFalse(person.HomeBuildingId.HasValue, "Commoners have no home.");
                 }
                 else
                 {
@@ -624,7 +662,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             return Math.Abs(a.X - b.X) <= 1 && Math.Abs(a.Z - b.Z) <= 1;
         }
 
-        /// <summary>R13b: stockpiles are drop-off and pick-up only - nobody's idle target (their standing cell while Idle) is ever inside one.</summary>
+        /// <summary>R13b/R16: stockpiles are drop-off and pick-up only - nobody's idle target (their standing cell while Idle) is ever inside one, over a long run with several stockpiles (the single central check in ProcessPersonAction, not a per-path patch).</summary>
         [Test]
         public void IdlePeople_AreNeverStandingInsideAStockpile()
         {
@@ -640,13 +678,17 @@ namespace TheEmptying.Tests.EditMode.Modules
             double centerZ = map.WorldDepthMeters * 0.5;
             FoundKingdom(map, buildings, people);
 
-            // Small, close and tightly capped, so people deliver to and eat from it constantly - clear of the 12x12 keep at the map center.
-            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 15, centerZ, 8, 8, 0), out string reason);
-            Assert.IsNotNull(stockpileId, reason);
-            zones.SetKeepOnHandLimit(stockpileId.Value, "item.grub", 3);
+            // Several small, close and tightly capped stockpiles, so people deliver to and eat from all of them constantly - clear of the 12x12 keep at the map center.
+            var rects = new List<OrientedRect>();
+            foreach ((double offsetX, double offsetZ) in new[] { (15.0, 0.0), (-15.0, 0.0), (0.0, 15.0) })
+            {
+                EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + offsetX, centerZ + offsetZ, 8, 8, 0), out string reason);
+                Assert.IsNotNull(stockpileId, reason);
+                zones.SetKeepOnHandLimit(stockpileId.Value, "item.grub", 3);
+                Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
+                rects.Add(stockpile.Rect);
+            }
 
-            Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
-            OrientedRect rect = stockpile.Rect;
             double cellSize = map.CellSizeMeters;
 
             RunUntilEveryoneHasLeftTheKeep(simulation, people);
@@ -664,9 +706,63 @@ namespace TheEmptying.Tests.EditMode.Modules
 
                     double worldX = (person.ReservedCell.X + 0.5) * cellSize;
                     double worldZ = (person.ReservedCell.Z + 0.5) * cellSize;
-                    Assert.IsFalse(rect.Contains(worldX, worldZ), $"{person.Name} was idling inside the stockpile at tick {tick} (thought: '{person.CurrentAction.Thought}').");
+
+                    foreach (OrientedRect rect in rects)
+                    {
+                        Assert.IsFalse(rect.Contains(worldX, worldZ), $"{person.Name} was idling inside a stockpile at tick {tick} (thought: '{person.CurrentAction.Thought}').");
+                    }
                 }
             }
+        }
+
+        /// <summary>R16: a person loaded from a save while already idling inside a stockpile (the exact reported bug, forced here) steps out on the very first tick after load - caught by the same central check as every other path, not a load-time special case.</summary>
+        [Test]
+        public void APersonIdlingInsideAStockpile_StepsOutAfterBeingLoadedFromASave()
+        {
+            using var core = new TempCoreContentCopy();
+            IModule[] modules = ModuleCatalog.CreateModules();
+            (Simulation simulation, StartupReport _) = SimulationBuilder.Build(1, new[] { core.FolderPath }, modules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var map = (MapModule)modules.First(m => m is MapModule);
+            var buildings = (BuildingsModule)modules.First(m => m is BuildingsModule);
+            var zones = (ZonesModule)modules.First(m => m is ZonesModule);
+            var people = (PeopleModule)modules.First(m => m is PeopleModule);
+
+            FoundKingdom(map, buildings, people);
+
+            double centerX = map.WorldWidthMeters * 0.5;
+            double centerZ = map.WorldDepthMeters * 0.5;
+            EntityId? stockpileId = zones.TryPlaceZone(ZonesModule.StockpileTypeId, new OrientedRect(centerX + 15, centerZ, 8, 8, 0), out string reason);
+            Assert.IsNotNull(stockpileId, reason);
+            Assert.IsTrue(zones.TryGetZone(stockpileId.Value, out ZoneState stockpile));
+
+            EntityId firstId = people.People.First().Key;
+            people.TryGetPerson(firstId, out PersonState person);
+
+            // Force the exact reported bug directly: an Idle action, standing inside the stockpile, with plenty of duration left.
+            person.WorldX = stockpile.CenterX;
+            person.WorldZ = stockpile.CenterZ;
+            long tick = simulation.Clock.CurrentTick;
+            person.CurrentAction = new PersonAction { Kind = ActionKind.Idle, Thought = "Stuck inside the stockpile.", StartTick = tick, DurationTicks = 1000, CurrentTickForProgress = tick };
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = 9 }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            (Simulation loaded, LoadReport _) = GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var peopleAfter = (PeopleModule)loadedModules.First(m => m is PeopleModule);
+
+            Assert.IsTrue(peopleAfter.TryGetPerson(firstId, out PersonState loadedPerson));
+            Assert.AreEqual(ActionKind.Idle, loadedPerson.CurrentAction.Kind, "Sanity check: the save really did capture them idling.");
+
+            loaded.Step();
+
+            Assert.AreEqual(ActionKind.Walk, loadedPerson.CurrentAction.Kind, "A single tick after load should already have started stepping them out.");
+
+            double cellSize = map.CellSizeMeters;
+            double worldX = (loadedPerson.ReservedCell.X + 0.5) * cellSize;
+            double worldZ = (loadedPerson.ReservedCell.Z + 0.5) * cellSize;
+            Assert.IsFalse(stockpile.Rect.Contains(worldX, worldZ), "The cell they're now walking toward must not be inside the stockpile.");
         }
 
         /// <summary>R13b: goods never vanish - when a stockpile can't take everything being delivered, only what fit is removed from what's carried; the rest stays carried for the next trip.</summary>
@@ -701,12 +797,13 @@ namespace TheEmptying.Tests.EditMode.Modules
             person.Goal = PersonGoal.ForagingForStockpile;
             person.ForagingDeliveryZoneId = stockpileId.Value;
 
+            // A Walk that's already "arrived" (TotalDistanceMeters 0), not an Idle one - R16's central stockpile-exit check would otherwise immediately walk them back out before this decision ever runs, since nobody's Idle action is ever allowed to stand inside a stockpile.
             long tick = simulation.Clock.CurrentTick;
             person.CurrentAction = new PersonAction
             {
-                Kind = ActionKind.Idle,
+                Kind = ActionKind.Walk,
                 StartTick = tick,
-                DurationTicks = 1,
+                TotalDistanceMeters = 0,
                 CurrentTickForProgress = tick
             };
 
@@ -717,7 +814,7 @@ namespace TheEmptying.Tests.EditMode.Modules
             Assert.AreEqual(8, person.CarriedAmountOf("item.grub"), "The leftover that didn't fit must stay carried, not vanish.");
         }
 
-        /// <summary>R15: a new game's crown treasury starts at exactly 5,000 copper (the placeholder setting's default), and every founder's wallet starts empty.</summary>
+        /// <summary>R15/R16: a new game's crown treasury starts at exactly 5,000 copper (the placeholder setting's default); every founder's wallet starts empty, and every Commoner's starts somewhere in their 20-100 copper placeholder range.</summary>
         [Test]
         public void NewGame_TreasuryStartsAt5000Copper_AndFoundersStartWithEmptyWallets()
         {
@@ -730,7 +827,14 @@ namespace TheEmptying.Tests.EditMode.Modules
 
             foreach (PersonState person in people.People.Select(r => r.Value))
             {
-                Assert.AreEqual(0, person.WalletTenthCopper);
+                if (person.Role == PersonRole.Commoner)
+                {
+                    Assert.That(person.WalletTenthCopper, Is.InRange(200, 1000));
+                }
+                else
+                {
+                    Assert.AreEqual(0, person.WalletTenthCopper);
+                }
             }
         }
 
@@ -766,8 +870,9 @@ namespace TheEmptying.Tests.EditMode.Modules
             person.Goal = PersonGoal.ForagingForStockpile;
             person.ForagingDeliveryZoneId = stockpileId.Value;
 
+            // A Walk that's already "arrived" (TotalDistanceMeters 0), not an Idle one - see the comment in DeliveringMoreThanAStockpileCanHold_KeepsTheLeftoverCarried.
             long tick = simulation.Clock.CurrentTick;
-            person.CurrentAction = new PersonAction { Kind = ActionKind.Idle, StartTick = tick, DurationTicks = 1, CurrentTickForProgress = tick };
+            person.CurrentAction = new PersonAction { Kind = ActionKind.Walk, StartTick = tick, TotalDistanceMeters = 0, CurrentTickForProgress = tick };
 
             simulation.Step();
 

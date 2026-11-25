@@ -56,7 +56,8 @@ namespace TheEmptying.Presentation.Selection
 
             if (!string.IsNullOrEmpty(person.SpecialtySkillId))
             {
-                container.Add(new Label($"Specialty: {DisplayNameForSkill(person.SpecialtySkillId)}")
+                string specialtyLabel = person.Role == PersonRole.Commoner ? "Trade" : "Specialty";
+                container.Add(new Label($"{specialtyLabel}: {DisplayNameForSkill(person.SpecialtySkillId)}")
                 {
                     style = { color = new Color(1f, 0.85f, 0.3f), unityFontStyleAndWeight = FontStyle.Bold, marginBottom = 10 }
                 });

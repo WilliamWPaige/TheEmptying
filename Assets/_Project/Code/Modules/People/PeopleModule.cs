@@ -52,6 +52,23 @@ namespace TheEmptying.Modules.People
         public const string MonarchAttributeMinSettingId = "setting.people.monarch_attribute_min";
         public const string MonarchAttributeMaxSettingId = "setting.people.monarch_attribute_max";
 
+        /// <summary>R16: how many regular people ("Commoner" role) appear just outside the keep at founding (placeholder).</summary>
+        public const string CommonerCountSettingId = "setting.people.commoner_count";
+
+        public const string CommonerSkillMinSettingId = "setting.people.commoner_skill_min";
+        public const string CommonerSkillMaxSettingId = "setting.people.commoner_skill_max";
+        public const string CommonerTradeSkillMinSettingId = "setting.people.commoner_trade_skill_min";
+        public const string CommonerTradeSkillMaxSettingId = "setting.people.commoner_trade_skill_max";
+        public const string CommonerAttributeMinSettingId = "setting.people.commoner_attribute_min";
+        public const string CommonerAttributeMaxSettingId = "setting.people.commoner_attribute_max";
+        public const string CommonerAgeMinSettingId = "setting.people.commoner_age_min";
+        public const string CommonerAgeMaxSettingId = "setting.people.commoner_age_max";
+
+        /// <summary>R16: a Commoner's starting wallet, in whole copper (placeholder) - converted to tenth-copper when rolled.</summary>
+        public const string CommonerWalletMinCopperSettingId = "setting.people.commoner_wallet_min_copper";
+
+        public const string CommonerWalletMaxCopperSettingId = "setting.people.commoner_wallet_max_copper";
+
         /// <summary>R10: how fast a person walks, in meters per real second at 1x game speed (TEMPORARY placeholder).</summary>
         public const string WalkSpeedMpsSettingId = "setting.people.walk_speed_mps";
 
@@ -401,11 +418,13 @@ namespace TheEmptying.Modules.People
         }
 
         /// <summary>
-        /// R11: founding only. Rolls the 9 founders (Monarch, Advisor, then
-        /// Founders - exactly as R8 always has) and creates them all
-        /// waiting inside the given building, not drawn, with the thought
-        /// "Waiting to head out." Starts the keep-exit timer so they come
-        /// out one at a time afterward.
+        /// R11/R16: founding only. Rolls the Monarch and the founders
+        /// (Advisor, then plain Founders), creating them all waiting
+        /// inside the given building, not drawn, with the thought
+        /// "Waiting to head out." Also rolls the Commoners, who appear
+        /// standing just outside on free cells near the door, at the same
+        /// moment - they have no home. Starts the keep-exit timer so the
+        /// Monarch and founders come out one at a time afterward.
         /// </summary>
         public void SpawnFoundersInside(EntityId buildingId)
         {
@@ -415,10 +434,12 @@ namespace TheEmptying.Modules.People
             }
 
             long tick = _context.CurrentTick;
-            int count = (int)_settings.Get(FounderCountSettingId);
+            int founderCount = (int)_settings.Get(FounderCountSettingId);
+            int commonerCount = (int)_settings.Get(CommonerCountSettingId);
             SimRandom random = _randomService.GetStream(RollsStreamName);
 
-            for (int i = 0; i < count; i++)
+            // The Monarch (always exactly 1) plus founderCount founders (the first of whom is the Advisor), all waiting inside the keep.
+            for (int i = 0; i < founderCount + 1; i++)
             {
                 PersonRole role = i == 0 ? PersonRole.Monarch : i == 1 ? PersonRole.Advisor : PersonRole.Founder;
                 PersonState state = RollPerson(random, role, building.DoorCell);
@@ -436,6 +457,14 @@ namespace TheEmptying.Modules.People
                 EntityId id = _entities.Create(EntityKind.Person);
                 _people.Add(id, state);
                 PostActionPerformed(ActionKind.InsideBuilding);
+            }
+
+            // Commoners appear just outside, on free cells near the door, at the same moment - no home, so they skip the keep-exit queue entirely.
+            List<CellCoord> outsideCells = FindFreeCells(building.DoorCell, commonerCount, FounderSpacingCells);
+            foreach (CellCoord outsideCell in outsideCells)
+            {
+                PersonState state = RollPerson(random, PersonRole.Commoner, outsideCell);
+                SpawnPersonWithState(state, tick);
             }
 
             RollNextExitTick(tick);
@@ -469,10 +498,10 @@ namespace TheEmptying.Modules.People
 
         /// <summary>
         /// Rolls a new person's identity and stats. The Advisor is a
-        /// founder and rolls like one (R8) - only the Monarch uses the
-        /// different range. Every roll comes from the given stream, in a
-        /// fixed order, so the same world seed always gives the same
-        /// people.
+        /// founder and rolls like one (R8) - only the Monarch and (R16)
+        /// Commoners use different ranges. Every roll comes from the
+        /// given stream, in a fixed order, so the same world seed always
+        /// gives the same people.
         /// </summary>
         private PersonState RollPerson(SimRandom random, PersonRole role, CellCoord cell)
         {
@@ -483,9 +512,12 @@ namespace TheEmptying.Modules.People
             string name = PickName(random, sex);
 
             bool isMonarch = role == PersonRole.Monarch;
+            bool isCommoner = role == PersonRole.Commoner;
 
-            int ageMin = (int)_settings.Get(isMonarch ? MonarchAgeMinSettingId : FounderAgeMinSettingId);
-            int ageMax = (int)_settings.Get(isMonarch ? MonarchAgeMaxSettingId : FounderAgeMaxSettingId);
+            string ageMinSettingId = isMonarch ? MonarchAgeMinSettingId : isCommoner ? CommonerAgeMinSettingId : FounderAgeMinSettingId;
+            string ageMaxSettingId = isMonarch ? MonarchAgeMaxSettingId : isCommoner ? CommonerAgeMaxSettingId : FounderAgeMaxSettingId;
+            int ageMin = (int)_settings.Get(ageMinSettingId);
+            int ageMax = (int)_settings.Get(ageMaxSettingId);
             int age = random.NextInt(ageMin, ageMax + 1);
 
             var skillValues = new Dictionary<string, int>();
@@ -509,6 +541,30 @@ namespace TheEmptying.Modules.People
 
                 int attrMin = (int)_settings.Get(MonarchAttributeMinSettingId);
                 int attrMax = (int)_settings.Get(MonarchAttributeMaxSettingId);
+                foreach (AttributeDefinition attribute in attributes)
+                {
+                    attributeValues[attribute.Id] = random.NextInt(attrMin, attrMax + 1);
+                }
+            }
+            else if (isCommoner)
+            {
+                int skillMin = (int)_settings.Get(CommonerSkillMinSettingId);
+                int skillMax = (int)_settings.Get(CommonerSkillMaxSettingId);
+                int tradeMin = (int)_settings.Get(CommonerTradeSkillMinSettingId);
+                int tradeMax = (int)_settings.Get(CommonerTradeSkillMaxSettingId);
+
+                SkillDefinition trade = skills[random.NextInt(0, skills.Count)];
+                specialtyId = trade.Id;
+
+                foreach (SkillDefinition skill in skills)
+                {
+                    skillValues[skill.Id] = skill.Id == specialtyId
+                        ? random.NextInt(tradeMin, tradeMax + 1)
+                        : random.NextInt(skillMin, skillMax + 1);
+                }
+
+                int attrMin = (int)_settings.Get(CommonerAttributeMinSettingId);
+                int attrMax = (int)_settings.Get(CommonerAttributeMaxSettingId);
                 foreach (AttributeDefinition attribute in attributes)
                 {
                     attributeValues[attribute.Id] = random.NextInt(attrMin, attrMax + 1);
@@ -563,6 +619,13 @@ namespace TheEmptying.Modules.People
             (List<string> likes, List<string> dislikes) = RollLikesAndDislikes(random, skills);
             state.LikedSkillIds.AddRange(likes);
             state.DislikedSkillIds.AddRange(dislikes);
+
+            if (isCommoner)
+            {
+                int walletMin = (int)_settings.Get(CommonerWalletMinCopperSettingId);
+                int walletMax = (int)_settings.Get(CommonerWalletMaxCopperSettingId);
+                state.WalletTenthCopper = random.NextInt(walletMin, walletMax + 1) * 10;
+            }
 
             return state;
         }
@@ -793,6 +856,20 @@ namespace TheEmptying.Modules.People
                 return;
             }
 
+            // R16: the safety-net half of the central check (see StartTimedIdle for the half that stops a new Idle/Waiting action from ever being created inside a stockpile in the first place). Checked every tick, so a person loaded from an old save already idling in one steps out within one tick, instead of needing a special load-time case.
+            if (action.Kind == ActionKind.Idle)
+            {
+                CellCoord currentCell = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
+                if (IsInsideAnyStockpile(currentCell) && TryFindCellOutsideAnyStockpile(currentCell, id, out CellCoord exitCell))
+                {
+                    long interruptedDuration = tick - action.StartTick;
+                    PushHistory(person, new PersonActionHistoryEntry(action.Kind, action.Thought, action.StartTick, interruptedDuration));
+                    LogDecision(person, $"stepping out of the stockpile to {exitCell}.");
+                    StartWalk(id, person, exitCell, "Stepping out of the stockpile.", tick);
+                    return;
+                }
+            }
+
             if (action.Kind != ActionKind.InsideBuilding)
             {
                 ApplyHungerDrain(person);
@@ -871,17 +948,26 @@ namespace TheEmptying.Modules.People
 
         private void StartIdle(EntityId id, PersonState person, long tick, string thought)
         {
-            StartTimedIdle(person, tick, thought, IdleWaitMinSecondsSettingId, IdleWaitMaxSecondsSettingId);
+            StartTimedIdle(id, person, tick, thought, IdleWaitMinSecondsSettingId, IdleWaitMaxSecondsSettingId);
         }
 
         /// <summary>R13b: when a spot (a mound slot, a stockpile cell) is taken everywhere this person looked - wait a short while, with no stored "what I was trying," then try the exact same goal again. Never retries the same failed spot immediately in a loop.</summary>
         private void StartWaitingForSpot(EntityId id, PersonState person, long tick)
         {
-            StartTimedIdle(person, tick, "Waiting for a spot to free up.", SpotWaitMinSecondsSettingId, SpotWaitMaxSecondsSettingId);
+            StartTimedIdle(id, person, tick, "Waiting for a spot to free up.", SpotWaitMinSecondsSettingId, SpotWaitMaxSecondsSettingId);
         }
 
-        private void StartTimedIdle(PersonState person, long tick, string thought, string minSecondsSettingId, string maxSecondsSettingId)
+        /// <summary>R16: the other half of the single central check (see ProcessPersonAction) - every Idle/Waiting action is created here, so checking right here, before it's ever assigned, means nobody is ever even momentarily idle inside a stockpile when a goal, a give-up path or a failed walk starts one. ProcessPersonAction's per-tick check remains as the safety net for a state that bypassed this (loaded from an old save).</summary>
+        private void StartTimedIdle(EntityId id, PersonState person, long tick, string thought, string minSecondsSettingId, string maxSecondsSettingId)
         {
+            CellCoord currentCell = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
+            if (IsInsideAnyStockpile(currentCell) && TryFindCellOutsideAnyStockpile(currentCell, id, out CellCoord exitCell))
+            {
+                LogDecision(person, $"stepping out of the stockpile to {exitCell} instead of idling there.");
+                StartWalk(id, person, exitCell, "Stepping out of the stockpile.", tick);
+                return;
+            }
+
             SimRandom random = _randomService.GetStream(ActionsStreamName);
             double minSeconds = _settings.Get(minSecondsSettingId);
             double maxSeconds = _settings.Get(maxSecondsSettingId);
@@ -1230,13 +1316,6 @@ namespace TheEmptying.Modules.People
                         return;
                     }
 
-                    CellCoord standingCell = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
-                    if (IsInsideAnyStockpile(standingCell))
-                    {
-                        StepOutOfStockpileThenIdleOrWander(id, person, tick);
-                        return;
-                    }
-
                     if (person.CurrentAction != null && person.CurrentAction.Kind == ActionKind.Idle)
                     {
                         StartWander(id, person, tick);
@@ -1250,42 +1329,36 @@ namespace TheEmptying.Modules.People
             }
         }
 
-        /// <summary>How far StepOutOfStockpileThenIdleOrWander will search, ring by ring, for a free cell outside every stockpile - generous, since a stockpile is never more than a few cells across.</summary>
+        /// <summary>How far the stockpile-exit check will search, ring by ring, for a free cell outside every stockpile - generous, since a stockpile is never more than a few cells across.</summary>
         private const int StockpileExitSearchMaxRadiusCells = 12;
 
-        /// <summary>R13b: stockpiles are drop-off and pick-up only - a person who just delivered or ate there steps out to a free, non-stockpile cell before idling or wandering, instead of standing inside it.</summary>
-        private void StepOutOfStockpileThenIdleOrWander(EntityId id, PersonState person, long tick)
+        /// <summary>
+        /// R16: the one place that decides whether a free, non-stockpile
+        /// cell exists nearby to step out to. Used by the single central
+        /// check in ProcessPersonAction - stockpiles are drop-off and
+        /// pick-up only, so nobody's Idle (or Waiting) action is ever
+        /// allowed to actually run while they're standing inside one,
+        /// no matter which goal, give-up path or failed walk put them
+        /// there, and no matter whether that happened just now or was
+        /// loaded from a save.
+        /// </summary>
+        private bool TryFindCellOutsideAnyStockpile(CellCoord from, EntityId selfId, out CellCoord exitCell)
         {
-            CellCoord current = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
+            exitCell = default;
 
             for (int radius = 1; radius <= StockpileExitSearchMaxRadiusCells; radius++)
             {
-                foreach (CellCoord candidate in RingCells(current, radius))
+                foreach (CellCoord candidate in RingCells(from, radius))
                 {
-                    if (IsCellFreeForPerson(candidate, id) && !IsInsideAnyStockpile(candidate))
+                    if (IsCellFreeForPerson(candidate, selfId) && !IsInsideAnyStockpile(candidate))
                     {
-                        LogDecision(person, $"stepping out of the stockpile to {candidate}.");
-                        StartWalk(id, person, candidate, "Stepping out of the stockpile.", tick);
-                        return;
+                        exitCell = candidate;
+                        return true;
                     }
                 }
             }
 
-            LogDecision(person, "boxed in by the stockpile everywhere nearby - waiting for a spot to free up.");
-            StartWaitingForSpot(id, person, tick);
-        }
-
-        /// <summary>R15: a goal just gave up while the person happens to be standing inside a stockpile (delivered, then found no next job right there) - step out first, the same as any other stockpile exit, instead of idling with that stale thought inside it.</summary>
-        private void IdleOrStepOutOfStockpileFirst(EntityId id, PersonState person, long tick, string thought)
-        {
-            CellCoord cell = _mapModule.WorldToCell(person.WorldX, person.WorldZ);
-            if (IsInsideAnyStockpile(cell))
-            {
-                StepOutOfStockpileThenIdleOrWander(id, person, tick);
-                return;
-            }
-
-            StartIdle(id, person, tick, thought);
+            return false;
         }
 
         private void DecideSeekingFood(EntityId id, PersonState person, long tick)
@@ -1293,7 +1366,7 @@ namespace TheEmptying.Modules.People
             if (person.Hunger >= FullHunger)
             {
                 int homeStashMinimum = (int)_settings.Get(HomeStashMinimumGrubsSettingId);
-                if (person.LastAteFromMound && HomeStashGrubCount(person) < homeStashMinimum)
+                if (person.LastAteFromMound && person.HomeBuildingId.HasValue && HomeStashGrubCount(person) < homeStashMinimum)
                 {
                     LogDecision(person, "full after eating at a mound, and the home stash is low - topping it up.");
                     person.Goal = PersonGoal.ToppingUpHomeStash;
@@ -1444,7 +1517,7 @@ namespace TheEmptying.Modules.People
                     LogDecision(person, $"no stockpile needs {itemId} right now.");
                     person.Goal = PersonGoal.None;
                     person.ForagingItemId = string.Empty;
-                    IdleOrStepOutOfStockpileFirst(id, person, tick, person.IsCarryingAnything ? "Nowhere to take this for now." : "No stockpile needs anything I could gather right now.");
+                    StartIdle(id, person, tick, person.IsCarryingAnything ? "Nowhere to take this for now." : "No stockpile needs anything I could gather right now.");
                     return;
                 }
 
@@ -1493,7 +1566,7 @@ namespace TheEmptying.Modules.People
                 person.ForagingDeliveryZoneId = null;
                 person.Goal = PersonGoal.None;
                 person.ForagingItemId = string.Empty;
-                IdleOrStepOutOfStockpileFirst(id, person, tick, "The stockpile is gone.");
+                StartIdle(id, person, tick, "The stockpile is gone.");
                 return;
             }
 

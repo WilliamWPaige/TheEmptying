@@ -24,7 +24,7 @@ namespace TheEmptying.Modules.People
         public int AgeYears { get; }
         public PersonRole Role { get; }
 
-        /// <summary>A founder's (or the Advisor's) one random specialty skill Id; empty for the Monarch.</summary>
+        /// <summary>A founder's (or the Advisor's) one random specialty skill Id, or (R16) a Commoner's one random trade skill Id; empty for the Monarch.</summary>
         public string SpecialtySkillId { get; }
 
         private readonly Dictionary<string, int> _skills;
