@@ -15,6 +15,7 @@ using UnityEngine.UIElements;
 using BuildingPresenter = TheEmptying.Presentation.Buildings.BuildingPresenter;
 using ZonePresenter = TheEmptying.Presentation.Zones.ZonePresenter;
 using ZoneDrawingPresenter = TheEmptying.Presentation.Zones.ZoneDrawingPresenter;
+using ZoningMenuPresenter = TheEmptying.Presentation.Zones.ZoningMenuPresenter;
 using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation.Selection
@@ -84,6 +85,9 @@ namespace TheEmptying.Presentation.Selection
 
         /// <summary>R12b: set by GameBootstrap right after both are built. While its tool is armed or dragging, clicks here are ignored - drawing a zone never also selects or deselects anything.</summary>
         public ZoneDrawingPresenter ZoneDrawingTool { get; set; }
+
+        /// <summary>R18: set by GameBootstrap right after both are built. While the zoning menu is open, world clicks are ignored the same way - it hides this window's selection entirely anyway, but this also stops a click from quietly re-selecting something underneath it.</summary>
+        public ZoningMenuPresenter ZoningMenu { get; set; }
 
         /// <summary>R11: called when the starting site marker is clicked - GameBootstrap opens the founding popup.</summary>
         public Action OnSiteMarkerClicked { get; set; }
@@ -220,6 +224,11 @@ namespace TheEmptying.Presentation.Selection
             }
 
             if (ZoneDrawingTool != null && ZoneDrawingTool.IsToolActive)
+            {
+                return;
+            }
+
+            if (ZoningMenu != null && ZoningMenu.IsOpen)
             {
                 return;
             }

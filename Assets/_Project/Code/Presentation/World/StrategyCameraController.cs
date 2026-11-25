@@ -29,8 +29,23 @@ namespace TheEmptying.Presentation.World
         public const string EdgeScrollingSettingId = "setting.camera.edge_scrolling";
         public const string EdgeScrollSizeSettingId = "setting.camera.edge_scroll_size";
 
+        /// <summary>R18: the zoning view's smooth switch in/out, and which way it faces.</summary>
+        public const string ZoningTransitionSecondsSettingId = "setting.zoning.camera_transition_seconds";
+        public const string ZoningKeepRotationFacingSettingId = "setting.zoning.keep_rotation_facing";
+
         /// <summary>Placeholder: a fixed downward look angle. Not a setting - the spec only calls out pan speed, zoom limits/speed, rotate speed and edge size as tunables.</summary>
         private const float PitchAngleDegrees = 50f;
+
+        /// <summary>R18: the zoning view looks straight down.</summary>
+        private const float ZoningPitchAngleDegrees = 90f;
+
+        private enum ViewMode
+        {
+            Normal,
+            EnteringZoning,
+            Zoning,
+            ExitingZoning
+        }
 
         private InputAction _panAction;
         private InputAction _rotateAction;
@@ -41,10 +56,32 @@ namespace TheEmptying.Presentation.World
         private VisualElement _uiRoot;
         private MapModule _mapModule;
         private FloatingOrigin _floatingOrigin;
+        private Camera _camera;
 
         private Vector3 _focusPoint;
         private float _height;
         private float _yaw;
+        private float _pitchDegrees = PitchAngleDegrees;
+
+        private ViewMode _viewMode = ViewMode.Normal;
+        private bool _zoningKeepRotation;
+        private float _transitionElapsed;
+        private float _transitionDuration;
+        private float _transitionStartPitch;
+        private float _transitionEndPitch;
+        private float _transitionStartYaw;
+        private float _transitionEndYaw;
+        private float _transitionStartOrthoSize;
+        private float _transitionEndOrthoSize;
+        private float _transitionStartHeight;
+        private float _transitionEndHeight;
+        private Vector3 _transitionStartFocusPoint;
+        private Vector3 _transitionEndFocusPoint;
+
+        /// <summary>Saved the moment EnterZoningView is called; ExitZoningView restores exactly this (position, height, rotation), discarding any panning/zooming done while zoning.</summary>
+        private Vector3 _preZoningFocusPoint;
+        private float _preZoningHeight;
+        private float _preZoningYaw;
 
         /// <summary>Set by the Escape menu while it (or its Options/confirm sub-panels) is open: the camera stays completely still, same as while a text field is focused.</summary>
         public bool InputSuspended { get; set; }
@@ -54,6 +91,9 @@ namespace TheEmptying.Presentation.World
 
         /// <summary>The camera's current zoom height, in meters. Used by the world map view to decide when to switch to the low-detail view.</summary>
         public float Height => _height;
+
+        /// <summary>R18: true from the moment EnterZoningView is called until ExitZoningView's own transition finishes.</summary>
+        public bool IsInZoningView => _viewMode != ViewMode.Normal;
 
         public void Initialize(InputActionMap gameplayMap, SettingsRegistry settings, VisualElement uiRoot, MapModule mapModule, FloatingOrigin floatingOrigin)
         {
@@ -66,6 +106,7 @@ namespace TheEmptying.Presentation.World
             _uiRoot = uiRoot;
             _mapModule = mapModule;
             _floatingOrigin = floatingOrigin;
+            _camera = GetComponent<Camera>();
 
             // New game: the camera starts at the world center (R6).
             _focusPoint = new Vector3((float)(mapModule.WorldWidthMeters * 0.5), 0f, (float)(mapModule.WorldDepthMeters * 0.5));
@@ -73,6 +114,90 @@ namespace TheEmptying.Presentation.World
             _height = (float)((settings.Get(ZoomMinHeightSettingId) + settings.Get(ZoomMaxHeightSettingId)) * 0.5);
 
             ApplyTransform();
+        }
+
+        /// <summary>
+        /// R18: begins the smooth switch into the orthographic top-down
+        /// zoning view - snapshots the current position/height/rotation
+        /// (ExitZoningView restores exactly this) and starts animating
+        /// pitch (and, unless the facing setting says to keep the current
+        /// rotation, yaw back to north) toward it. A no-op if already
+        /// zoning or mid-transition.
+        /// </summary>
+        public void EnterZoningView()
+        {
+            // Zoning (already there) and EnteringZoning (already heading there) are no-ops; Normal and
+            // ExitingZoning (reverses an exit that hasn't finished yet) both start a fresh entering transition.
+            if (_viewMode == ViewMode.Zoning || _viewMode == ViewMode.EnteringZoning || _camera == null)
+            {
+                return;
+            }
+
+            if (_viewMode == ViewMode.Normal)
+            {
+                // Only taken on the true starting point - never overwritten by an interrupted exit's transient state.
+                _preZoningFocusPoint = _focusPoint;
+                _preZoningHeight = _height;
+                _preZoningYaw = _yaw;
+
+                _camera.orthographic = true;
+                _camera.orthographicSize = ComputeMatchingOrthoSize(_pitchDegrees, _height);
+            }
+
+            _zoningKeepRotation = _settings.Get(ZoningKeepRotationFacingSettingId) != 0;
+
+            _transitionStartPitch = _pitchDegrees;
+            _transitionEndPitch = ZoningPitchAngleDegrees;
+            _transitionStartYaw = _yaw;
+            _transitionEndYaw = _zoningKeepRotation ? _yaw : 0f;
+            _transitionStartOrthoSize = _camera.orthographicSize;
+            _transitionEndOrthoSize = _height;
+            _transitionStartHeight = _height;
+            _transitionEndHeight = _height;
+            _transitionStartFocusPoint = _focusPoint;
+            _transitionEndFocusPoint = _focusPoint;
+
+            BeginTransition(ViewMode.EnteringZoning);
+        }
+
+        /// <summary>R18: begins the smooth switch back out, toward exactly the position/height/rotation EnterZoningView snapshotted - discarding any panning or zooming done while zoning. A no-op unless currently in the steady zoning state.</summary>
+        public void ExitZoningView()
+        {
+            // Normal (already there) and ExitingZoning (already heading there) are no-ops; Zoning and
+            // EnteringZoning (reverses an entry that hasn't finished yet) both start a fresh exiting transition.
+            if (_viewMode == ViewMode.Normal || _viewMode == ViewMode.ExitingZoning || _camera == null)
+            {
+                return;
+            }
+
+            _transitionStartPitch = _pitchDegrees;
+            _transitionEndPitch = PitchAngleDegrees;
+            _transitionStartYaw = _yaw;
+            _transitionEndYaw = _preZoningYaw;
+            _transitionStartOrthoSize = _camera.orthographicSize;
+            _transitionEndOrthoSize = ComputeMatchingOrthoSize(PitchAngleDegrees, _preZoningHeight);
+            _transitionStartHeight = _height;
+            _transitionEndHeight = _preZoningHeight;
+            _transitionStartFocusPoint = _focusPoint;
+            _transitionEndFocusPoint = _preZoningFocusPoint;
+
+            BeginTransition(ViewMode.ExitingZoning);
+        }
+
+        private void BeginTransition(ViewMode mode)
+        {
+            _transitionDuration = Mathf.Max(0.01f, (float)_settings.Get(ZoningTransitionSecondsSettingId));
+            _transitionElapsed = 0f;
+            _viewMode = mode;
+        }
+
+        /// <summary>The orthographic size that shows roughly the same ground-plane extent a perspective camera at this pitch/height currently shows, so flipping Camera.orthographic on or off never visibly "pops".</summary>
+        private float ComputeMatchingOrthoSize(float pitchDegrees, float height)
+        {
+            float pitchRadians = pitchDegrees * Mathf.Deg2Rad;
+            float distance = height / Mathf.Max(0.01f, Mathf.Sin(pitchRadians));
+            float halfFovRadians = _camera.fieldOfView * 0.5f * Mathf.Deg2Rad;
+            return distance * Mathf.Tan(halfFovRadians);
         }
 
         /// <summary>After a load, the simulation (and its SettingsRegistry/MapModule) is a new instance; point the camera at it.</summary>
@@ -95,12 +220,23 @@ namespace TheEmptying.Presentation.World
 
         private void Update()
         {
-            if (_settings == null || InputSuspended || UiInputUtility.IsTextFieldFocused(_uiRoot))
+            if (_settings == null)
             {
                 return;
             }
 
             float dt = Time.unscaledDeltaTime;
+
+            if (_viewMode == ViewMode.EnteringZoning || _viewMode == ViewMode.ExitingZoning)
+            {
+                AdvanceTransition(dt);
+                return;
+            }
+
+            if (InputSuspended || UiInputUtility.IsTextFieldFocused(_uiRoot))
+            {
+                return;
+            }
 
             float panSpeed = (float)_settings.Get(PanSpeedSettingId);
             float zoomSpeed = (float)_settings.Get(ZoomSpeedSettingId);
@@ -138,13 +274,18 @@ namespace TheEmptying.Presentation.World
                 _focusPoint += (forward * panInput.y + right * panInput.x) * effectivePanSpeed * dt;
             }
 
-            float rotateInput = _rotateAction?.ReadValue<float>() ?? 0f;
-            _yaw += rotateInput * rotateSpeed * dt;
-
-            if (_rotateDragAction != null && _rotateDragAction.IsPressed() && Mouse.current != null)
+            // R18: North-up zoning is fixed - Q/E and the rotate-drag mouse button do nothing while it's active.
+            bool rotationLocked = _viewMode == ViewMode.Zoning && !_zoningKeepRotation;
+            if (!rotationLocked)
             {
-                Vector2 mouseDelta = Mouse.current.delta.ReadValue();
-                _yaw += mouseDelta.x * dragSensitivity;
+                float rotateInput = _rotateAction?.ReadValue<float>() ?? 0f;
+                _yaw += rotateInput * rotateSpeed * dt;
+
+                if (_rotateDragAction != null && _rotateDragAction.IsPressed() && Mouse.current != null)
+                {
+                    Vector2 mouseDelta = Mouse.current.delta.ReadValue();
+                    _yaw += mouseDelta.x * dragSensitivity;
+                }
             }
 
             (double clampedX, double clampedZ) = _mapModule.ClampToWorld(_focusPoint.x, _focusPoint.z);
@@ -154,6 +295,49 @@ namespace TheEmptying.Presentation.World
             // R6: keep the camera near the rendering origin so nothing jitters anywhere on a 15 km map. _focusPoint itself is never shifted - only the Transform ApplyTransform computes below is.
             _floatingOrigin.CheckAndShift(_focusPoint);
 
+            // R18: the zoning view maps the same zoom range straight onto the orthographic size, so zooming feels the same.
+            if (_viewMode == ViewMode.Zoning)
+            {
+                _camera.orthographicSize = _height;
+            }
+
+            ApplyTransform();
+        }
+
+        /// <summary>R18: drives EnterZoningView/ExitZoningView's smooth switch - pitch, facing, orthographic size, and (exiting only) height/focus point all ease toward their transition's end values, landing on them exactly at t=1.</summary>
+        private void AdvanceTransition(float dt)
+        {
+            _transitionElapsed += dt;
+            float t = Mathf.Clamp01(_transitionElapsed / _transitionDuration);
+
+            _pitchDegrees = Mathf.Lerp(_transitionStartPitch, _transitionEndPitch, t);
+            _yaw = Mathf.LerpAngle(_transitionStartYaw, _transitionEndYaw, t);
+            _height = Mathf.Lerp(_transitionStartHeight, _transitionEndHeight, t);
+            _focusPoint = Vector3.Lerp(_transitionStartFocusPoint, _transitionEndFocusPoint, t);
+            _camera.orthographicSize = Mathf.Lerp(_transitionStartOrthoSize, _transitionEndOrthoSize, t);
+
+            _floatingOrigin.CheckAndShift(_focusPoint);
+            ApplyTransform();
+
+            if (t < 1f)
+            {
+                return;
+            }
+
+            if (_viewMode == ViewMode.EnteringZoning)
+            {
+                _viewMode = ViewMode.Zoning;
+                return;
+            }
+
+            // ExitingZoning: land exactly on the pre-zoning snapshot, discarding any float error from the lerps above.
+            _viewMode = ViewMode.Normal;
+            _camera.orthographic = false;
+            _pitchDegrees = PitchAngleDegrees;
+            _yaw = _preZoningYaw;
+            _height = _preZoningHeight;
+            _focusPoint = _preZoningFocusPoint;
+            _floatingOrigin.CheckAndShift(_focusPoint);
             ApplyTransform();
         }
 
@@ -190,15 +374,15 @@ namespace TheEmptying.Presentation.World
 
         private void ApplyTransform()
         {
-            float pitchRadians = PitchAngleDegrees * Mathf.Deg2Rad;
-            float horizontalDistance = _height / Mathf.Tan(pitchRadians);
+            float pitchRadians = _pitchDegrees * Mathf.Deg2Rad;
+            float horizontalDistance = _height / Mathf.Max(0.0001f, Mathf.Tan(pitchRadians));
 
             Quaternion yawRotation = Quaternion.Euler(0f, _yaw, 0f);
             Vector3 back = yawRotation * Vector3.back;
             Vector3 worldPosition = _focusPoint + back * horizontalDistance + Vector3.up * _height;
             Vector3 renderPosition = _floatingOrigin.WorldToRender(worldPosition);
 
-            transform.SetPositionAndRotation(renderPosition, Quaternion.Euler(PitchAngleDegrees, _yaw, 0f));
+            transform.SetPositionAndRotation(renderPosition, Quaternion.Euler(_pitchDegrees, _yaw, 0f));
         }
     }
 }

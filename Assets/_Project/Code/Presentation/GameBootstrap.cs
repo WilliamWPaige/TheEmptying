@@ -100,6 +100,7 @@ namespace TheEmptying.Presentation
         private ZonesModule _zonesModule;
         private ZonePresenter _zonePresenter;
         private ZoneDrawingPresenter _zoneDrawing;
+        private ZoningMenuPresenter _zoningMenu;
         private PondsModule _pondsModule;
         private PondsPresenter _pondsPresenter;
         private DiscoveryModule _discoveryModule;
@@ -196,6 +197,7 @@ namespace TheEmptying.Presentation
             BuildWorld();
             BuildDebugWindow();
             BuildDiscoveriesWindow();
+            BuildZoningMenu();
             BuildEscapeMenu();
             BuildFoundingPopup();
             SetupNewGameBeforeFounding();
@@ -592,6 +594,30 @@ namespace TheEmptying.Presentation
             _discoveriesWindow.Initialize(_uiDocument.rootVisualElement, _discoveryModule, _simulation.Content);
         }
 
+        /// <summary>R18: the zoning menu and its top-down view - built once; Load() rebinds it to the freshly loaded content. Built after the debug and Discoveries windows, since opening it force-closes both.</summary>
+        private void BuildZoningMenu()
+        {
+            _zoningMenu = gameObject.AddComponent<ZoningMenuPresenter>();
+            _zoningMenu.Initialize(
+                _cameraController,
+                _mapModule,
+                _simulation.Content,
+                _simulation.Settings,
+                _floatingOrigin,
+                Camera.main,
+                this,
+                _uiDocument.rootVisualElement,
+                _hudPanel,
+                _worldMapView.Decorations,
+                _personPresenter,
+                _debugWindow,
+                _discoveriesWindow,
+                _worldSelection,
+                HideToastNow);
+
+            _worldSelection.ZoningMenu = _zoningMenu;
+        }
+
         /// <summary>R4: Resume/Main Menu/Options/Exit Game, with the shared Options panel and the two Yes/No confirmations.</summary>
         private void BuildEscapeMenu()
         {
@@ -726,7 +752,7 @@ namespace TheEmptying.Presentation
         /// <summary>Space, and the matching HUD button, both funnel through here - and, like every cheat action, through the command system.</summary>
         private void HandleTogglePause()
         {
-            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement) || (_escapeMenu != null && _escapeMenu.IsOpen))
+            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement) || (_escapeMenu != null && _escapeMenu.IsOpen) || (_zoningMenu != null && _zoningMenu.IsOpen))
             {
                 return;
             }
@@ -737,7 +763,7 @@ namespace TheEmptying.Presentation
         /// <summary>1/2/3, and the matching HUD buttons, both funnel through here. The speed command itself also unpauses.</summary>
         private void HandleSetSpeed(int speed)
         {
-            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement) || (_escapeMenu != null && _escapeMenu.IsOpen))
+            if (UiInputUtility.IsTextFieldFocused(_uiDocument.rootVisualElement) || (_escapeMenu != null && _escapeMenu.IsOpen) || (_zoningMenu != null && _zoningMenu.IsOpen))
             {
                 return;
             }
@@ -787,6 +813,12 @@ namespace TheEmptying.Presentation
                 return;
             }
 
+            if (_zoningMenu != null && _zoningMenu.IsOpen)
+            {
+                _zoningMenu.HandleEscapePressed();
+                return;
+            }
+
             if (_worldSelection != null && _worldSelection.IsOpen)
             {
                 _worldSelection.HandleEscapePressed();
@@ -816,7 +848,7 @@ namespace TheEmptying.Presentation
         /// <summary>F1's entry point - does nothing while the Escape menu is open, since it is modal.</summary>
         private void HandleToggleDebugWindow()
         {
-            if (_escapeMenu != null && _escapeMenu.IsOpen)
+            if ((_escapeMenu != null && _escapeMenu.IsOpen) || (_zoningMenu != null && _zoningMenu.IsOpen))
             {
                 return;
             }
@@ -929,6 +961,18 @@ namespace TheEmptying.Presentation
             _toastLabel.text = message;
             _toastWrapper.style.display = DisplayStyle.Flex;
             _toastHideAtUnscaledTime = Time.unscaledTime + ToastSeconds;
+        }
+
+        /// <summary>R18: hides a currently-shown toast immediately, instead of waiting for its timer - the zoning view hides every toast the moment it opens.</summary>
+        private void HideToastNow()
+        {
+            if (_toastWrapper == null)
+            {
+                return;
+            }
+
+            _toastWrapper.style.display = DisplayStyle.None;
+            _toastHideAtUnscaledTime = -1f;
         }
 
         private void RefreshToast()
@@ -1088,7 +1132,7 @@ namespace TheEmptying.Presentation
             _hudPanel.Add(BuildHudButton("1x", () => HandleSetSpeed(1)));
             _hudPanel.Add(BuildHudButton("2x", () => HandleSetSpeed(2)));
             _hudPanel.Add(BuildHudButton("3x", () => HandleSetSpeed(3)));
-            _zonesButton = BuildHudButton("Zones", () => _zoneDrawing?.OpenTypePicker());
+            _zonesButton = BuildHudButton("Zones", () => _zoningMenu?.Open());
             _hudPanel.Add(_zonesButton);
             _discoveriesButton = BuildHudButton("Discoveries", () => _discoveriesWindow?.Toggle());
             _hudPanel.Add(_discoveriesButton);
@@ -1260,6 +1304,7 @@ namespace TheEmptying.Presentation
                 _zonePresenter?.Rebind(_simulation.Content);
                 _zonePresenter?.Rebuild(_zonesModule);
                 _zoneDrawing?.Rebind(_zonesModule, _simulation.Content);
+                _zoningMenu?.Rebind(_mapModule, _simulation.Content, _simulation.Settings);
                 _worldSelection?.Rebind(_peopleModule, _mapModule, _buildingsModule, _zonesModule, _pondsModule, _simulation.Content);
                 _buildingPresenter?.Rebuild(_buildingsModule);
                 ShowSiteMarkerIfNotFounded();

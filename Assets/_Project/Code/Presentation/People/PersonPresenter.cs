@@ -81,6 +81,9 @@ namespace TheEmptying.Presentation.People
         /// <summary>Resolves a clicked GameObject back to the person it's currently drawing, if any.</summary>
         public bool TryGetEntityForInstance(GameObject instance, out EntityId id) => _entityByInstance.TryGetValue(instance, out id);
 
+        /// <summary>R18: hides or shows every currently-drawn person at once (the zoning view hides people).</summary>
+        public void SetVisible(bool visible) => _root.gameObject.SetActive(visible);
+
         private void Update()
         {
             if (_peopleModule == null)

@@ -138,6 +138,9 @@ namespace TheEmptying.Presentation.World
         /// <summary>Every placement currently drawn (any shown chunk) - for the "Check ponds" cheat, to compare against the map data.</summary>
         public IReadOnlyCollection<ChunkPlacement> ActivePlacements => _placementByInstance.Values;
 
+        /// <summary>R18: hides or shows every currently-drawn decoration at once (the zoning view hides trees, stones and grub mounds) without touching which chunks are tracked as shown.</summary>
+        public void SetVisible(bool visible) => _root.gameObject.SetActive(visible);
+
         /// <summary>Resolves a clicked GameObject back to the placement it's currently drawing, if any.</summary>
         public bool TryGetPlacement(GameObject instance, out ChunkPlacement placement) => _placementByInstance.TryGetValue(instance, out placement);
 

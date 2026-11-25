@@ -1,0 +1,45 @@
+{
+    "type": "setting_definition",
+    "items": [
+        {
+            "id": "setting.zoning.camera_transition_seconds",
+            "label": "Zoning camera transition",
+            "valueType": "Number",
+            "default": 0.5,
+            "minimum": 0.1,
+            "maximum": 5,
+            "category": "Zoning",
+            "description": "Placeholder. How many real seconds the camera takes to smoothly switch in and out of the top-down zoning view."
+        },
+        {
+            "id": "setting.zoning.keep_rotation_facing",
+            "label": "Zoning view keeps rotation",
+            "valueType": "Boolean",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1,
+            "category": "Zoning",
+            "description": "Placeholder, to compare both ways (R18). Off (default) means the zoning view is North-up and fixed - Q/E do nothing while zoning. On means it starts at the camera's current facing and Q/E still rotate it."
+        },
+        {
+            "id": "setting.zoning.brush_min_size_cells",
+            "label": "Zoning brush min size",
+            "valueType": "Integer",
+            "default": 1,
+            "minimum": 1,
+            "maximum": 10,
+            "category": "Zoning",
+            "description": "Placeholder. The zoning brush's smallest size, in cells per side."
+        },
+        {
+            "id": "setting.zoning.brush_max_size_cells",
+            "label": "Zoning brush max size",
+            "valueType": "Integer",
+            "default": 10,
+            "minimum": 1,
+            "maximum": 20,
+            "category": "Zoning",
+            "description": "Placeholder. The zoning brush's largest size, in cells per side."
+        }
+    ]
+}
