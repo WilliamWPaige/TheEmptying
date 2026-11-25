@@ -135,6 +135,9 @@ namespace TheEmptying.Presentation.World
         /// <summary>The asset (display name, model, footprint) a given placement kind draws - for the info window to show a clicked resource.</summary>
         public ResourceAsset GetAsset(PlacementKind kind) => _assetsByKind.TryGetValue(kind, out ResourceAsset asset) ? asset : null;
 
+        /// <summary>Every placement currently drawn (any shown chunk) - for the "Check ponds" cheat, to compare against the map data.</summary>
+        public IReadOnlyCollection<ChunkPlacement> ActivePlacements => _placementByInstance.Values;
+
         /// <summary>Resolves a clicked GameObject back to the placement it's currently drawing, if any.</summary>
         public bool TryGetPlacement(GameObject instance, out ChunkPlacement placement) => _placementByInstance.TryGetValue(instance, out placement);
 

@@ -72,6 +72,9 @@ namespace TheEmptying.Modules.Ponds
         /// <summary>The live max-drinks setting value, for the info window.</summary>
         public double MaxDrinksSetting => _settings.Get(PondMaxDrinksSettingId);
 
+        /// <summary>The live clear-margin setting value (in cells), for the "Check ponds" cheat.</summary>
+        public double ClearMarginCellsSetting => _settings.Get(ClearMarginCellsSettingId);
+
         public void Initialize(ModuleContext context)
         {
             _entities = context.Entities;

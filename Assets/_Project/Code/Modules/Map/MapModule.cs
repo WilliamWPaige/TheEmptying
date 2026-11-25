@@ -178,8 +178,6 @@ namespace TheEmptying.Modules.Map
         /// </summary>
         public void RemovePlacementsWithinRadius(double centerX, double centerZ, double radiusMeters)
         {
-            double cellSize = CellSizeMeters;
-
             var touchedChunks = new HashSet<ChunkCoord>
             {
                 WorldToChunk(centerX - radiusMeters, centerZ - radiusMeters),
@@ -196,19 +194,7 @@ namespace TheEmptying.Modules.Map
 
                 foreach (ChunkPlacement placement in chunk.Placements)
                 {
-                    int footprint = FootprintCellsFor(placement.Kind);
-                    double rectMinX = placement.Cell.X * cellSize;
-                    double rectMinZ = placement.Cell.Z * cellSize;
-                    double rectMaxX = rectMinX + footprint * cellSize;
-                    double rectMaxZ = rectMinZ + footprint * cellSize;
-
-                    double closestX = Math.Clamp(centerX, rectMinX, rectMaxX);
-                    double closestZ = Math.Clamp(centerZ, rectMinZ, rectMaxZ);
-                    double dx = centerX - closestX;
-                    double dz = centerZ - closestZ;
-                    bool withinRadius = dx * dx + dz * dz < radiusMeters * radiusMeters;
-
-                    if (withinRadius)
+                    if (IsPlacementWithinRadius(placement, centerX, centerZ, radiusMeters))
                     {
                         changed = true;
                     }
@@ -223,6 +209,57 @@ namespace TheEmptying.Modules.Map
                     _chunks[coord] = new ChunkData(coord, kept);
                 }
             }
+        }
+
+        /// <summary>
+        /// R17c: read-only counterpart to RemovePlacementsWithinRadius, for
+        /// the "Check ponds" cheat - counts (without removing) any
+        /// placement whose own footprint comes within radiusMeters of
+        /// (centerX, centerZ), in whichever chunks are already loaded there.
+        /// Only touches chunks the bounding square's four corners fall
+        /// into, same assumption as RemovePlacementsWithinRadius.
+        /// </summary>
+        public int CountPlacementsWithinRadius(double centerX, double centerZ, double radiusMeters)
+        {
+            var touchedChunks = new HashSet<ChunkCoord>
+            {
+                WorldToChunk(centerX - radiusMeters, centerZ - radiusMeters),
+                WorldToChunk(centerX + radiusMeters, centerZ - radiusMeters),
+                WorldToChunk(centerX - radiusMeters, centerZ + radiusMeters),
+                WorldToChunk(centerX + radiusMeters, centerZ + radiusMeters)
+            };
+
+            int count = 0;
+            foreach (ChunkCoord coord in touchedChunks)
+            {
+                ChunkData chunk = GetOrCreateChunk(coord);
+                foreach (ChunkPlacement placement in chunk.Placements)
+                {
+                    if (IsPlacementWithinRadius(placement, centerX, centerZ, radiusMeters))
+                    {
+                        count++;
+                    }
+                }
+            }
+
+            return count;
+        }
+
+        /// <summary>Whether this placement's own footprint comes within radiusMeters of (centerX, centerZ) - shared by RemovePlacementsWithinRadius, CountPlacementsWithinRadius and the "Check ponds" cheat's drawn-instance count.</summary>
+        public bool IsPlacementWithinRadius(ChunkPlacement placement, double centerX, double centerZ, double radiusMeters)
+        {
+            double cellSize = CellSizeMeters;
+            int footprint = FootprintCellsFor(placement.Kind);
+            double rectMinX = placement.Cell.X * cellSize;
+            double rectMinZ = placement.Cell.Z * cellSize;
+            double rectMaxX = rectMinX + footprint * cellSize;
+            double rectMaxZ = rectMinZ + footprint * cellSize;
+
+            double closestX = Math.Clamp(centerX, rectMinX, rectMaxX);
+            double closestZ = Math.Clamp(centerZ, rectMinZ, rectMaxZ);
+            double dx = centerX - closestX;
+            double dz = centerZ - closestZ;
+            return dx * dx + dz * dz < radiusMeters * radiusMeters;
         }
 
         /// <summary>Creates the chunk's data (and its one-time random placements) the first time it's asked for; returns the same instance on every later call.</summary>

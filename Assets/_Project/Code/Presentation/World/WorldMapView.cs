@@ -1,6 +1,7 @@
 using System.Collections.Generic;
 using TheEmptying.Core.Content;
 using TheEmptying.Modules.Map;
+using TheEmptying.Modules.Ponds;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -24,6 +25,7 @@ namespace TheEmptying.Presentation.World
         }
 
         private MapModule _mapModule;
+        private PondsModule _pondsModule;
         private SettingsRegistry _settings;
         private FloatingOrigin _floatingOrigin;
         private StrategyCameraController _cameraController;
@@ -44,9 +46,10 @@ namespace TheEmptying.Presentation.World
         /// <summary>Whether this chunk currently has a built, visible ground tile - the same "loaded" every other per-chunk drawing (decorations, people) goes by.</summary>
         public bool IsChunkLoaded(ChunkCoord coord) => _activeTiles.ContainsKey(coord);
 
-        public void Initialize(MapModule mapModule, SettingsRegistry settings, FloatingOrigin floatingOrigin, StrategyCameraController cameraController)
+        public void Initialize(MapModule mapModule, PondsModule pondsModule, SettingsRegistry settings, FloatingOrigin floatingOrigin, StrategyCameraController cameraController)
         {
             _mapModule = mapModule;
+            _pondsModule = pondsModule;
             _settings = settings;
             _floatingOrigin = floatingOrigin;
             _cameraController = cameraController;
@@ -59,10 +62,11 @@ namespace TheEmptying.Presentation.World
             _groundMaterial = BuildMaterial();
         }
 
-        /// <summary>After a load, the simulation (and its MapModule/SettingsRegistry) is a new instance; every tile goes back to the pool and is rebuilt from the new one next Update.</summary>
-        public void Rebind(MapModule mapModule, SettingsRegistry settings)
+        /// <summary>After a load, the simulation (and its MapModule/PondsModule/SettingsRegistry) is a new instance; every tile goes back to the pool and is rebuilt from the new one next Update.</summary>
+        public void Rebind(MapModule mapModule, PondsModule pondsModule, SettingsRegistry settings)
         {
             _mapModule = mapModule;
+            _pondsModule = pondsModule;
             _settings = settings;
             _decorations.Rebind(mapModule);
 
@@ -139,6 +143,9 @@ namespace TheEmptying.Presentation.World
 
                 // Lazily creates this chunk's simulation-side data (and its one-time random placements) the first time it's needed (R6/R6b) - never a fixed array for the whole world.
                 _mapModule.GetOrCreateChunk(coord);
+
+                // R17c: ponds for this chunk must exist before decorations are drawn from it - pond generation clears any tree/stone/mound in its water and margin (PondsModule.CreatePond), and TemporaryChunkDecorations.ShowChunk only ever reads a chunk's placements once, never refreshing. Asking here, rather than relying on this component's Update() happening to run before PondsPresenter's, makes the order correct regardless of Unity's (undefined) MonoBehaviour execution order.
+                _pondsModule?.GetOrCreatePondsForChunk(coord);
 
                 ChunkTile tile = _pool.Count > 0 ? _pool.Pop() : BuildTile();
                 (double originX, double originZ) = _mapModule.ChunkOrigin(coord);

@@ -458,7 +458,7 @@ namespace TheEmptying.Presentation
             _cameraController.Initialize(gameplayMap, _simulation.Settings, _uiDocument.rootVisualElement, _mapModule, _floatingOrigin);
 
             _worldMapView = gameObject.AddComponent<WorldMapView>();
-            _worldMapView.Initialize(_mapModule, _simulation.Settings, _floatingOrigin, _cameraController);
+            _worldMapView.Initialize(_mapModule, _pondsModule, _simulation.Settings, _floatingOrigin, _cameraController);
 
             _mapCursor = gameObject.AddComponent<MapCursorPresenter>();
             _mapCursor.Initialize(_mapModule, _floatingOrigin, camera, _uiDocument.rootVisualElement);
@@ -576,7 +576,7 @@ namespace TheEmptying.Presentation
             new StockpileCheat(_zonesModule, _worldSelection, _simulation.Content, ShowToast).BuildSections(_cheatMenu);
             new DiscoveryCheat(_discoveryModule).BuildSections(_cheatMenu);
             new TreasuryCheat(_peopleModule).BuildSections(_cheatMenu);
-            new ResourceCheat(_pondsModule, _worldSelection, ShowToast).BuildSections(_cheatMenu);
+            new ResourceCheat(_pondsModule, _mapModule, _worldMapView, _worldSelection, ShowToast).BuildSections(_cheatMenu);
         }
 
         private void BuildDebugWindow()
@@ -1254,7 +1254,7 @@ namespace TheEmptying.Presentation
                 _discoveriesWindow?.Rebind(_discoveryModule, _simulation.Content);
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
-                _worldMapView?.Rebind(_mapModule, _simulation.Settings);
+                _worldMapView?.Rebind(_mapModule, _pondsModule, _simulation.Settings);
                 _personPresenter?.Rebind(_peopleModule, _mapModule);
                 _pondsPresenter?.Rebind(_pondsModule, _mapModule, _simulation.Settings);
                 _zonePresenter?.Rebind(_simulation.Content);
