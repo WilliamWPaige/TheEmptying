@@ -31,6 +31,9 @@ namespace TheEmptying.Presentation.Zones
         public const string BrushMinSizeCellsSettingId = "setting.zoning.brush_min_size_cells";
         public const string BrushMaxSizeCellsSettingId = "setting.zoning.brush_max_size_cells";
 
+        /// <summary>R18a: wide enough for every label, field, the 140px-wide color wheel and every button at all three UI size settings, with room to spare - was 260, too narrow (text cut off).</summary>
+        private const float MenuPanelWidth = 340f;
+
         private StrategyCameraController _cameraController;
         private MapModule _mapModule;
         private ContentDatabase _content;
@@ -298,7 +301,7 @@ namespace TheEmptying.Presentation.Zones
                     left = 0,
                     top = 0,
                     bottom = 0,
-                    width = 260,
+                    width = MenuPanelWidth,
                     flexDirection = FlexDirection.Column,
                     paddingLeft = 16,
                     paddingRight = 16,
@@ -310,11 +313,17 @@ namespace TheEmptying.Presentation.Zones
 
             _menuPanel.Add(new Label("Zoning") { style = { color = Color.white, fontSize = 20, unityFontStyleAndWeight = FontStyle.Bold, marginBottom = 12 } });
 
-            _typeField = new DropdownField { label = "Type", style = { marginBottom = 8 } };
+            // R18a: no .label set on any field below - the default runtime theme reserves a fixed-width
+            // slot (meant for editor-style inspectors) for a field's own built-in label, which left almost
+            // no room for the value in a narrow panel. A plain Label placed above instead, matching Color/
+            // Brush shape/Brush size, costs nothing and can never get squeezed.
+            _menuPanel.Add(new Label("Type") { style = { color = Color.white, marginBottom = 4 } });
+            _typeField = new DropdownField { style = { marginBottom = 8 } };
             _typeField.RegisterValueChangedCallback(_ => OnTypeChanged());
             _menuPanel.Add(_typeField);
 
-            _nameField = new TextField { label = "Name", style = { marginBottom = 8 } };
+            _menuPanel.Add(new Label("Name") { style = { color = Color.white, marginBottom = 4 } });
+            _nameField = new TextField { style = { marginBottom = 8 } };
             _nameField.RegisterValueChangedCallback(OnNameChanged);
             _menuPanel.Add(_nameField);
 
@@ -329,11 +338,9 @@ namespace TheEmptying.Presentation.Zones
             int brushMin = (int)_settings.Get(BrushMinSizeCellsSettingId);
             int brushMax = (int)_settings.Get(BrushMaxSizeCellsSettingId);
 
-            var sizeRow = new VisualElement { style = { flexDirection = FlexDirection.Row, alignItems = Align.Center, marginBottom = 12 } };
-            sizeRow.Add(new Label("Brush size") { style = { color = Color.white, marginRight = 8 } });
-            _sizeField = new SliderInt(brushMin, brushMax) { value = brushMin, showInputField = true, style = { flexGrow = 1 } };
-            sizeRow.Add(_sizeField);
-            _menuPanel.Add(sizeRow);
+            _menuPanel.Add(new Label("Brush size") { style = { color = Color.white, marginBottom = 4 } });
+            _sizeField = new SliderInt(brushMin, brushMax) { value = brushMin, showInputField = true, style = { marginBottom = 12 } };
+            _menuPanel.Add(_sizeField);
 
             _menuPanel.Add(new Button(ArmBrush) { text = "Start zoning", style = { height = 32, marginBottom = 6 } });
             _menuPanel.Add(new Button(RequestClose) { text = "Close", style = { height = 32 } });

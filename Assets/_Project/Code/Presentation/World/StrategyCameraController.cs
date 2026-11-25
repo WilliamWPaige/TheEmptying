@@ -374,8 +374,14 @@ namespace TheEmptying.Presentation.World
 
         private void ApplyTransform()
         {
+            // R18a: height / tan(pitch) has a pole exactly at pitch = 90 (straight down, the zoning view's
+            // own pitch) - float rounding can push 90 degrees just past true pi/2, making Mathf.Tan return a
+            // huge NEGATIVE number there, which a naive Mathf.Max(epsilon, tan) guard clamps the wrong way
+            // (up to +epsilon), flipping the division into a wildly wrong, enormous horizontalDistance. Using
+            // sin/cos instead has no pole at 90 (cos is simply ~0 there, giving ~0 distance, correctly) - sin
+            // only approaches 0 near pitch 0/180, nowhere this camera's pitch (50 to 90) ever goes.
             float pitchRadians = _pitchDegrees * Mathf.Deg2Rad;
-            float horizontalDistance = _height / Mathf.Max(0.0001f, Mathf.Tan(pitchRadians));
+            float horizontalDistance = _height * Mathf.Cos(pitchRadians) / Mathf.Max(0.0001f, Mathf.Sin(pitchRadians));
 
             Quaternion yawRotation = Quaternion.Euler(0f, _yaw, 0f);
             Vector3 back = yawRotation * Vector3.back;
