@@ -100,7 +100,7 @@ namespace TheEmptying.Presentation.Startup
                 string logsFolder = Path.Combine(Application.dataPath, "..", "Logs");
                 Directory.CreateDirectory(logsFolder);
 
-                var lines = new List<string>();
+                var lines = new List<string> { $"Version: {Application.version}", string.Empty };
                 foreach (ContentValidationProblem problem in problems)
                 {
                     lines.Add(FormatProblem(problem));

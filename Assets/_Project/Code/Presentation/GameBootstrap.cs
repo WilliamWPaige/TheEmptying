@@ -943,6 +943,7 @@ namespace TheEmptying.Presentation
             BuildHud(root);
             BuildQuestionPopup(root);
             BuildToast(root);
+            VersionLabelPresenter.Build(root);
         }
 
         /// <summary>R9: a small, self-hiding message for Quick save/load results, centered near the top of the screen.</summary>
@@ -1042,7 +1043,7 @@ namespace TheEmptying.Presentation
         {
             string result = Load(QuickSaveName);
             bool failed = result.StartsWith("No save named", StringComparison.Ordinal) || result.StartsWith("Load failed", StringComparison.Ordinal);
-            ShowToast(failed ? result : "Loaded");
+            ShowToast(failed ? result : $"Loaded (v{Application.version})");
             if (failed)
             {
                 Debug.LogError($"[TheEmptying] {result}");
@@ -1287,6 +1288,7 @@ namespace TheEmptying.Presentation
                 using var stream = File.Create(path);
                 var headerInfo = new SaveHeaderInfo
                 {
+                    GameVersion = Application.version,
                     KingdomName = "Kingdom",
                     Population = _simulation.Entities.Count,
                     Sources = SourceManifestReader.ReadAll(ResolveSourceFolders()),

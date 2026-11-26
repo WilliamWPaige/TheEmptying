@@ -18,7 +18,7 @@ namespace TheEmptying.Core.Saves
             var header = new SaveHeader
             {
                 FormatVersion = SaveFile.FormatVersion,
-                GameVersion = ProjectInfo.Version,
+                GameVersion = headerInfo.GameVersion,
                 KingdomName = headerInfo.KingdomName,
                 InGameDate = simulation.Clock.CurrentDate.ToString(),
                 CurrentTick = simulation.Clock.CurrentTick,

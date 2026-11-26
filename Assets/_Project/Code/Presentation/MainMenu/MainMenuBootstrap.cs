@@ -53,6 +53,8 @@ namespace TheEmptying.Presentation.MainMenu
                 _mainPanel.style.display = DisplayStyle.Flex;
             });
             root.Add(_options.Panel);
+
+            VersionLabelPresenter.Build(root);
         }
 
         private void OnDestroy()

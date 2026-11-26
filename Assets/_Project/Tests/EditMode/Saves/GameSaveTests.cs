@@ -173,6 +173,19 @@ namespace TheEmptying.Tests.EditMode.Saves
         }
 
         [Test]
+        public void ReadHeader_RoundTripsTheGameVersion()
+        {
+            var sim = new Simulation(1);
+            using var stream = new MemoryStream();
+            GameSave.Save(sim, new SaveHeaderInfo { GameVersion = "0.11a", KingdomName = "K", Population = 1 }, stream);
+
+            stream.Position = 0;
+            SaveHeader header = SaveFile.ReadHeader(stream);
+
+            Assert.AreEqual("0.11a", header.GameVersion);
+        }
+
+        [Test]
         public void SaveWithModule_LoadedWithoutIt_KeepsSection_AndWritesItBackOnNextSave()
         {
             var counter = new CounterModule();
