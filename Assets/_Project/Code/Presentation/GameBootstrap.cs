@@ -472,7 +472,7 @@ namespace TheEmptying.Presentation
             _mapCursor.Initialize(_mapModule, _floatingOrigin, camera, _uiDocument.rootVisualElement);
 
             _personPresenter = gameObject.AddComponent<PersonPresenter>();
-            _personPresenter.Initialize(_peopleModule, _mapModule, _floatingOrigin, _worldMapView);
+            _personPresenter.Initialize(_peopleModule, _mapModule, _floatingOrigin, _worldMapView, _simulation.Settings);
 
             _pondsPresenter = gameObject.AddComponent<PondsPresenter>();
             _pondsPresenter.Initialize(_pondsModule, _mapModule, _simulation.Settings, _floatingOrigin, _cameraController);
@@ -1368,7 +1368,7 @@ namespace TheEmptying.Presentation
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);
                 _cameraController?.Rebind(_simulation.Settings, _mapModule);
                 _worldMapView?.Rebind(_mapModule, _pondsModule, _simulation.Settings);
-                _personPresenter?.Rebind(_peopleModule, _mapModule);
+                _personPresenter?.Rebind(_peopleModule, _mapModule, _simulation.Settings);
                 _pondsPresenter?.Rebind(_pondsModule, _mapModule, _simulation.Settings);
                 _zonePresenter?.Rebind(_simulation.Content, _mapModule);
                 _zonePresenter?.Rebuild(_zonesModule);

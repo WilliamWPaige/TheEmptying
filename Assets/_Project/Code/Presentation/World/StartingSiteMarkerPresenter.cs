@@ -53,8 +53,9 @@ namespace TheEmptying.Presentation.World
             GameObject pole = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
             pole.name = "Pole";
             pole.transform.SetParent(transform, false);
-            pole.transform.localPosition = new Vector3(0f, PoleHeight * 0.5f, 0f);
             pole.transform.localScale = new Vector3(PoleRadius, PoleHeight * 0.5f, PoleRadius);
+            // R20a: the pole's bottom, not its pivot (its own center), rests on the ground.
+            pole.transform.localPosition = new Vector3(0f, GroundPlacement.PivotHeightAboveBase(pole), 0f);
             var poleRenderer = pole.GetComponent<MeshRenderer>();
             poleRenderer.sharedMaterial = new Material(shader) { name = "SiteMarkerPoleMaterial", color = new Color(0.5f, 0.38f, 0.25f) };
             poleRenderer.shadowCastingMode = ShadowCastingMode.Off;

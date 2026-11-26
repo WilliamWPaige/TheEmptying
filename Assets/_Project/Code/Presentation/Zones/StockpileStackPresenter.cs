@@ -28,7 +28,8 @@ namespace TheEmptying.Presentation.Zones
     /// </summary>
     public sealed class StockpileStackPresenter : MonoBehaviour
     {
-        private const float BoxSizeMeters = 0.5f;
+        /// <summary>A placeholder brown box's size - public so PersonPresenter's carried box can size itself relative to it.</summary>
+        public const float BoxSizeMeters = 0.5f;
         private const float BoxStackStepMeters = 0.42f;
         private const float BadgeSizePixels = 20f;
         private const float BadgeHeightAboveSpotMeters = 1.4f;
@@ -163,8 +164,10 @@ namespace TheEmptying.Presentation.Zones
                 Object.Destroy(box.GetComponent<Collider>());
                 box.transform.localScale = new Vector3(BoxSizeMeters, BoxSizeMeters, BoxSizeMeters);
 
+                // R20a: the first box's bottom (not its pivot) rests on the ground; each stage above it stacks on the one below.
+                float groundOffset = GroundPlacement.PivotHeightAboveBase(box);
                 float jitterDegrees = PlaceholderAngleJitter(spot, stage);
-                Vector3 worldPos = new Vector3((float)spot.CenterX, BoxSizeMeters * 0.5f + stage * BoxStackStepMeters, (float)spot.CenterZ);
+                Vector3 worldPos = new Vector3((float)spot.CenterX, groundOffset + stage * BoxStackStepMeters, (float)spot.CenterZ);
                 box.transform.position = _floatingOrigin.WorldToRender(worldPos);
                 box.transform.rotation = Quaternion.Euler(0f, (float)spot.RotationDegrees + jitterDegrees, 0f);
                 ApplyPlaceholderBrownMaterial(box, stage);

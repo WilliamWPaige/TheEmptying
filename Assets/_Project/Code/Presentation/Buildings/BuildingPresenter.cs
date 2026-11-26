@@ -70,6 +70,10 @@ namespace TheEmptying.Presentation.Buildings
                 GameObject instance = Object.Instantiate(asset.Model, renderPosition, Quaternion.identity, _root);
                 instance.transform.localScale = Vector3.Scale(instance.transform.localScale, new Vector3(building.FootprintWidth, 1f, building.FootprintDepth));
 
+                // R20a: the model's own pivot may not be at its base - lift it so its bottom, not its pivot, rests on the ground.
+                worldPosition.y = GroundPlacement.PivotHeightAboveBase(instance);
+                instance.transform.position = _floatingOrigin.WorldToRender(worldPosition);
+
                 _instances[row.Key] = instance;
                 _entityByInstance[instance] = row.Key;
             }

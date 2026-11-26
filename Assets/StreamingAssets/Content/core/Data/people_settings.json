@@ -572,6 +572,16 @@
             "description": "TEMPORARY placeholder (R17). The \"Make everyone thirsty\" cheat sets every person's thirst meter to this value."
         },
         {
+            "id": "setting.people.carried_box_scale",
+            "label": "Carried box scale",
+            "valueType": "Number",
+            "default": 0.4,
+            "minimum": 0.1,
+            "maximum": 2,
+            "category": "People",
+            "description": "TEMPORARY placeholder (R20a). The box a person shows while carrying an item, as a fraction of a stockpile stack box's own size."
+        },
+        {
             "id": "setting.people.log_decisions",
             "label": "Log person decisions",
             "valueType": "Boolean",

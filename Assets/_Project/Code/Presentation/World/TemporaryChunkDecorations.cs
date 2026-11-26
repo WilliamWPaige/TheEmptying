@@ -35,6 +35,9 @@ namespace TheEmptying.Presentation.World
 
         private readonly Dictionary<GameObject, ChunkPlacement> _placementByInstance = new Dictionary<GameObject, ChunkPlacement>();
 
+        /// <summary>R20a: each kind's ground offset only needs computing once - every placement of the same kind shares the same model and the same (always 1) Y scale, so its bottom sits the same distance below its pivot regardless of footprint.</summary>
+        private readonly Dictionary<PlacementKind, float> _groundOffsetByKind = new Dictionary<PlacementKind, float>();
+
         public TemporaryChunkDecorations(MapModule mapModule, FloatingOrigin floatingOrigin)
         {
             _mapModule = mapModule;
@@ -102,10 +105,11 @@ namespace TheEmptying.Presentation.World
                 }
 
                 GameObject instance = Spawn(placement.Kind, asset);
-
-                var worldPosition = new Vector3((float)(placement.Cell.X * cellSize), 0f, (float)(placement.Cell.Z * cellSize));
-                instance.transform.position = _floatingOrigin.WorldToRender(worldPosition);
                 instance.transform.localScale = Vector3.Scale(instance.transform.localScale, new Vector3(asset.FootprintWidth, 1f, asset.FootprintDepth));
+
+                float groundOffset = GroundOffsetFor(placement.Kind, instance);
+                var worldPosition = new Vector3((float)(placement.Cell.X * cellSize), groundOffset, (float)(placement.Cell.Z * cellSize));
+                instance.transform.position = _floatingOrigin.WorldToRender(worldPosition);
                 instance.SetActive(true);
 
                 instances.Add((placement.Kind, instance));
@@ -143,6 +147,17 @@ namespace TheEmptying.Presentation.World
 
         /// <summary>Resolves a clicked GameObject back to the placement it's currently drawing, if any.</summary>
         public bool TryGetPlacement(GameObject instance, out ChunkPlacement placement) => _placementByInstance.TryGetValue(instance, out placement);
+
+        private float GroundOffsetFor(PlacementKind kind, GameObject instance)
+        {
+            if (!_groundOffsetByKind.TryGetValue(kind, out float offset))
+            {
+                offset = GroundPlacement.PivotHeightAboveBase(instance);
+                _groundOffsetByKind[kind] = offset;
+            }
+
+            return offset;
+        }
 
         private GameObject Spawn(PlacementKind kind, ResourceAsset asset)
         {
