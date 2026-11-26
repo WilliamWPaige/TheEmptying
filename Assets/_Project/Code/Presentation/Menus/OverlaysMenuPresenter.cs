@@ -15,14 +15,14 @@ namespace TheEmptying.Presentation.Menus
 
         public bool IsOpen => _panel != null && _panel.style.display == DisplayStyle.Flex;
 
-        public void Initialize(VisualElement uiRoot, bool initialZonesVisible, Action<bool> onZonesVisibleChanged)
+        /// <summary>R18e: hudPanel is the top HUD bar this popup must open just below, never over - its height changes with the UI size setting, so the gap is measured from its actual layout (recomputed live) rather than a fixed guess.</summary>
+        public void Initialize(VisualElement uiRoot, VisualElement hudPanel, bool initialZonesVisible, Action<bool> onZonesVisibleChanged)
         {
             _panel = new VisualElement
             {
                 style =
                 {
                     position = Position.Absolute,
-                    top = 40,
                     left = 8,
                     paddingLeft = 12,
                     paddingRight = 12,
@@ -32,6 +32,9 @@ namespace TheEmptying.Presentation.Menus
                     display = DisplayStyle.None
                 }
             };
+
+            const float gapBelowHud = 4f;
+            hudPanel.RegisterCallback<GeometryChangedEvent>(_ => _panel.style.top = hudPanel.layout.yMax + gapBelowHud);
 
             var zonesToggle = new Toggle("Toggle zones") { value = initialZonesVisible };
             zonesToggle.RegisterValueChangedCallback(evt => onZonesVisibleChanged?.Invoke(evt.newValue));

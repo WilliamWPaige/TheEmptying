@@ -60,6 +60,7 @@ namespace TheEmptying.Presentation.Zones
         private DiscoveriesWindowPresenter _discoveriesWindow;
         private WorldSelectionPresenter _worldSelection;
         private Action _hideToast;
+        private Action _closeSmallPopups;
         private Action _onZoneCreated;
         private Action _onOpenStateChanged;
 
@@ -102,6 +103,18 @@ namespace TheEmptying.Presentation.Zones
         private bool _paintLogStrokeFoundGround;
         private int _paintLogStrokeCellsAtStart;
 
+        /// <summary>
+        /// R18e: whether the mouse button currently held was pressed while the pointer was over
+        /// the ground, not any UI element or popup - set once, the frame the hold began, and left
+        /// alone for the rest of that hold even if the pointer (or the UI under it) later changes.
+        /// A press that began on UI never paints, even once it reaches the ground or the UI it
+        /// started on closes mid-hold (the Create confirm's "Yes" button, most notably). Tracked
+        /// every frame _armed is true - including while a confirm popup blocks everything else -
+        /// so this can't go stale across the one frame a popup disappears while still held.
+        /// </summary>
+        private bool _wasMouseHeld;
+        private bool _strokeStartedOnGround;
+
         public bool IsOpen => _root != null && _root.style.display == DisplayStyle.Flex;
 
         public void Initialize(
@@ -121,6 +134,7 @@ namespace TheEmptying.Presentation.Zones
             DiscoveriesWindowPresenter discoveriesWindow,
             WorldSelectionPresenter worldSelection,
             Action hideToast,
+            Action closeSmallPopups,
             Action onZoneCreated,
             Action onOpenStateChanged)
         {
@@ -140,6 +154,7 @@ namespace TheEmptying.Presentation.Zones
             _discoveriesWindow = discoveriesWindow;
             _worldSelection = worldSelection;
             _hideToast = hideToast;
+            _closeSmallPopups = closeSmallPopups;
             _onZoneCreated = onZoneCreated;
             _onOpenStateChanged = onOpenStateChanged;
 
@@ -177,6 +192,7 @@ namespace TheEmptying.Presentation.Zones
             _presentation.SetPaused(true);
 
             _hideToast?.Invoke();
+            _closeSmallPopups?.Invoke();
             _hudPanel.style.display = DisplayStyle.None;
             _debugWindow?.ForceClose();
             _discoveriesWindow?.ForceCloseForModal();
@@ -196,6 +212,8 @@ namespace TheEmptying.Presentation.Zones
             ApplyDefaultsForSelectedType();
 
             _armed = false;
+            _wasMouseHeld = false;
+            _strokeStartedOnGround = false;
             _brushPreview.SetActive(false);
             CloseCreateConfirm();
             CloseDiscardConfirm();
@@ -213,6 +231,8 @@ namespace TheEmptying.Presentation.Zones
             _isPainting = false;
             _isErasing = false;
             _lastDragCell = null;
+            _wasMouseHeld = false;
+            _strokeStartedOnGround = false;
             _brushPreview.SetActive(false);
             _paintVisual.SetActive(false);
             _root.style.display = DisplayStyle.None;
@@ -271,6 +291,8 @@ namespace TheEmptying.Presentation.Zones
         private void ArmBrush()
         {
             _armed = true;
+            _wasMouseHeld = false;
+            _strokeStartedOnGround = false;
         }
 
         private void Unarm()
@@ -279,6 +301,8 @@ namespace TheEmptying.Presentation.Zones
             _isPainting = false;
             _isErasing = false;
             _lastDragCell = null;
+            _wasMouseHeld = false;
+            _strokeStartedOnGround = false;
             _brushPreview.SetActive(false);
         }
 
@@ -303,13 +327,27 @@ namespace TheEmptying.Presentation.Zones
             Color pickerColor = _colorPicker.Value;
             _paintVisual.SetColor(new Color(pickerColor.r, pickerColor.g, pickerColor.b, ZonePresenter.TintAlpha));
 
-            if (!_armed || _createConfirmPanel.style.display == DisplayStyle.Flex || _discardConfirmPanel.style.display == DisplayStyle.Flex)
+            if (!_armed)
             {
                 return;
             }
 
             bool mouseHeld = Mouse.current != null && (Mouse.current.leftButton.isPressed || Mouse.current.rightButton.isPressed);
+            VisualElement uiHit = Mouse.current != null ? UiInputUtility.PickOverUi(_uiRoot, Mouse.current.position.ReadValue()) : null;
+            bool popupOpen = _createConfirmPanel.style.display == DisplayStyle.Flex || _discardConfirmPanel.style.display == DisplayStyle.Flex;
+
+            // Tracked every frame while armed - including while a popup blocks everything else
+            // below - so a press that started on the popup is never mistaken for a fresh one
+            // that started on the ground the moment the popup closes while still held.
             TrackPaintLogStroke(mouseHeld);
+            TrackPaintStrokeOrigin(mouseHeld, overUi: uiHit != null || popupOpen);
+
+            if (popupOpen)
+            {
+                _brushPreview.SetActive(false);
+                EndDragIfAny();
+                return;
+            }
 
             if (Mouse.current == null)
             {
@@ -318,7 +356,6 @@ namespace TheEmptying.Presentation.Zones
                 return;
             }
 
-            VisualElement uiHit = UiInputUtility.PickOverUi(_uiRoot, Mouse.current.position.ReadValue());
             if (uiHit != null)
             {
                 RecordPaintLogOverUi(uiHit);
@@ -340,7 +377,26 @@ namespace TheEmptying.Presentation.Zones
             BrushShape shape = _shapeField.value == 1 ? BrushShape.Round : BrushShape.Square;
 
             UpdateBrushPreview(cell, shape, sizeCells);
-            UpdatePaintDrag(cell, shape, sizeCells);
+
+            if (_strokeStartedOnGround)
+            {
+                UpdatePaintDrag(cell, shape, sizeCells);
+            }
+            else
+            {
+                EndDragIfAny();
+            }
+        }
+
+        /// <summary>R18e: records, the frame a mouse hold begins, whether the pointer was over the ground or some UI element/popup - see _strokeStartedOnGround.</summary>
+        private void TrackPaintStrokeOrigin(bool mouseHeld, bool overUi)
+        {
+            if (mouseHeld && !_wasMouseHeld)
+            {
+                _strokeStartedOnGround = !overUi;
+            }
+
+            _wasMouseHeld = mouseHeld;
         }
 
         #region Paint debug log

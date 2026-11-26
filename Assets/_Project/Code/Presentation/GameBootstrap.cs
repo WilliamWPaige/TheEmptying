@@ -607,6 +607,7 @@ namespace TheEmptying.Presentation
                 _discoveriesWindow,
                 _worldSelection,
                 HideToastNow,
+                () => _overlaysMenu?.Close(),
                 () => _zonePresenter.Rebuild(_zonesModule),
                 RefreshZoneVisibility);
 
@@ -627,7 +628,7 @@ namespace TheEmptying.Presentation
         private void BuildOverlaysMenu()
         {
             _overlaysMenu = new OverlaysMenuPresenter();
-            _overlaysMenu.Initialize(_uiDocument.rootVisualElement, _zonesOverlayVisible, visible =>
+            _overlaysMenu.Initialize(_uiDocument.rootVisualElement, _hudPanel, _zonesOverlayVisible, visible =>
             {
                 _zonesOverlayVisible = visible;
                 RefreshZoneVisibility();

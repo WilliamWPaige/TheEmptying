@@ -49,7 +49,18 @@ namespace TheEmptying.Presentation.Zones
 
         public void Destroy() => Object.Destroy(_instance);
 
-        public void SetColor(Color color) => _material.color = color;
+        /// <summary>R18e: Material.color sets the shader property named "_Color", which the URP Unlit shader this material is built from doesn't have (it uses "_BaseColor" instead) - the same bug R18d fixed for ZoneVisual's tint.</summary>
+        public void SetColor(Color color)
+        {
+            if (_material.HasProperty("_BaseColor"))
+            {
+                _material.SetColor("_BaseColor", color);
+            }
+            else
+            {
+                _material.color = color;
+            }
+        }
 
         public void SetShape(BrushShape shape)
         {
