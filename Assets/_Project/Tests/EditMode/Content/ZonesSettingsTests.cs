@@ -12,7 +12,13 @@ namespace TheEmptying.Tests.EditMode.Content
     /// <summary>R18b: the shipped zones settings (zones_settings.json) load with the right defaults, ranges and categories.</summary>
     public class ZonesSettingsTests
     {
-        [TestCase(ZonesModule.CellsPerSlotSettingId, SettingValueType.Integer, 4.0, 1.0, 100.0, "Zones")]
+        [TestCase(ZonesModule.SpotSizeMetersSettingId, SettingValueType.Number, 2.0, 1.0, 10.0, "Zones")]
+        [TestCase(ZonesModule.CapacityUnitsPerSpotSettingId, SettingValueType.Integer, 100.0, 1.0, 1000.0, "Zones")]
+        [TestCase(ZonesModule.NaturalPatchMinSpotsPerSideSettingId, SettingValueType.Integer, 2.0, 1.0, 10.0, "Zones")]
+        [TestCase(ZonesModule.NaturalPatchMaxSpotsPerSideSettingId, SettingValueType.Integer, 4.0, 1.0, 10.0, "Zones")]
+        [TestCase(ZonesModule.NaturalPatchMinAngleDegreesSettingId, SettingValueType.Number, 0.0, 0.0, 360.0, "Zones")]
+        [TestCase(ZonesModule.NaturalPatchMaxAngleDegreesSettingId, SettingValueType.Number, 90.0, 0.0, 360.0, "Zones")]
+        [TestCase(ZonesModule.NaturalMaxPlacementAttemptsSettingId, SettingValueType.Integer, 200.0, 1.0, 5000.0, "Zones")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {

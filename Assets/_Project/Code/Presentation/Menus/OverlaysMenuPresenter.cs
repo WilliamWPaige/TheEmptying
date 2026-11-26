@@ -5,9 +5,11 @@ using UnityEngine.UIElements;
 namespace TheEmptying.Presentation.Menus
 {
     /// <summary>
-    /// R18b: the HUD "Overlays" button's small popup - for now, just a
-    /// "Toggle zones" checkbox that shows or hides every placed zone's
-    /// tint and outline. Plain UI Toolkit code, same style as the HUD.
+    /// R18b: the HUD "Overlays" button's small popup - "Toggle zones"
+    /// shows or hides every placed zone's tint and outline. R20 adds
+    /// "Item icons", on by default, which shows or hides every
+    /// stockpile stack's icon. Plain UI Toolkit code, same style as the
+    /// HUD.
     /// </summary>
     public sealed class OverlaysMenuPresenter
     {
@@ -16,7 +18,13 @@ namespace TheEmptying.Presentation.Menus
         public bool IsOpen => _panel != null && _panel.style.display == DisplayStyle.Flex;
 
         /// <summary>R18e: hudPanel is the top HUD bar this popup must open just below, never over - its height changes with the UI size setting, so the gap is measured from its actual layout (recomputed live) rather than a fixed guess.</summary>
-        public void Initialize(VisualElement uiRoot, VisualElement hudPanel, bool initialZonesVisible, Action<bool> onZonesVisibleChanged)
+        public void Initialize(
+            VisualElement uiRoot,
+            VisualElement hudPanel,
+            bool initialZonesVisible,
+            Action<bool> onZonesVisibleChanged,
+            bool initialItemIconsVisible,
+            Action<bool> onItemIconsVisibleChanged)
         {
             _panel = new VisualElement
             {
@@ -39,6 +47,10 @@ namespace TheEmptying.Presentation.Menus
             var zonesToggle = new Toggle("Toggle zones") { value = initialZonesVisible };
             zonesToggle.RegisterValueChangedCallback(evt => onZonesVisibleChanged?.Invoke(evt.newValue));
             _panel.Add(zonesToggle);
+
+            var itemIconsToggle = new Toggle("Item icons") { value = initialItemIconsVisible };
+            itemIconsToggle.RegisterValueChangedCallback(evt => onItemIconsVisibleChanged?.Invoke(evt.newValue));
+            _panel.Add(itemIconsToggle);
 
             uiRoot.Add(_panel);
         }

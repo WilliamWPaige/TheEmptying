@@ -3,7 +3,6 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Timekeeping;
 using TheEmptying.Modules.Discovery;
 using TheEmptying.Modules.People;
-using TheEmptying.Modules.Zones;
 using UnityEngine;
 using UnityEngine.UIElements;
 
@@ -344,11 +343,6 @@ namespace TheEmptying.Presentation.Discovery
             {
                 style = { color = new Color(0.85f, 0.85f, 0.85f), marginLeft = 8, marginBottom = 8, whiteSpace = WhiteSpace.Normal }
             });
-
-            if (zoneTypeId == ZonesModule.StockpileTypeId)
-            {
-                AddDetailRow("Size units per slot", ZonesModule.CapacityUnitsPerSlot.ToString());
-            }
 
             AddDiscoveredRow(tick);
         }

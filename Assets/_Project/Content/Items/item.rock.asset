@@ -19,4 +19,9 @@ MonoBehaviour:
   carryAmount: 5
   baseValueTenthCopper: 2
   spoilTimeMinutes: 0
-  size: 2
+  size: 1
+  stackModels:
+  - stage1Model: {fileID: 0}
+    stage2Model: {fileID: 0}
+    stage3Model: {fileID: 0}
+  icon: {fileID: 0}

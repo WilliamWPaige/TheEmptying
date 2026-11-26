@@ -2,14 +2,74 @@
     "type": "setting_definition",
     "items": [
         {
-            "id": "setting.zones.cells_per_slot",
-            "label": "Stockpile cells per slot",
+            "id": "setting.zones.stockpile_spot_size_meters",
+            "label": "Stockpile spot size",
+            "valueType": "Number",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 10,
+            "category": "Zones",
+            "description": "Placeholder (R20). The side length, in meters, of one stockpile stack spot."
+        },
+        {
+            "id": "setting.zones.stockpile_capacity_units_per_spot",
+            "label": "Stockpile capacity per spot",
+            "valueType": "Integer",
+            "default": 100,
+            "minimum": 1,
+            "maximum": 1000,
+            "category": "Zones",
+            "description": "Placeholder (R20). How many size-1 capacity units one stack spot holds; a size-N item holds this divided by N per spot."
+        },
+        {
+            "id": "setting.zones.stockpile_natural_patch_min_spots_per_side",
+            "label": "Natural layout patch min size",
+            "valueType": "Integer",
+            "default": 2,
+            "minimum": 1,
+            "maximum": 10,
+            "category": "Zones",
+            "description": "Placeholder (R20). The Natural stockpile layout's smallest patch size, in spots per side."
+        },
+        {
+            "id": "setting.zones.stockpile_natural_patch_max_spots_per_side",
+            "label": "Natural layout patch max size",
             "valueType": "Integer",
             "default": 4,
             "minimum": 1,
-            "maximum": 100,
+            "maximum": 10,
             "category": "Zones",
-            "description": "TEMPORARY placeholder (R18b), until the real stockpile layout design exists. How many painted cells one stockpile slot holds, rounded down."
+            "description": "Placeholder (R20). The Natural stockpile layout's largest patch size, in spots per side."
+        },
+        {
+            "id": "setting.zones.stockpile_natural_patch_min_angle_degrees",
+            "label": "Natural layout patch min angle",
+            "valueType": "Number",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 360,
+            "category": "Zones",
+            "description": "Placeholder (R20). The smallest random angle a Natural layout patch can be turned to."
+        },
+        {
+            "id": "setting.zones.stockpile_natural_patch_max_angle_degrees",
+            "label": "Natural layout patch max angle",
+            "valueType": "Number",
+            "default": 90,
+            "minimum": 0,
+            "maximum": 360,
+            "category": "Zones",
+            "description": "Placeholder (R20). The largest random angle a Natural layout patch can be turned to."
+        },
+        {
+            "id": "setting.zones.stockpile_natural_max_placement_attempts",
+            "label": "Natural layout placement attempts",
+            "valueType": "Integer",
+            "default": 200,
+            "minimum": 1,
+            "maximum": 5000,
+            "category": "Zones",
+            "description": "Placeholder (R20). How many random patch placements the Natural stockpile layout tries before it stops covering the painted area with more spots."
         }
     ]
 }

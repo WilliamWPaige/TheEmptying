@@ -99,9 +99,11 @@ namespace TheEmptying.Presentation
         private BuildingPresenter _buildingPresenter;
         private ZonesModule _zonesModule;
         private ZonePresenter _zonePresenter;
+        private StockpileStackPresenter _stockpileStackPresenter;
         private ZoningMenuPresenter _zoningMenu;
         private OverlaysMenuPresenter _overlaysMenu;
         private bool _zonesOverlayVisible = true;
+        private bool _itemIconsOverlayVisible = true;
         private PondsModule _pondsModule;
         private PondsPresenter _pondsPresenter;
         private DiscoveryModule _discoveryModule;
@@ -482,6 +484,11 @@ namespace TheEmptying.Presentation
             _zonePresenter.Initialize(_floatingOrigin, _simulation.Content, _mapModule);
             _zonePresenter.Rebuild(_zonesModule);
 
+            _stockpileStackPresenter = gameObject.AddComponent<StockpileStackPresenter>();
+            _stockpileStackPresenter.Initialize(_simulation.Content, _floatingOrigin, camera, _uiDocument.rootVisualElement);
+            _stockpileStackPresenter.Rebuild(_zonesModule);
+            _stockpileStackPresenter.SetIconsVisible(_itemIconsOverlayVisible);
+
             _worldSelection = gameObject.AddComponent<WorldSelectionPresenter>();
             _worldSelection.Initialize(
                 _peopleModule,
@@ -495,6 +502,7 @@ namespace TheEmptying.Presentation
                 _personPresenter,
                 _buildingPresenter,
                 _zonePresenter,
+                _stockpileStackPresenter,
                 _worldMapView.Decorations,
                 _pondsPresenter,
                 camera,
@@ -608,7 +616,12 @@ namespace TheEmptying.Presentation
                 _worldSelection,
                 HideToastNow,
                 () => _overlaysMenu?.Close(),
-                () => _zonePresenter.Rebuild(_zonesModule),
+                () =>
+                {
+                    _zonePresenter.Rebuild(_zonesModule);
+                    _stockpileStackPresenter.Rebuild(_zonesModule);
+                    _stockpileStackPresenter.SetIconsVisible(_itemIconsOverlayVisible);
+                },
                 RefreshZoneVisibility);
 
             _worldSelection.ZoningMenu = _zoningMenu;
@@ -624,15 +637,25 @@ namespace TheEmptying.Presentation
 #endif
         }
 
-        /// <summary>R18b: the small Overlays button's popup - for now, just "Toggle zones".</summary>
+        /// <summary>R18b: the small Overlays button's popup - "Toggle zones" and (R20) "Item icons".</summary>
         private void BuildOverlaysMenu()
         {
             _overlaysMenu = new OverlaysMenuPresenter();
-            _overlaysMenu.Initialize(_uiDocument.rootVisualElement, _hudPanel, _zonesOverlayVisible, visible =>
-            {
-                _zonesOverlayVisible = visible;
-                RefreshZoneVisibility();
-            });
+            _overlaysMenu.Initialize(
+                _uiDocument.rootVisualElement,
+                _hudPanel,
+                _zonesOverlayVisible,
+                visible =>
+                {
+                    _zonesOverlayVisible = visible;
+                    RefreshZoneVisibility();
+                },
+                _itemIconsOverlayVisible,
+                visible =>
+                {
+                    _itemIconsOverlayVisible = visible;
+                    _stockpileStackPresenter?.SetIconsVisible(visible);
+                });
         }
 
         /// <summary>R18b: zones show whenever the overlay toggle says to, and always while the zoning view is open regardless of that toggle.</summary>
@@ -1349,6 +1372,9 @@ namespace TheEmptying.Presentation
                 _pondsPresenter?.Rebind(_pondsModule, _mapModule, _simulation.Settings);
                 _zonePresenter?.Rebind(_simulation.Content, _mapModule);
                 _zonePresenter?.Rebuild(_zonesModule);
+                _stockpileStackPresenter?.Rebind(_simulation.Content);
+                _stockpileStackPresenter?.Rebuild(_zonesModule);
+                _stockpileStackPresenter?.SetIconsVisible(_itemIconsOverlayVisible);
                 _zoningMenu?.Rebind(_mapModule, _zonesModule, _simulation.Content, _simulation.Settings);
                 _worldSelection?.Rebind(_peopleModule, _mapModule, _buildingsModule, _zonesModule, _pondsModule, _simulation.Content);
                 _buildingPresenter?.Rebuild(_buildingsModule);

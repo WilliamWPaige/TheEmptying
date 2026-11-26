@@ -1110,6 +1110,32 @@ namespace TheEmptying.Modules.People
             return null;
         }
 
+        /// <summary>R20: the approach cell for a delivery of this item to this stockpile - next to the spot it would actually go to (ZonesModule.TryFindDeliverySpot), falling back to any free cell in the zone if that spot's approach cell is unavailable (occupied, reserved) or no spot can take it at all.</summary>
+        private CellCoord? TryPickApproachCellForDelivery(EntityId zoneId, ZoneState zone, string itemContentId, SimRandom random, double cellSizeMeters, EntityId selfId)
+        {
+            if (_zonesModule.TryFindDeliverySpot(zoneId, itemContentId, out StockSpot spot) &&
+                _zonesModule.TryGetApproachCellForSpot(zoneId, spot, out CellCoord approachCell) &&
+                IsCellFreeForPerson(approachCell, selfId))
+            {
+                return approachCell;
+            }
+
+            return TryPickCellInZone(random, zone, cellSizeMeters, selfId);
+        }
+
+        /// <summary>R20: the approach cell for eating this item from this stockpile - next to the spot RemoveItemFromStockpile would actually take from (ZonesModule.TryFindTakeSpot), with the same fallback as delivery.</summary>
+        private CellCoord? TryPickApproachCellForEating(EntityId zoneId, ZoneState zone, string itemContentId, SimRandom random, double cellSizeMeters, EntityId selfId)
+        {
+            if (_zonesModule.TryFindTakeSpot(zoneId, itemContentId, out StockSpot spot) &&
+                _zonesModule.TryGetApproachCellForSpot(zoneId, spot, out CellCoord approachCell) &&
+                IsCellFreeForPerson(approachCell, selfId))
+            {
+                return approachCell;
+            }
+
+            return TryPickCellInZone(random, zone, cellSizeMeters, selfId);
+        }
+
         /// <summary>R18b: a random painted cell of this zone (which may be several separate pieces) that's currently free to stand on.</summary>
         private CellCoord? TryPickCellInZone(SimRandom random, ZoneState area, double cellSizeMeters, EntityId selfId)
         {
@@ -1727,7 +1753,7 @@ namespace TheEmptying.Modules.People
                 return;
             }
 
-            CellCoord? deliverCell = TryPickCellInZone(_randomService.GetStream(ActionsStreamName), targetZone, _mapModule.CellSizeMeters, id);
+            CellCoord? deliverCell = TryPickApproachCellForDelivery(targetZoneId, targetZone, itemId, _randomService.GetStream(ActionsStreamName), _mapModule.CellSizeMeters, id);
             if (!deliverCell.HasValue)
             {
                 LogDecision(person, "no free cell at the stockpile - waiting for a spot to free up.");
@@ -1893,7 +1919,7 @@ namespace TheEmptying.Modules.People
                     continue;
                 }
 
-                CellCoord? cell = TryPickCellInZone(random, row.Value, cellSize, selfId);
+                CellCoord? cell = TryPickApproachCellForEating(row.Key, row.Value, grubItemId, random, cellSize, selfId);
                 if (!cell.HasValue)
                 {
                     continue;
@@ -1952,7 +1978,7 @@ namespace TheEmptying.Modules.People
 
             foreach (KeyValuePair<EntityId, ZoneState> row in ordered)
             {
-                CellCoord? cell = TryPickCellInZone(random, row.Value, cellSize, selfId);
+                CellCoord? cell = TryPickApproachCellForDelivery(row.Key, row.Value, itemContentId, random, cellSize, selfId);
                 if (!cell.HasValue)
                 {
                     continue;

@@ -67,7 +67,7 @@ namespace TheEmptying.Tests.EditMode.Content
         [TestCase("item.log", 4, 0.0, 5)]
         [TestCase("item.stone", 6, 0.0, 5)]
         [TestCase("item.stick", 1, 0.0, 5)]
-        [TestCase("item.rock", 2, 0.0, 5)]
+        [TestCase("item.rock", 1, 0.0, 5)]
         [TestCase("item.flint", 1, 0.0, 5)]
         public void RealItems_HaveTheExpectedPlaceholderFields(string itemId, int expectedSize, double expectedFoodValue, int expectedCarryAmount)
         {

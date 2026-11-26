@@ -5,6 +5,7 @@ using TheEmptying.Core.Content;
 using TheEmptying.Core.Entities;
 using TheEmptying.Core.Events;
 using TheEmptying.Core.Modules;
+using TheEmptying.Core.Randomness;
 using TheEmptying.Core.Saves;
 using TheEmptying.Modules.Buildings;
 using TheEmptying.Modules.Map;
@@ -17,10 +18,12 @@ namespace TheEmptying.Modules.Zones
     /// separate pieces), each with its own name and color. Paint can
     /// never claim a cell already in another zone, a crown building's
     /// footprint, or pond water, but may cover trees, stones and grub
-    /// mounds. Stockpile zones additionally track, per item type, how
-    /// much is stored, a keep-on-hand limit and whether it's blocked.
-    /// Depends on Map (cell size, cell/world conversions), Buildings
-    /// (the crown-building check) and Ponds (the pond-water check).
+    /// mounds. R20: a stockpile zone also gets a fixed list of 2x2 m
+    /// stack spots, laid out once (from the world seed) when it's
+    /// created, in one of two layouts (Uniform or Natural); each spot
+    /// holds one item type up to that item's capacity. Depends on Map
+    /// (cell size, cell/world conversions), Buildings (the crown-building
+    /// check) and Ponds (the pond-water check).
     /// </summary>
     public sealed class ZonesModule : IModule, ISaveableModule
     {
@@ -28,11 +31,20 @@ namespace TheEmptying.Modules.Zones
         public const string StockpileTypeId = "zone.stockpile";
         public const string LivingAreaTypeId = "zone.living_area";
 
-        /// <summary>R18b: how many painted cells one stockpile slot holds, placeholder.</summary>
-        public const string CellsPerSlotSettingId = "setting.zones.cells_per_slot";
+        public const string LayoutUniformId = "layout.uniform";
+        public const string LayoutNaturalId = "layout.natural";
 
-        /// <summary>Placeholder: how many size-1 capacity units one slot holds. Unrelated to cells; not touched by R18b.</summary>
-        public const int CapacityUnitsPerSlot = 100;
+        /// <summary>R20: a stack spot's side length in meters, placeholder.</summary>
+        public const string SpotSizeMetersSettingId = "setting.zones.stockpile_spot_size_meters";
+
+        /// <summary>R20: how many size-1 capacity units one spot holds, placeholder.</summary>
+        public const string CapacityUnitsPerSpotSettingId = "setting.zones.stockpile_capacity_units_per_spot";
+
+        public const string NaturalPatchMinSpotsPerSideSettingId = "setting.zones.stockpile_natural_patch_min_spots_per_side";
+        public const string NaturalPatchMaxSpotsPerSideSettingId = "setting.zones.stockpile_natural_patch_max_spots_per_side";
+        public const string NaturalPatchMinAngleDegreesSettingId = "setting.zones.stockpile_natural_patch_min_angle_degrees";
+        public const string NaturalPatchMaxAngleDegreesSettingId = "setting.zones.stockpile_natural_patch_max_angle_degrees";
+        public const string NaturalMaxPlacementAttemptsSettingId = "setting.zones.stockpile_natural_max_placement_attempts";
 
         /// <summary>R14: posted whenever an item is put in a stockpile - feeds the discovery system.</summary>
         private const string ItemStoredEventId = "event.zones.item_stored";
@@ -46,6 +58,7 @@ namespace TheEmptying.Modules.Zones
         private EntityRegistry _entities;
         private ContentDatabase _content;
         private SettingsRegistry _settings;
+        private RandomService _randomService;
         private EntityTable<ZoneState> _zones;
         private ModuleContext _context;
 
@@ -58,7 +71,7 @@ namespace TheEmptying.Modules.Zones
 
         public string Id => ModuleId;
         public int Version => 1;
-        public int SectionVersion => 2;
+        public int SectionVersion => 3;
         public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId, PondsModule.ModuleId };
 
         public IEnumerable<KeyValuePair<EntityId, ZoneState>> Zones => _zones.Rows();
@@ -77,31 +90,13 @@ namespace TheEmptying.Modules.Zones
             _entities = context.Entities;
             _content = context.Content;
             _settings = context.Settings;
+            _randomService = context.RandomService;
             _context = context;
             _zones = new EntityTable<ZoneState>(_entities);
         }
 
         public void Shutdown()
         {
-        }
-
-        public static int CapacityPerSlot(int itemSize) => Math.Max(1, CapacityUnitsPerSlot / Math.Max(1, itemSize));
-
-        public static int SlotsNeededFor(int amount, int itemSize)
-        {
-            if (amount <= 0)
-            {
-                return 0;
-            }
-
-            return (int)Math.Ceiling(amount / (double)CapacityPerSlot(itemSize));
-        }
-
-        /// <summary>One slot per setting.zones.cells_per_slot painted cells, rounded down.</summary>
-        public int SlotCount(int cellCount)
-        {
-            int cellsPerSlot = Math.Max(1, (int)_settings.Get(CellsPerSlotSettingId));
-            return Math.Max(0, cellCount / cellsPerSlot);
         }
 
         /// <summary>
@@ -161,9 +156,14 @@ namespace TheEmptying.Modules.Zones
         /// <summary>
         /// Creates a new zone from a final painted cell set (the Create
         /// button's Yes). Only cells CanPaintCell still allows are kept,
-        /// so this stays honest even if called with a stale set.
+        /// so this stays honest even if called with a stale set. For a
+        /// stockpile, lays out its fixed stack spots from the given
+        /// layout (LayoutUniformId or LayoutNaturalId; anything else,
+        /// including null, means LayoutNaturalId - the default), seeded
+        /// from the new zone's own entity id so the same zone always
+        /// gets the same spots.
         /// </summary>
-        public EntityId CreateZone(string zoneTypeId, string name, string colorHex, IEnumerable<CellCoord> cells)
+        public EntityId CreateZone(string zoneTypeId, string name, string colorHex, IEnumerable<CellCoord> cells, string layoutId = null)
         {
             var state = new ZoneState { ZoneTypeId = zoneTypeId, Name = name, ColorHex = colorHex };
             foreach (CellCoord cell in cells)
@@ -177,6 +177,13 @@ namespace TheEmptying.Modules.Zones
             RecomputeCentroid(state);
 
             EntityId id = _entities.Create(EntityKind.Zone);
+
+            if (zoneTypeId == StockpileTypeId)
+            {
+                state.LayoutId = layoutId == LayoutUniformId ? LayoutUniformId : LayoutNaturalId;
+                GenerateSpots(id, state);
+            }
+
             _zones.Add(id, state);
             _context.Events.Post(ZonePlacedEventId, _context.CurrentTick, new EventData().SetString("contentId", zoneTypeId));
             return id;
@@ -225,7 +232,30 @@ namespace TheEmptying.Modules.Zones
 
         #region Stockpile
 
-        /// <summary>The live view of one item type at one stockpile - amount stored, its keep-on-hand limit (defaulted if never overridden), and whether it's blocked.</summary>
+        private void GenerateSpots(EntityId zoneId, ZoneState state)
+        {
+            double spotSize = _settings.Get(SpotSizeMetersSettingId);
+            SimRandom random = _randomService.GetStream($"zones.layout.{zoneId}");
+
+            List<StockSpot> spots = StockSpotLayoutGenerator.Generate(
+                state.LayoutId,
+                state.Cells,
+                _mapModule.CellSizeMeters,
+                spotSize,
+                (int)_settings.Get(NaturalPatchMinSpotsPerSideSettingId),
+                (int)_settings.Get(NaturalPatchMaxSpotsPerSideSettingId),
+                _settings.Get(NaturalPatchMinAngleDegreesSettingId),
+                _settings.Get(NaturalPatchMaxAngleDegreesSettingId),
+                (int)_settings.Get(NaturalMaxPlacementAttemptsSettingId),
+                random);
+
+            state.Spots.AddRange(spots);
+        }
+
+        /// <summary>100 (placeholder) divided by the item's size, at least 1 - how much of this item one spot can hold.</summary>
+        public int CapacityPerSpot(int itemSize) => Math.Max(1, (int)_settings.Get(CapacityUnitsPerSpotSettingId) / Math.Max(1, itemSize));
+
+        /// <summary>The live view of one item type at one stockpile - amount stored (summed across its Spots), its keep-on-hand limit (defaulted if never overridden), and whether it's blocked.</summary>
         public (int Amount, int Limit, bool Blocked) GetStockpileItemInfo(EntityId zoneId, string itemContentId)
         {
             if (!_zones.TryGet(zoneId, out ZoneState zone))
@@ -233,14 +263,15 @@ namespace TheEmptying.Modules.Zones
                 return (0, 0, false);
             }
 
+            int amount = AmountStoredOf(zone, itemContentId);
             int defaultLimit = DefaultLimitFor(zone, itemContentId);
 
             if (zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry entry))
             {
-                return (entry.AmountStored, entry.KeepOnHandLimitOverride ?? defaultLimit, entry.Blocked);
+                return (amount, entry.KeepOnHandLimitOverride ?? defaultLimit, entry.Blocked);
             }
 
-            return (0, defaultLimit, false);
+            return (amount, defaultLimit, false);
         }
 
         public void SetKeepOnHandLimit(EntityId zoneId, string itemContentId, int limit)
@@ -263,23 +294,50 @@ namespace TheEmptying.Modules.Zones
             GetOrCreateEntry(zone, itemContentId).Blocked = blocked;
         }
 
-        /// <summary>R13: removes up to amount of this item (eating a grub from a stockpile, say); returns how much was actually removed, never more than what's stored.</summary>
+        /// <summary>R13/R20: removes up to amount of this item (eating a grub from a stockpile, say), taking from the least-full stack first and spilling into the next least-full stack if that one empties before amount is satisfied; returns how much was actually removed, never more than what's stored. A spot that empties becomes free for any item's next stack.</summary>
         public int RemoveItemFromStockpile(EntityId zoneId, string itemContentId, int amount)
         {
-            if (amount <= 0 || !_zones.TryGet(zoneId, out ZoneState zone) || !zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry entry))
+            if (amount <= 0 || !_zones.TryGet(zoneId, out ZoneState zone))
             {
                 return 0;
             }
 
-            int actual = Math.Min(amount, entry.AmountStored);
-            entry.AmountStored -= actual;
-            return actual;
+            int remaining = amount;
+            int removed = 0;
+
+            while (remaining > 0)
+            {
+                StockSpot spot = zone.Spots
+                    .Where(s => s.ItemContentId == itemContentId && s.AmountStored > 0)
+                    .OrderBy(s => s.AmountStored)
+                    .FirstOrDefault();
+
+                if (spot == null)
+                {
+                    break;
+                }
+
+                int takeNow = Math.Min(remaining, spot.AmountStored);
+                spot.AmountStored -= takeNow;
+                remaining -= takeNow;
+                removed += takeNow;
+
+                if (spot.AmountStored == 0)
+                {
+                    spot.ItemContentId = null;
+                }
+            }
+
+            return removed;
         }
 
         /// <summary>
-        /// Adds as much of amountRequested as slots, size, blocks and the
-        /// keep-on-hand limit allow; Added may be less than requested.
-        /// Reason is null when everything fit.
+        /// Adds as much of amountRequested as spots, size, blocks and the
+        /// keep-on-hand limit allow: fills a spot already holding this
+        /// item first, then starts the nearest empty spot to that item's
+        /// other stacks (or any empty spot if it has none), spilling into
+        /// the next spot the same way if one fills partway through. Added
+        /// may be less than requested. Reason is null when everything fit.
         /// </summary>
         public (int Added, int DidNotFit, string Reason) TryAddItemToStockpile(EntityId zoneId, string itemContentId, int amountRequested)
         {
@@ -298,33 +356,71 @@ namespace TheEmptying.Modules.Zones
                 return (0, amountRequested, "Unknown item.");
             }
 
-            (int currentAmount, int limit, bool blocked) = GetStockpileItemInfo(zoneId, itemContentId);
+            bool blocked = zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry blockEntry) && blockEntry.Blocked;
             if (blocked)
             {
                 return (0, amountRequested, "Blocked here.");
             }
 
-            (int maxAddBySlots, int maxAddByLimit) = ComputeMaxAdd(zone, item, itemContentId, currentAmount, limit);
+            int capacityPerSpot = CapacityPerSpot(item.Size);
+            int defaultLimit = DefaultLimitFor(zone, itemContentId);
+            int limit = zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry limitEntry) ? limitEntry.KeepOnHandLimitOverride ?? defaultLimit : defaultLimit;
+            int currentAmount = AmountStoredOf(zone, itemContentId);
 
-            int actualAdd = Math.Max(0, Math.Min(amountRequested, Math.Min(maxAddBySlots, maxAddByLimit)));
-            int didNotFit = amountRequested - actualAdd;
+            int remaining = amountRequested;
+            int added = 0;
+            bool hitLimit = false;
 
-            if (actualAdd > 0)
+            while (remaining > 0)
             {
-                GetOrCreateEntry(zone, itemContentId).AmountStored += actualAdd;
+                int limitRoom = Math.Max(0, limit - (currentAmount + added));
+                if (limitRoom <= 0)
+                {
+                    hitLimit = true;
+                    break;
+                }
+
+                StockSpot spot = PickSpotForDelivery(zone, itemContentId, capacityPerSpot);
+                if (spot == null)
+                {
+                    break;
+                }
+
+                int spotRoom = capacityPerSpot - spot.AmountStored;
+                int addNow = Math.Min(remaining, Math.Min(spotRoom, limitRoom));
+                if (addNow <= 0)
+                {
+                    break;
+                }
+
+                if (spot.AmountStored == 0)
+                {
+                    spot.ItemContentId = itemContentId;
+                    spot.StackModelIndex = PickStackModelIndex(zoneId, item);
+                }
+
+                spot.AmountStored += addNow;
+                remaining -= addNow;
+                added += addNow;
+            }
+
+            int didNotFit = remaining;
+            if (added > 0)
+            {
                 _context.Events.Post(ItemStoredEventId, _context.CurrentTick, new EventData().SetString("contentId", itemContentId));
             }
 
-            string reason = didNotFit <= 0 ? null : maxAddByLimit < maxAddBySlots ? "Hit the keep-on-hand limit." : "Not enough room left.";
-            return (actualAdd, didNotFit, reason);
+            string reason = didNotFit <= 0 ? null : hitLimit ? "Hit the keep-on-hand limit." : "Not enough room left.";
+            return (added, didNotFit, reason);
         }
 
         /// <summary>
-        /// R13: how many more of this item this stockpile could currently
-        /// take, the same capacity math TryAddItemToStockpile uses, without
-        /// adding anything - 0 if blocked, not a stockpile, or the item is
-        /// unknown. Lets foraging work decide how much to dig before it
-        /// ever walks to the stockpile.
+        /// R13/R20: how many more of this item this stockpile could
+        /// currently take across every spot - the same capacity math
+        /// TryAddItemToStockpile uses, without adding anything - 0 if
+        /// blocked, not a stockpile, or the item is unknown. Lets
+        /// foraging work decide how much to dig before it ever walks to
+        /// the stockpile.
         /// </summary>
         public int GetRemainingRoomForItem(EntityId zoneId, string itemContentId)
         {
@@ -338,40 +434,173 @@ namespace TheEmptying.Modules.Zones
                 return 0;
             }
 
-            (int currentAmount, int limit, bool blocked) = GetStockpileItemInfo(zoneId, itemContentId);
+            bool blocked = zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry blockEntry) && blockEntry.Blocked;
             if (blocked)
             {
                 return 0;
             }
 
-            (int maxAddBySlots, int maxAddByLimit) = ComputeMaxAdd(zone, item, itemContentId, currentAmount, limit);
-            return Math.Max(0, Math.Min(maxAddBySlots, maxAddByLimit));
+            int capacityPerSpot = CapacityPerSpot(item.Size);
+            int currentAmount = AmountStoredOf(zone, itemContentId);
+            int defaultLimit = DefaultLimitFor(zone, itemContentId);
+            int limit = zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry limitEntry) ? limitEntry.KeepOnHandLimitOverride ?? defaultLimit : defaultLimit;
+
+            int limitRoom = Math.Max(0, limit - currentAmount);
+
+            int spotRoom = 0;
+            foreach (StockSpot spot in zone.Spots)
+            {
+                if (spot.ItemContentId == itemContentId)
+                {
+                    spotRoom += capacityPerSpot - spot.AmountStored;
+                }
+                else if (spot.ItemContentId == null)
+                {
+                    spotRoom += capacityPerSpot;
+                }
+            }
+
+            return Math.Max(0, Math.Min(spotRoom, limitRoom));
         }
 
-        private (int MaxAddBySlots, int MaxAddByLimit) ComputeMaxAdd(ZoneState zone, ItemContent item, string itemContentId, int currentAmount, int limit)
+        /// <summary>The spot a delivery of this item should go to next: an existing stack of it with room, else the empty spot nearest to its other stacks (or any empty spot, if it has none). Null if no spot can take it.</summary>
+        public bool TryFindDeliverySpot(EntityId zoneId, string itemContentId, out StockSpot spot)
         {
-            int totalSlots = SlotCount(zone.Cells.Count);
-            int capacityPerSlot = CapacityPerSlot(item.Size);
+            spot = null;
+            if (!_zones.TryGet(zoneId, out ZoneState zone) || zone.ZoneTypeId != StockpileTypeId)
+            {
+                return false;
+            }
 
-            int slotsUsedByOthers = zone.StockpileItems
-                .Where(kvp => kvp.Key != itemContentId)
-                .Sum(kvp => SlotsForOther(kvp));
+            if (!_content.TryGet(BuiltInContentTypes.ItemTypeName, itemContentId, out ContentEntry entry) || !(entry.Definition is ItemContent item))
+            {
+                return false;
+            }
 
-            int maxNewTotalBySlots = Math.Max(0, totalSlots - slotsUsedByOthers) * capacityPerSlot;
-            int maxAddBySlots = Math.Max(0, maxNewTotalBySlots - currentAmount);
-            int maxAddByLimit = Math.Max(0, limit - currentAmount);
-
-            return (maxAddBySlots, maxAddByLimit);
+            spot = PickSpotForDelivery(zone, itemContentId, CapacityPerSpot(item.Size));
+            return spot != null;
         }
 
-        private int SlotsForOther(KeyValuePair<string, StockpileItemEntry> kvp)
+        /// <summary>The spot RemoveItemFromStockpile would take from next (its least-full stack of this item) - lets a hungry person walk toward the spot they'll actually eat from.</summary>
+        public bool TryFindTakeSpot(EntityId zoneId, string itemContentId, out StockSpot spot)
         {
-            if (!_content.TryGet(BuiltInContentTypes.ItemTypeName, kvp.Key, out ContentEntry entry) || !(entry.Definition is ItemContent item))
+            spot = null;
+            if (!_zones.TryGet(zoneId, out ZoneState zone))
+            {
+                return false;
+            }
+
+            spot = zone.Spots
+                .Where(s => s.ItemContentId == itemContentId && s.AmountStored > 0)
+                .OrderBy(s => s.AmountStored)
+                .FirstOrDefault();
+
+            return spot != null;
+        }
+
+        /// <summary>A cell of this zone next to the given spot (not one of the cells the spot itself covers) for a person to stand on while dropping off or picking up - the nearest such cell to the spot's center, or the spot's own cell if somehow none exists.</summary>
+        public bool TryGetApproachCellForSpot(EntityId zoneId, StockSpot spot, out CellCoord approachCell)
+        {
+            approachCell = default;
+            if (!_zones.TryGet(zoneId, out ZoneState zone))
+            {
+                return false;
+            }
+
+            double spotSize = _settings.Get(SpotSizeMetersSettingId);
+            HashSet<CellCoord> spotCells = CellRasterizer.RasterizeRectangleToCells(spot.CenterX, spot.CenterZ, spotSize, spotSize, spot.RotationDegrees, _mapModule.CellSizeMeters);
+            CellCoord spotCenterCell = _mapModule.WorldToCell(spot.CenterX, spot.CenterZ);
+
+            bool found = false;
+            CellCoord best = default;
+            double bestDistance = double.PositiveInfinity;
+
+            foreach (CellCoord cell in zone.Cells.OrderBy(c => c.X).ThenBy(c => c.Z))
+            {
+                if (spotCells.Contains(cell))
+                {
+                    continue;
+                }
+
+                double dx = cell.X - spotCenterCell.X;
+                double dz = cell.Z - spotCenterCell.Z;
+                double distance = dx * dx + dz * dz;
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = cell;
+                    found = true;
+                }
+            }
+
+            approachCell = found ? best : spotCenterCell;
+            return true;
+        }
+
+        /// <summary>An existing stack of this item with room, else the empty spot nearest to its other stacks, else any empty spot (the first found, so the choice stays deterministic) - null if neither exists.</summary>
+        private static StockSpot PickSpotForDelivery(ZoneState zone, string itemContentId, int capacityPerSpot)
+        {
+            foreach (StockSpot spot in zone.Spots)
+            {
+                if (spot.ItemContentId == itemContentId && spot.AmountStored < capacityPerSpot)
+                {
+                    return spot;
+                }
+            }
+
+            List<StockSpot> existingStacks = zone.Spots.Where(s => s.ItemContentId == itemContentId).ToList();
+
+            StockSpot best = null;
+            double bestDistance = double.PositiveInfinity;
+            foreach (StockSpot spot in zone.Spots)
+            {
+                if (spot.ItemContentId != null)
+                {
+                    continue;
+                }
+
+                double distance = existingStacks.Count == 0 ? 0 : existingStacks.Min(s => DistanceSquared(s, spot));
+                if (distance < bestDistance)
+                {
+                    bestDistance = distance;
+                    best = spot;
+                }
+            }
+
+            return best;
+        }
+
+        private static double DistanceSquared(StockSpot a, StockSpot b)
+        {
+            double dx = a.CenterX - b.CenterX;
+            double dz = a.CenterZ - b.CenterZ;
+            return dx * dx + dz * dz;
+        }
+
+        /// <summary>Picked at random (from the world seed, via a stream named for this zone) whenever a spot's stack starts - kept until it empties again.</summary>
+        private int PickStackModelIndex(EntityId zoneId, ItemContent item)
+        {
+            if (item.StackModelCount <= 0)
             {
                 return 0;
             }
 
-            return SlotsNeededFor(kvp.Value.AmountStored, item.Size);
+            SimRandom random = _randomService.GetStream($"zones.stack_models.{zoneId}");
+            return random.NextInt(0, item.StackModelCount);
+        }
+
+        private int AmountStoredOf(ZoneState zone, string itemContentId)
+        {
+            int total = 0;
+            foreach (StockSpot spot in zone.Spots)
+            {
+                if (spot.ItemContentId == itemContentId)
+                {
+                    total += spot.AmountStored;
+                }
+            }
+
+            return total;
         }
 
         private int DefaultLimitFor(ZoneState zone, string itemContentId)
@@ -381,7 +610,7 @@ namespace TheEmptying.Modules.Zones
                 return 0;
             }
 
-            return SlotCount(zone.Cells.Count) * CapacityPerSlot(item.Size);
+            return zone.Spots.Count * CapacityPerSpot(item.Size);
         }
 
         private static StockpileItemEntry GetOrCreateEntry(ZoneState zone, string itemContentId)
@@ -420,7 +649,23 @@ namespace TheEmptying.Modules.Zones
                     writer.WriteInt(cell.Z);
                 }
 
+                writer.WriteString(zone.LayoutId ?? string.Empty);
+                WriteSpots(writer, zone);
                 WriteStockpileItems(writer, zone);
+            }
+        }
+
+        private static void WriteSpots(SaveWriter writer, ZoneState zone)
+        {
+            writer.WriteInt(zone.Spots.Count);
+            foreach (StockSpot spot in zone.Spots)
+            {
+                writer.WriteDouble(spot.CenterX);
+                writer.WriteDouble(spot.CenterZ);
+                writer.WriteDouble(spot.RotationDegrees);
+                writer.WriteString(spot.ItemContentId ?? string.Empty);
+                writer.WriteInt(spot.AmountStored);
+                writer.WriteInt(spot.StackModelIndex);
             }
         }
 
@@ -430,7 +675,6 @@ namespace TheEmptying.Modules.Zones
             foreach (KeyValuePair<string, StockpileItemEntry> kvp in zone.StockpileItems)
             {
                 writer.WriteString(kvp.Key);
-                writer.WriteInt(kvp.Value.AmountStored);
                 writer.WriteBool(kvp.Value.KeepOnHandLimitOverride.HasValue);
                 writer.WriteInt(kvp.Value.KeepOnHandLimitOverride ?? 0);
                 writer.WriteBool(kvp.Value.Blocked);
@@ -444,7 +688,18 @@ namespace TheEmptying.Modules.Zones
             {
                 EntityId id = reader.ReadEntityId();
                 ZoneState zone = savedVersion < 2 ? ReadOldRectangleZone(reader) : ReadCellsZone(reader);
-                ReadStockpileItems(reader, zone);
+
+                if (savedVersion < 3)
+                {
+                    ReadAndMigrateOldStockpileItems(reader, id, zone);
+                }
+                else
+                {
+                    zone.LayoutId = reader.ReadString();
+                    ReadSpots(reader, zone);
+                    ReadStockpileItems(reader, zone);
+                }
+
                 _zones.Add(id, zone);
             }
         }
@@ -467,6 +722,137 @@ namespace TheEmptying.Modules.Zones
             }
 
             return zone;
+        }
+
+        private void ReadSpots(SaveReader reader, ZoneState zone)
+        {
+            int spotCount = reader.ReadInt();
+            for (int j = 0; j < spotCount; j++)
+            {
+                double centerX = reader.ReadDouble();
+                double centerZ = reader.ReadDouble();
+                double rotation = reader.ReadDouble();
+                string itemId = reader.ReadString();
+                int amount = reader.ReadInt();
+                int stackModelIndex = reader.ReadInt();
+
+                zone.Spots.Add(new StockSpot
+                {
+                    CenterX = centerX,
+                    CenterZ = centerZ,
+                    RotationDegrees = rotation,
+                    ItemContentId = string.IsNullOrEmpty(itemId) ? null : itemId,
+                    AmountStored = amount,
+                    StackModelIndex = stackModelIndex
+                });
+            }
+        }
+
+        private static void ReadStockpileItems(SaveReader reader, ZoneState zone)
+        {
+            int itemCount = reader.ReadInt();
+            for (int j = 0; j < itemCount; j++)
+            {
+                string itemId = reader.ReadString();
+                bool hasOverride = reader.ReadBool();
+                int overrideValue = reader.ReadInt();
+                bool blocked = reader.ReadBool();
+
+                zone.StockpileItems[itemId] = new StockpileItemEntry
+                {
+                    KeepOnHandLimitOverride = hasOverride ? overrideValue : (int?)null,
+                    Blocked = blocked
+                };
+            }
+        }
+
+        /// <summary>
+        /// R20: pre-R20 saves (SectionVersion &lt; 3) stored each item's
+        /// amount directly, with no spots or layout at all. Reads that
+        /// old format, then - for a stockpile - generates a fresh
+        /// (Natural) layout for its painted cells and lays each item's
+        /// old amount into that layout's spots, same rule as a normal
+        /// delivery (fill a spot with room, else start the nearest empty
+        /// one), ignoring keep-on-hand limits and blocks since this is
+        /// restoring old state, not a new delivery under today's rules.
+        /// If the new layout genuinely can't hold everything it used to
+        /// (a Natural layout rarely packs as tightly as the old abstract
+        /// slot count did), the leftover is dropped - a one-time
+        /// migration cost, not an ongoing rule.
+        /// </summary>
+        private void ReadAndMigrateOldStockpileItems(SaveReader reader, EntityId id, ZoneState zone)
+        {
+            int itemCount = reader.ReadInt();
+            var oldAmounts = new List<(string ItemId, int Amount)>();
+
+            for (int j = 0; j < itemCount; j++)
+            {
+                string itemId = reader.ReadString();
+                int amountStored = reader.ReadInt();
+                bool hasOverride = reader.ReadBool();
+                int overrideValue = reader.ReadInt();
+                bool blocked = reader.ReadBool();
+
+                zone.StockpileItems[itemId] = new StockpileItemEntry
+                {
+                    KeepOnHandLimitOverride = hasOverride ? overrideValue : (int?)null,
+                    Blocked = blocked
+                };
+
+                if (amountStored > 0)
+                {
+                    oldAmounts.Add((itemId, amountStored));
+                }
+            }
+
+            if (zone.ZoneTypeId != StockpileTypeId)
+            {
+                return;
+            }
+
+            zone.LayoutId = LayoutNaturalId;
+            GenerateSpots(id, zone);
+
+            foreach ((string itemId, int amount) in oldAmounts.OrderBy(e => e.ItemId, StringComparer.Ordinal))
+            {
+                LayInOldAmount(id, zone, itemId, amount);
+            }
+        }
+
+        private void LayInOldAmount(EntityId zoneId, ZoneState zone, string itemContentId, int amount)
+        {
+            if (!_content.TryGet(BuiltInContentTypes.ItemTypeName, itemContentId, out ContentEntry entry) || !(entry.Definition is ItemContent item))
+            {
+                return;
+            }
+
+            int capacityPerSpot = CapacityPerSpot(item.Size);
+            int remaining = amount;
+
+            while (remaining > 0)
+            {
+                StockSpot spot = PickSpotForDelivery(zone, itemContentId, capacityPerSpot);
+                if (spot == null)
+                {
+                    break;
+                }
+
+                int spotRoom = capacityPerSpot - spot.AmountStored;
+                int addNow = Math.Min(remaining, spotRoom);
+                if (addNow <= 0)
+                {
+                    break;
+                }
+
+                if (spot.AmountStored == 0)
+                {
+                    spot.ItemContentId = itemContentId;
+                    spot.StackModelIndex = PickStackModelIndex(zoneId, item);
+                }
+
+                spot.AmountStored += addNow;
+                remaining -= addNow;
+            }
         }
 
         /// <summary>
@@ -493,33 +879,13 @@ namespace TheEmptying.Modules.Zones
                 ColorHex = DefaultColorHexForType(zoneTypeId)
             };
 
-            foreach (CellCoord cell in RasterizeRectangleToCells(centerX, centerZ, sideALength, sideBLength, rotationDegrees, _mapModule.CellSizeMeters))
+            foreach (CellCoord cell in CellRasterizer.RasterizeRectangleToCells(centerX, centerZ, sideALength, sideBLength, rotationDegrees, _mapModule.CellSizeMeters))
             {
                 zone.Cells.Add(cell);
             }
 
             RecomputeCentroid(zone);
             return zone;
-        }
-
-        private static void ReadStockpileItems(SaveReader reader, ZoneState zone)
-        {
-            int itemCount = reader.ReadInt();
-            for (int j = 0; j < itemCount; j++)
-            {
-                string itemId = reader.ReadString();
-                int amountStored = reader.ReadInt();
-                bool hasOverride = reader.ReadBool();
-                int overrideValue = reader.ReadInt();
-                bool blocked = reader.ReadBool();
-
-                zone.StockpileItems[itemId] = new StockpileItemEntry
-                {
-                    AmountStored = amountStored,
-                    KeepOnHandLimitOverride = hasOverride ? overrideValue : (int?)null,
-                    Blocked = blocked
-                };
-            }
         }
 
         private string DefaultNameForType(string zoneTypeId)
@@ -540,47 +906,6 @@ namespace TheEmptying.Modules.Zones
             }
 
             return "#808080";
-        }
-
-        /// <summary>Save-migration-only: the same rotated-rectangle containment test the old OrientedRect used, inlined here since OrientedRect itself is gone.</summary>
-        private static HashSet<CellCoord> RasterizeRectangleToCells(double centerX, double centerZ, double sideALength, double sideBLength, double rotationDegrees, double cellSizeMeters)
-        {
-            double rad = rotationDegrees * Math.PI / 180.0;
-            double axisAx = Math.Cos(rad);
-            double axisAz = Math.Sin(rad);
-            double axisBx = -axisAz;
-            double axisBz = axisAx;
-            double halfA = Math.Abs(sideALength) * 0.5;
-            double halfB = Math.Abs(sideBLength) * 0.5;
-
-            double extentX = Math.Abs(axisAx) * halfA + Math.Abs(axisBx) * halfB;
-            double extentZ = Math.Abs(axisAz) * halfA + Math.Abs(axisBz) * halfB;
-
-            int minCellX = (int)Math.Floor((centerX - extentX) / cellSizeMeters);
-            int maxCellX = (int)Math.Ceiling((centerX + extentX) / cellSizeMeters);
-            int minCellZ = (int)Math.Floor((centerZ - extentZ) / cellSizeMeters);
-            int maxCellZ = (int)Math.Ceiling((centerZ + extentZ) / cellSizeMeters);
-
-            var cells = new HashSet<CellCoord>();
-            for (int cx = minCellX; cx <= maxCellX; cx++)
-            {
-                for (int cz = minCellZ; cz <= maxCellZ; cz++)
-                {
-                    double worldX = (cx + 0.5) * cellSizeMeters;
-                    double worldZ = (cz + 0.5) * cellSizeMeters;
-                    double dx = worldX - centerX;
-                    double dz = worldZ - centerZ;
-                    double localA = dx * axisAx + dz * axisAz;
-                    double localB = dx * axisBx + dz * axisBz;
-
-                    if (Math.Abs(localA) <= halfA && Math.Abs(localB) <= halfB)
-                    {
-                        cells.Add(new CellCoord(cx, cz));
-                    }
-                }
-            }
-
-            return cells;
         }
 
         #endregion

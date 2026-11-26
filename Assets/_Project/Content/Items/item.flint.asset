@@ -20,3 +20,8 @@ MonoBehaviour:
   baseValueTenthCopper: 20
   spoilTimeMinutes: 0
   size: 1
+  stackModels:
+  - stage1Model: {fileID: 0}
+    stage2Model: {fileID: 0}
+    stage3Model: {fileID: 0}
+  icon: {fileID: 0}

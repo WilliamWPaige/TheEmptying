@@ -5,7 +5,7 @@
             "id": "zone.stockpile",
             "displayName": "Stockpile",
             "colorHex": "#3DA5D9",
-            "description": "Where people drop off and pick up goods. Crown stockpiles pay for delivered base goods. Holds one item type per 4 square meters."
+            "description": "Where people drop off and pick up goods. Crown stockpiles pay for delivered base goods. Laid out in 2x2 m stack spots, each holding one item type."
         },
         {
             "id": "zone.living_area",

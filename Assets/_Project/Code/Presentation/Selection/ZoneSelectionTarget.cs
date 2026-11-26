@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Modules.Map;
@@ -12,7 +13,7 @@ namespace TheEmptying.Presentation.Selection
 {
     /// <summary>
     /// R18b: an info window selection for a placed zone - its name, type
-    /// and painted area. A Stockpile shows slots used/total and a row
+    /// and painted area. A Stockpile shows spots used/total and a row
     /// per known item (amount, a keep-on-hand limit field, and a block
     /// toggle). A Living Area shows how many people are inside it right
     /// now. Both have a "Remove zone" button. A zone's own on-screen
@@ -91,17 +92,22 @@ namespace TheEmptying.Presentation.Selection
 
         private void BuildStockpileContent(VisualElement container, ZoneState zone)
         {
-            int totalSlots = _zonesModule.SlotCount(zone.Cells.Count);
-            int usedSlots = zone.StockpileItems
-                .Where(kv => kv.Value.AmountStored > 0)
-                .Sum(kv => ZonesModule.SlotsNeededFor(kv.Value.AmountStored, SizeOf(kv.Key)));
+            int totalSpots = zone.Spots.Count;
+            int usedSpots = zone.Spots.Count(s => s.AmountStored > 0);
 
-            container.Add(new Label($"Slots: {usedSlots} / {totalSlots}")
+            container.Add(new Label($"Spots: {usedSpots} / {totalSpots}")
             {
                 style = { color = Color.white, unityFontStyleAndWeight = FontStyle.Bold, marginBottom = 6 }
             });
 
-            foreach (string itemId in zone.StockpileItems.Keys.OrderBy(id => id, StringComparer.Ordinal).ToArray())
+            IEnumerable<string> knownItemIds = zone.Spots
+                .Where(s => s.ItemContentId != null)
+                .Select(s => s.ItemContentId)
+                .Concat(zone.StockpileItems.Keys)
+                .Distinct()
+                .OrderBy(id => id, StringComparer.Ordinal);
+
+            foreach (string itemId in knownItemIds.ToArray())
             {
                 container.Add(BuildStockpileItemRow(zone, itemId));
             }
@@ -147,16 +153,6 @@ namespace TheEmptying.Presentation.Selection
         {
             _zonesModule.RemoveZone(_id);
             _onRemoved?.Invoke();
-        }
-
-        private int SizeOf(string itemContentId)
-        {
-            if (_content.TryGet(BuiltInContentTypes.ItemTypeName, itemContentId, out ContentEntry entry) && entry.Definition is ItemContent item)
-            {
-                return item.Size;
-            }
-
-            return 1;
         }
 
         private string DisplayNameForItem(string itemContentId)

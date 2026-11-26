@@ -21,15 +21,16 @@ namespace TheEmptying.Presentation.Zones
     /// R18/R18b: the zoning menu, its top-down view, and painting.
     /// Clicking Zones pauses the game, hides every other window,
     /// switches the camera to the orthographic zoning view, and shows
-    /// this menu (Type, Name, Color, brush shape/size). "Start zoning"
-    /// arms the brush: holding left mouse paints every cell it touches
-    /// (right mouse erases cells of the zone being painted), dragging
-    /// fast never leaves gaps. Undo steps back one stroke at a time;
-    /// Erase all counts as a stroke too. Create zone (once at least one
-    /// NxN square fits) confirms, creates the real zone, posts its
-    /// event, and returns to the menu ready for the next one. Leaving
-    /// with unsaved paint asks to discard it first. Redraw, delete,
-    /// stockpile layouts, box prefabs and loose items all come later.
+    /// this menu (Type, Layout [Stockpile only], Name, Color, brush
+    /// shape/size). "Start zoning" arms the brush: holding left mouse
+    /// paints every cell it touches (right mouse erases cells of the
+    /// zone being painted), dragging fast never leaves gaps. Undo steps
+    /// back one stroke at a time; Erase all counts as a stroke too.
+    /// Create zone (once at least one NxN square fits) confirms, creates
+    /// the real zone - laying out its stack spots too, for a stockpile -
+    /// posts its event, and returns to the menu ready for the next one.
+    /// Leaving with unsaved paint asks to discard it first. Redraw,
+    /// delete, real box models and loose items all come later.
     /// </summary>
     public sealed class ZoningMenuPresenter : MonoBehaviour
     {
@@ -76,12 +77,15 @@ namespace TheEmptying.Presentation.Zones
         private VisualElement _discardConfirmPanel;
 
         private DropdownField _typeField;
+        private Label _layoutLabel;
+        private DropdownField _layoutField;
         private TextField _nameField;
         private ColorWheelPicker _colorPicker;
         private RadioButtonGroup _shapeField;
         private SliderInt _sizeField;
 
         private List<ZoneTypeDefinition> _zoneTypes = new List<ZoneTypeDefinition>();
+        private readonly List<string> _layoutIds = new List<string> { ZonesModule.LayoutNaturalId, ZonesModule.LayoutUniformId };
         private bool _nameIsDefault = true;
         private bool _colorIsDefault = true;
         private bool _pausedBeforeOpen;
@@ -207,6 +211,8 @@ namespace TheEmptying.Presentation.Zones
             _paintedCells.Clear();
 
             RefreshTypeChoices();
+            _layoutField.index = 0;
+            RefreshLayoutVisibility();
             _nameIsDefault = true;
             _colorIsDefault = true;
             ApplyDefaultsForSelectedType();
@@ -699,7 +705,7 @@ namespace TheEmptying.Presentation.Zones
             ZoneTypeDefinition selected = SelectedZoneType();
             string zoneTypeId = selected != null ? selected.Id : ZonesModule.StockpileTypeId;
 
-            _zonesModule.CreateZone(zoneTypeId, _nameField.value, "#" + ColorUtility.ToHtmlStringRGB(_colorPicker.Value), _paintedCells);
+            _zonesModule.CreateZone(zoneTypeId, _nameField.value, "#" + ColorUtility.ToHtmlStringRGB(_colorPicker.Value), _paintedCells, SelectedLayoutId());
             _onZoneCreated?.Invoke();
 
             AbandonPaint();
@@ -787,6 +793,12 @@ namespace TheEmptying.Presentation.Zones
             _typeField = new DropdownField { style = { marginBottom = 8 } };
             _typeField.RegisterValueChangedCallback(_ => OnTypeChanged());
             _menuPanel.Add(_typeField);
+
+            // R20: shown only for Stockpile (see RefreshLayoutVisibility) - which layout its stack spots are laid out with.
+            _layoutLabel = new Label("Layout") { style = { color = Color.white, marginBottom = 4 } };
+            _menuPanel.Add(_layoutLabel);
+            _layoutField = new DropdownField(new List<string> { "Natural", "Uniform" }, 0) { style = { marginBottom = 8 } };
+            _menuPanel.Add(_layoutField);
 
             _menuPanel.Add(new Label("Name") { style = { color = Color.white, marginBottom = 4 } });
             _nameField = new TextField { style = { marginBottom = 8 } };
@@ -968,6 +980,23 @@ namespace TheEmptying.Presentation.Zones
             {
                 ApplyDefaultColor();
             }
+
+            RefreshLayoutVisibility();
+        }
+
+        /// <summary>R20: the Layout dropdown only means anything for a Stockpile - hidden for every other zone type.</summary>
+        private void RefreshLayoutVisibility()
+        {
+            ZoneTypeDefinition selected = SelectedZoneType();
+            DisplayStyle display = selected != null && selected.Id == ZonesModule.StockpileTypeId ? DisplayStyle.Flex : DisplayStyle.None;
+            _layoutLabel.style.display = display;
+            _layoutField.style.display = display;
+        }
+
+        private string SelectedLayoutId()
+        {
+            int index = _layoutField.index;
+            return index >= 0 && index < _layoutIds.Count ? _layoutIds[index] : ZonesModule.LayoutNaturalId;
         }
 
         private void ApplyDefaultsForSelectedType()

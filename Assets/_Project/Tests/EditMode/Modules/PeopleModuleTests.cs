@@ -70,7 +70,8 @@ namespace TheEmptying.Tests.EditMode.Modules
 
         private static EntityId PlaceZone(ZonesModule zones, MapModule map, string zoneTypeId, double centerX, double centerZ, double sideA, double sideB)
         {
-            return zones.CreateZone(zoneTypeId, zoneTypeId + " Zone", "#808080", RectCells(map, centerX, centerZ, sideA, sideB));
+            // Uniform, not the default Natural: a plain grid gives these tests a predictable, non-random stack spot layout.
+            return zones.CreateZone(zoneTypeId, zoneTypeId + " Zone", "#808080", RectCells(map, centerX, centerZ, sideA, sideB), ZonesModule.LayoutUniformId);
         }
 
         /// <summary>Places the keep at the map center and spawns the starting group (Monarch and founders waiting inside, Commoners appearing outside) - the same sequence the founding popup's Yes triggers.</summary>

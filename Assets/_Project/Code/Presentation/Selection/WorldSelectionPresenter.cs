@@ -15,6 +15,7 @@ using UnityEngine.UIElements;
 using BuildingPresenter = TheEmptying.Presentation.Buildings.BuildingPresenter;
 using ZonePresenter = TheEmptying.Presentation.Zones.ZonePresenter;
 using ZoningMenuPresenter = TheEmptying.Presentation.Zones.ZoningMenuPresenter;
+using StockpileStackPresenter = TheEmptying.Presentation.Zones.StockpileStackPresenter;
 using EntityId = TheEmptying.Core.Entities.EntityId;
 
 namespace TheEmptying.Presentation.Selection
@@ -40,6 +41,7 @@ namespace TheEmptying.Presentation.Selection
         private PersonPresenter _personPresenter;
         private BuildingPresenter _buildingPresenter;
         private ZonePresenter _zonePresenter;
+        private StockpileStackPresenter _stockpileStackPresenter;
         private TemporaryChunkDecorations _decorations;
         private PondsPresenter _pondsPresenter;
         private Camera _camera;
@@ -84,6 +86,7 @@ namespace TheEmptying.Presentation.Selection
             PersonPresenter personPresenter,
             BuildingPresenter buildingPresenter,
             ZonePresenter zonePresenter,
+            StockpileStackPresenter stockpileStackPresenter,
             TemporaryChunkDecorations decorations,
             PondsPresenter pondsPresenter,
             Camera camera,
@@ -100,6 +103,7 @@ namespace TheEmptying.Presentation.Selection
             _personPresenter = personPresenter;
             _buildingPresenter = buildingPresenter;
             _zonePresenter = zonePresenter;
+            _stockpileStackPresenter = stockpileStackPresenter;
             _decorations = decorations;
             _pondsPresenter = pondsPresenter;
             _camera = camera;
@@ -254,6 +258,7 @@ namespace TheEmptying.Presentation.Selection
         private void HandleZoneRemoved()
         {
             _zonePresenter?.Rebuild(_zonesModule);
+            _stockpileStackPresenter?.Rebuild(_zonesModule);
             ClearSelection();
         }
 
