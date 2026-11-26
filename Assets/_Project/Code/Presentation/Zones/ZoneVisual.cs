@@ -1,6 +1,5 @@
 using System.Collections.Generic;
 using TheEmptying.Modules.Map;
-using TheEmptying.Presentation.World;
 using UnityEngine;
 using UnityEngine.Rendering;
 
@@ -12,11 +11,16 @@ namespace TheEmptying.Presentation.Zones
     /// floating origin - shared by the live paint-in-progress preview
     /// and every placed zone. A zone's cells may be several separate
     /// pieces; one mesh covers all of them at once. The GameObject sits
-    /// at its parent's local origin - the parent (ZonePresenter's or
-    /// ZoningMenuPresenter's shared root) is what the floating origin
-    /// shifts, so every vertex here is baked in render space once, at
-    /// UpdateGeometry time, and stays correct until the next shift moves
-    /// the whole parent.
+    /// at its parent's local origin (zero local offset) - the parent
+    /// (ZonePresenter's or ZoningMenuPresenter's shared root) is what the
+    /// floating origin shifts (by subtracting each shift's delta from its
+    /// own position), so the vertices here are baked in RAW WORLD
+    /// coordinates, not render space - the parent's own shifted position
+    /// supplies the render-space offset. (R18d: this used to also run the
+    /// cell positions through FloatingOrigin.WorldToRender before baking
+    /// them, which double-applied the offset together with the parent's
+    /// own compensation and sent the mesh far off screen - fixed by
+    /// leaving the raw world coordinates for the parent to offset.)
     /// </summary>
     public sealed class ZoneVisual
     {
@@ -57,11 +61,28 @@ namespace TheEmptying.Presentation.Zones
 
         public void Destroy() => Object.Destroy(_instance);
 
-        /// <summary>The fill color's alpha is the transparent tint's own strength; callers pass a color already at the tint alpha they want.</summary>
-        public void SetColor(Color color) => _material.color = color;
+        /// <summary>
+        /// The fill color's alpha is the transparent tint's own strength;
+        /// callers pass a color already at the tint alpha they want.
+        /// R18d: Material.color sets the shader property named "_Color",
+        /// which the URP Lit/Unlit shaders this material is built from
+        /// don't have (they use "_BaseColor" instead) - set directly on
+        /// whichever property the shader actually has.
+        /// </summary>
+        public void SetColor(Color color)
+        {
+            if (_material.HasProperty("_BaseColor"))
+            {
+                _material.SetColor("_BaseColor", color);
+            }
+            else
+            {
+                _material.color = color;
+            }
+        }
 
         /// <summary>Rebuilds the mesh (and, if collidable, the collider) from this exact cell set - one quad per cell, merged into a single mesh so several separate pieces still draw and select as one zone.</summary>
-        public void UpdateGeometry(IEnumerable<CellCoord> cells, double cellSizeMeters, FloatingOrigin floatingOrigin)
+        public void UpdateGeometry(IEnumerable<CellCoord> cells, double cellSizeMeters)
         {
             var vertices = new List<Vector3>();
             var triangles = new List<int>();
@@ -70,13 +91,12 @@ namespace TheEmptying.Presentation.Zones
             foreach (CellCoord cell in cells)
             {
                 var worldMin = new Vector3((float)(cell.X * cellSizeMeters), 0.02f, (float)(cell.Z * cellSizeMeters));
-                Vector3 renderMin = floatingOrigin.WorldToRender(worldMin);
 
                 int baseIndex = vertices.Count;
-                vertices.Add(renderMin);
-                vertices.Add(renderMin + new Vector3(0f, 0f, size));
-                vertices.Add(renderMin + new Vector3(size, 0f, size));
-                vertices.Add(renderMin + new Vector3(size, 0f, 0f));
+                vertices.Add(worldMin);
+                vertices.Add(worldMin + new Vector3(0f, 0f, size));
+                vertices.Add(worldMin + new Vector3(size, 0f, size));
+                vertices.Add(worldMin + new Vector3(size, 0f, 0f));
 
                 triangles.Add(baseIndex);
                 triangles.Add(baseIndex + 1);

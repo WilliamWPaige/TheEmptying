@@ -122,7 +122,7 @@ namespace TheEmptying.Presentation.Zones
             {
                 Color color = ColorForZone(row.Value);
                 var visual = new ZoneVisual(_root, color, collidable: true);
-                visual.UpdateGeometry(row.Value.Cells, cellSize, _floatingOrigin);
+                visual.UpdateGeometry(row.Value.Cells, cellSize);
 
                 _instances[row.Key] = visual;
                 _baseColorById[row.Key] = color;

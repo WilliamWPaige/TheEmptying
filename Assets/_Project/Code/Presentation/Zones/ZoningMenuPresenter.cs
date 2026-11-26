@@ -392,6 +392,16 @@ namespace TheEmptying.Presentation.Zones
             int cellsChanged = _paintedCells.Count - _paintLogStrokeCellsAtStart;
             string uiDescription = _paintLogStrokeOverUi ? $"yes ({_paintLogStrokeUiElement ?? "unnamed element"})" : "no";
             Debug.Log($"[Zoning] Paint stroke: over UI = {uiDescription}, ground cell found = {_paintLogStrokeFoundGround}, cells changed = {cellsChanged}");
+
+            // R18d: temporary - lets the user confirm by hand that the painted mesh is actually
+            // drawing where the brush is, rather than off-screen under a floating-origin offset.
+            if (_paintedCells.Count > 0)
+            {
+                var paintRenderer = _paintVisual.GameObject.GetComponent<MeshRenderer>();
+                Vector3 meshBoundsCenter = paintRenderer.bounds.center;
+                Vector3 brushPosition = _brushPreview.GameObject.transform.position;
+                Debug.Log($"[Zoning] Paint mesh world bounds center = {meshBoundsCenter}, brush preview world position = {brushPosition}");
+            }
         }
 
         #endregion
@@ -520,7 +530,7 @@ namespace TheEmptying.Presentation.Zones
             }
 
             _paintVisual.SetActive(true);
-            _paintVisual.UpdateGeometry(_paintedCells, _mapModule.CellSizeMeters, _floatingOrigin);
+            _paintVisual.UpdateGeometry(_paintedCells, _mapModule.CellSizeMeters);
         }
 
         private void RefreshUndoBar()
