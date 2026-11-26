@@ -29,8 +29,13 @@ namespace TheEmptying.Presentation.Zones
     /// Create zone (once at least one NxN square fits) confirms, creates
     /// the real zone - laying out its stack spots too, for a stockpile -
     /// posts its event, and returns to the menu ready for the next one.
-    /// Leaving with unsaved paint asks to discard it first. Redraw,
-    /// delete, real box models and loose items all come later.
+    /// Leaving with unsaved paint asks to discard it first. R21: the
+    /// same menu also opens pre-loaded for an existing zone
+    /// (OpenForModify, from its info window's Modify button) - left
+    /// paint still adds cells, right erase removes them except any
+    /// occupied cell, which refuses with a note instead; the Create
+    /// button becomes "Save changes", and a Delete button appears
+    /// too. Real box models and loose items all come later.
     /// </summary>
     public sealed class ZoningMenuPresenter : MonoBehaviour
     {
@@ -61,6 +66,7 @@ namespace TheEmptying.Presentation.Zones
         private DiscoveriesWindowPresenter _discoveriesWindow;
         private WorldSelectionPresenter _worldSelection;
         private Action _hideToast;
+        private Action<string> _showToast;
         private Action _closeSmallPopups;
         private Action _onZoneCreated;
         private Action _onOpenStateChanged;
@@ -71,10 +77,24 @@ namespace TheEmptying.Presentation.Zones
         private Label _infoLabel;
         private Label _createDisabledReasonLabel;
         private Button _createButton;
+        private Button _deleteButton;
         private Label _undoBar;
         private VisualElement _createConfirmPanel;
         private Label _createConfirmLabel;
         private VisualElement _discardConfirmPanel;
+        private Label _discardConfirmLabel;
+        private VisualElement _deleteConfirmPanel;
+        private Label _deleteConfirmLabel;
+
+        /// <summary>R21: the zone being modified, if any - null means the ordinary "paint a new zone" flow.</summary>
+        private EntityId? _modifyingZoneId;
+        private HashSet<CellCoord> _occupiedCellsForModify = new HashSet<CellCoord>();
+        private bool _typeChangeLockedBecauseOccupied;
+        private HashSet<CellCoord> _modifyOriginalCells = new HashSet<CellCoord>();
+        private string _modifyOriginalName;
+        private string _modifyOriginalColorHex;
+        private string _modifyOriginalTypeId;
+        private string _modifyOriginalLayoutId;
 
         private DropdownField _typeField;
         private Label _layoutLabel;
@@ -138,6 +158,7 @@ namespace TheEmptying.Presentation.Zones
             DiscoveriesWindowPresenter discoveriesWindow,
             WorldSelectionPresenter worldSelection,
             Action hideToast,
+            Action<string> showToast,
             Action closeSmallPopups,
             Action onZoneCreated,
             Action onOpenStateChanged)
@@ -158,6 +179,7 @@ namespace TheEmptying.Presentation.Zones
             _discoveriesWindow = discoveriesWindow;
             _worldSelection = worldSelection;
             _hideToast = hideToast;
+            _showToast = showToast;
             _closeSmallPopups = closeSmallPopups;
             _onZoneCreated = onZoneCreated;
             _onOpenStateChanged = onOpenStateChanged;
@@ -192,6 +214,86 @@ namespace TheEmptying.Presentation.Zones
                 return;
             }
 
+            EnterZoningViewCommon();
+
+            _modifyingZoneId = null;
+            _occupiedCellsForModify.Clear();
+            _typeChangeLockedBecauseOccupied = false;
+            _createButton.text = "Create zone";
+            _deleteButton.style.display = DisplayStyle.None;
+
+            _undoStack = new ZonePaintUndoStack((int)_settings.Get(UndoMaxStepsSettingId));
+            _paintedCells.Clear();
+
+            RefreshTypeChoices();
+            _typeField.SetEnabled(true);
+            _layoutField.index = 0;
+            RefreshLayoutVisibility();
+            _nameIsDefault = true;
+            _colorIsDefault = true;
+            ApplyDefaultsForSelectedType();
+
+            FinishOpening();
+        }
+
+        /// <summary>
+        /// R21: the selected zone's info window's Modify button - opens
+        /// the same menu with this zone's type, name, color, layout and
+        /// cells already loaded, its tint shown as the live paint.
+        /// </summary>
+        public void OpenForModify(EntityId zoneId)
+        {
+            if (IsOpen || !_zonesModule.TryGetZone(zoneId, out ZoneState zone))
+            {
+                return;
+            }
+
+            EnterZoningViewCommon();
+
+            _modifyingZoneId = zoneId;
+            _occupiedCellsForModify = _zonesModule.GetOccupiedCells(zoneId);
+            _typeChangeLockedBecauseOccupied = _zonesModule.IsZoneOccupied(zoneId);
+            _createButton.text = "Save changes";
+            _deleteButton.style.display = DisplayStyle.Flex;
+
+            _undoStack = new ZonePaintUndoStack((int)_settings.Get(UndoMaxStepsSettingId));
+            _paintedCells.Clear();
+            foreach (CellCoord cell in zone.Cells)
+            {
+                _paintedCells.Add(cell);
+            }
+
+            RefreshTypeChoices();
+            SelectTypeById(zone.ZoneTypeId);
+            _typeField.SetEnabled(true);
+            _layoutField.index = Math.Max(0, _layoutIds.IndexOf(zone.LayoutId));
+            RefreshLayoutVisibility();
+
+            _nameField.SetValueWithoutNotify(zone.Name ?? string.Empty);
+            _nameIsDefault = false;
+
+            Color color = Color.gray;
+            if (!string.IsNullOrEmpty(zone.ColorHex) && ColorUtility.TryParseHtmlString(zone.ColorHex, out Color parsed))
+            {
+                color = parsed;
+            }
+
+            _colorPicker.SetValue(color);
+            _colorIsDefault = false;
+
+            _modifyOriginalCells = new HashSet<CellCoord>(zone.Cells);
+            _modifyOriginalName = zone.Name;
+            _modifyOriginalColorHex = zone.ColorHex;
+            _modifyOriginalTypeId = zone.ZoneTypeId;
+            _modifyOriginalLayoutId = zone.LayoutId;
+
+            RefreshPaintVisual();
+            FinishOpening();
+        }
+
+        /// <summary>The side effects shared by Open and OpenForModify - pausing, hiding every other window, switching to the zoning camera.</summary>
+        private void EnterZoningViewCommon()
+        {
             _pausedBeforeOpen = _presentation.IsPaused;
             _presentation.SetPaused(true);
 
@@ -206,28 +308,29 @@ namespace TheEmptying.Presentation.Zones
             _personPresenter?.SetVisible(false);
 
             _cameraController.EnterZoningView();
+        }
 
-            _undoStack = new ZonePaintUndoStack((int)_settings.Get(UndoMaxStepsSettingId));
-            _paintedCells.Clear();
-
-            RefreshTypeChoices();
-            _layoutField.index = 0;
-            RefreshLayoutVisibility();
-            _nameIsDefault = true;
-            _colorIsDefault = true;
-            ApplyDefaultsForSelectedType();
-
+        /// <summary>The side effects shared by Open and OpenForModify, once each has set up its own starting state.</summary>
+        private void FinishOpening()
+        {
             _armed = false;
             _wasMouseHeld = false;
             _strokeStartedOnGround = false;
             _brushPreview.SetActive(false);
             CloseCreateConfirm();
             CloseDiscardConfirm();
+            CloseDeleteConfirm();
             _menuPanel.style.display = DisplayStyle.Flex;
             _infoPanel.style.display = DisplayStyle.Flex;
             _root.style.display = DisplayStyle.Flex;
 
             _onOpenStateChanged?.Invoke();
+        }
+
+        private void SelectTypeById(string typeId)
+        {
+            int index = _zoneTypes.FindIndex(t => t.Id == typeId);
+            _typeField.index = index >= 0 ? index : 0;
         }
 
         /// <summary>The actual teardown, once leaving has been allowed (see RequestClose). Also used by Rebind to abandon a stale session outright.</summary>
@@ -258,16 +361,36 @@ namespace TheEmptying.Presentation.Zones
             _onOpenStateChanged?.Invoke();
         }
 
-        /// <summary>The Close button and Escape (once nothing more local to back out of first) both come here - leaving with unsaved paint asks "Discard this zone?" first.</summary>
+        /// <summary>The Close button and Escape (once nothing more local to back out of first) both come here - leaving with unsaved paint (or, modifying, any actual unsaved change) asks to discard first.</summary>
         private void RequestClose()
         {
-            if (_paintedCells.Count > 0)
+            if (HasUnsavedChanges())
             {
                 ShowDiscardConfirm();
                 return;
             }
 
             Close();
+        }
+
+        /// <summary>R21: for a new zone, any paint at all is unsaved; modifying an existing one, only an actual change against what was loaded counts - the zone itself always starts "painted" with its own cells.</summary>
+        private bool HasUnsavedChanges()
+        {
+            if (!_modifyingZoneId.HasValue)
+            {
+                return _paintedCells.Count > 0;
+            }
+
+            ZoneTypeDefinition selected = SelectedZoneType();
+            string selectedTypeId = selected != null ? selected.Id : _modifyOriginalTypeId;
+            bool layoutChanged = selectedTypeId == ZonesModule.StockpileTypeId
+                && SelectedLayoutId() != (_modifyOriginalLayoutId ?? ZonesModule.LayoutNaturalId);
+
+            return !_paintedCells.SetEquals(_modifyOriginalCells)
+                || _nameField.value != _modifyOriginalName
+                || "#" + ColorUtility.ToHtmlStringRGB(_colorPicker.Value) != _modifyOriginalColorHex
+                || selectedTypeId != _modifyOriginalTypeId
+                || layoutChanged;
         }
 
         /// <summary>Escape's entry point - closes an open confirm popup, un-arms the brush (back to the menu) if armed, otherwise the same as the Close button.</summary>
@@ -282,6 +405,12 @@ namespace TheEmptying.Presentation.Zones
             if (_discardConfirmPanel.style.display == DisplayStyle.Flex)
             {
                 CloseDiscardConfirm();
+                return;
+            }
+
+            if (_deleteConfirmPanel.style.display == DisplayStyle.Flex)
+            {
+                CloseDeleteConfirm();
                 return;
             }
 
@@ -340,7 +469,7 @@ namespace TheEmptying.Presentation.Zones
 
             bool mouseHeld = Mouse.current != null && (Mouse.current.leftButton.isPressed || Mouse.current.rightButton.isPressed);
             VisualElement uiHit = Mouse.current != null ? UiInputUtility.PickOverUi(_uiRoot, Mouse.current.position.ReadValue()) : null;
-            bool popupOpen = _createConfirmPanel.style.display == DisplayStyle.Flex || _discardConfirmPanel.style.display == DisplayStyle.Flex;
+            bool popupOpen = _createConfirmPanel.style.display == DisplayStyle.Flex || _discardConfirmPanel.style.display == DisplayStyle.Flex || _deleteConfirmPanel.style.display == DisplayStyle.Flex;
             bool overUi = popupOpen || uiHit != null;
 
             bool freshPress = mouseHeld && !_wasMouseHeld;
@@ -563,20 +692,34 @@ namespace TheEmptying.Presentation.Zones
             IEnumerable<CellCoord> anchors = _lastDragCell.HasValue ? ZonePaintGeometry.LineCells(_lastDragCell.Value, cell) : new[] { cell };
             bool changed = false;
 
+            bool triedToEraseOccupied = false;
+
             foreach (CellCoord anchor in anchors)
             {
                 foreach (CellCoord target in ZonePaintGeometry.BrushFootprint(anchor, shape, sizeCells))
                 {
                     if (erasing)
                     {
-                        changed |= _paintedCells.Remove(target);
+                        if (_occupiedCellsForModify.Contains(target))
+                        {
+                            triedToEraseOccupied = true;
+                        }
+                        else
+                        {
+                            changed |= _paintedCells.Remove(target);
+                        }
                     }
-                    else if (!_paintedCells.Contains(target) && _zonesModule.CanPaintCell(target))
+                    else if (!_paintedCells.Contains(target) && _zonesModule.CanPaintCell(target, _modifyingZoneId))
                     {
                         _paintedCells.Add(target);
                         changed = true;
                     }
                 }
+            }
+
+            if (triedToEraseOccupied)
+            {
+                _showToast?.Invoke("Occupied: move the items out first.");
             }
 
             _lastDragCell = cell;
@@ -615,15 +758,21 @@ namespace TheEmptying.Presentation.Zones
             RefreshPaintVisual();
         }
 
+        /// <summary>Clears every unoccupied painted cell; an occupied one (modifying a stockpile with something in it) is never touched.</summary>
         private void EraseAll()
         {
-            if (_paintedCells.Count == 0)
+            List<CellCoord> toRemove = _paintedCells.Where(c => !_occupiedCellsForModify.Contains(c)).ToList();
+            if (toRemove.Count == 0)
             {
                 return;
             }
 
             PushUndoSnapshot();
-            _paintedCells.Clear();
+            foreach (CellCoord cell in toRemove)
+            {
+                _paintedCells.Remove(cell);
+            }
+
             RefreshPaintVisual();
         }
 
@@ -675,6 +824,7 @@ namespace TheEmptying.Presentation.Zones
             bool canCreate = ZonePaintGeometry.ContainsSquare(_paintedCells, minSquare);
 
             _createButton.SetEnabled(canCreate);
+            _createDisabledReasonLabel.text = _modifyingZoneId.HasValue ? "Too small; use Delete instead" : "Too small";
 
             // R18f: toggles visibility, not display - "Too small" reserves its line's height
             // whether it's shown or not, so the info box's height (and the position of
@@ -689,7 +839,9 @@ namespace TheEmptying.Presentation.Zones
             double cellSize = _mapModule.CellSizeMeters;
             double areaSquareMeters = _paintedCells.Count * cellSize * cellSize;
 
-            _createConfirmLabel.text = $"Create {(selected != null ? selected.DisplayName : "zone")} \"{_nameField.value}\", {areaSquareMeters:0.#} m²?";
+            _createConfirmLabel.text = _modifyingZoneId.HasValue
+                ? $"Save changes to \"{_nameField.value}\"?"
+                : $"Create {(selected != null ? selected.DisplayName : "zone")} \"{_nameField.value}\", {areaSquareMeters:0.#} m²?";
             _createConfirmPanel.style.display = DisplayStyle.Flex;
         }
 
@@ -704,18 +856,24 @@ namespace TheEmptying.Presentation.Zones
 
             ZoneTypeDefinition selected = SelectedZoneType();
             string zoneTypeId = selected != null ? selected.Id : ZonesModule.StockpileTypeId;
+            string colorHex = "#" + ColorUtility.ToHtmlStringRGB(_colorPicker.Value);
 
-            _zonesModule.CreateZone(zoneTypeId, _nameField.value, "#" + ColorUtility.ToHtmlStringRGB(_colorPicker.Value), _paintedCells, SelectedLayoutId());
+            if (_modifyingZoneId.HasValue)
+            {
+                _zonesModule.ApplyZoneEdit(_modifyingZoneId.Value, _nameField.value, colorHex, zoneTypeId, _paintedCells, SelectedLayoutId());
+            }
+            else
+            {
+                _zonesModule.CreateZone(zoneTypeId, _nameField.value, colorHex, _paintedCells, SelectedLayoutId());
+            }
+
             _onZoneCreated?.Invoke();
-
-            AbandonPaint();
-            Unarm();
-
-            ApplyDefaultsForSelectedType();
+            ReturnToBlankCreateState();
         }
 
         private void ShowDiscardConfirm()
         {
+            _discardConfirmLabel.text = _modifyingZoneId.HasValue ? "Discard changes?" : "Discard this zone?";
             _discardConfirmPanel.style.display = DisplayStyle.Flex;
         }
 
@@ -724,11 +882,67 @@ namespace TheEmptying.Presentation.Zones
             _discardConfirmPanel.style.display = DisplayStyle.None;
         }
 
+        /// <summary>Yes on "Discard changes?"/"Discard this zone?" - nothing was ever saved, so simply abandoning the local paint and closing already leaves the real zone exactly as it was.</summary>
         private void ConfirmDiscardAndClose()
         {
             CloseDiscardConfirm();
             AbandonPaint();
             Close();
+        }
+
+        /// <summary>R21: the menu's own Delete button, shown only while modifying - "Delete <name>? This can't be undone."</summary>
+        private void OpenDeleteConfirm()
+        {
+            if (!_modifyingZoneId.HasValue)
+            {
+                return;
+            }
+
+            _deleteConfirmLabel.text = $"Delete \"{_nameField.value}\"? This can't be undone.";
+            _deleteConfirmPanel.style.display = DisplayStyle.Flex;
+        }
+
+        private void CloseDeleteConfirm()
+        {
+            _deleteConfirmPanel.style.display = DisplayStyle.None;
+        }
+
+        private void ConfirmDeleteZone()
+        {
+            CloseDeleteConfirm();
+
+            if (!_modifyingZoneId.HasValue)
+            {
+                return;
+            }
+
+            ZoneDeleteResult result = _zonesModule.DeleteZone(_modifyingZoneId.Value);
+            _onZoneCreated?.Invoke();
+
+            if (!result.FullyDeleted)
+            {
+                _showToast?.Invoke($"Could not delete {result.RemainingOccupiedSpots} spot(s) - occupied. Empty them, then delete again.");
+            }
+
+            ReturnToBlankCreateState();
+        }
+
+        /// <summary>After saving, or deleting, from a Modify session - back to the plain "paint a new zone" state, ready for the next one, same as the ordinary create flow leaves it.</summary>
+        private void ReturnToBlankCreateState()
+        {
+            AbandonPaint();
+            Unarm();
+            _modifyingZoneId = null;
+            _occupiedCellsForModify.Clear();
+            _typeChangeLockedBecauseOccupied = false;
+            _createButton.text = "Create zone";
+            _deleteButton.style.display = DisplayStyle.None;
+            _typeField.SetEnabled(true);
+
+            RefreshTypeChoices();
+            _layoutField.index = 0;
+            RefreshLayoutVisibility();
+            ApplyDefaultsForSelectedType();
         }
 
         #endregion
@@ -762,6 +976,7 @@ namespace TheEmptying.Presentation.Zones
             BuildInfoPanel();
             BuildCreateConfirmPanel();
             BuildDiscardConfirmPanel();
+            BuildDeleteConfirmPanel();
         }
 
         private void BuildMenuPanel()
@@ -829,6 +1044,10 @@ namespace TheEmptying.Presentation.Zones
 
             _undoBar = new Label { style = { color = new Color(0.8f, 0.8f, 0.8f), marginBottom = 12 } };
             _menuPanel.Add(_undoBar);
+
+            // R21: only shown while modifying an existing zone - a new, unsaved zone has nothing to delete yet.
+            _deleteButton = new Button(OpenDeleteConfirm) { text = "Delete", style = { height = 32, marginBottom = 6, display = DisplayStyle.None } };
+            _menuPanel.Add(_deleteButton);
 
             _menuPanel.Add(new Button(RequestClose) { text = "Close", style = { height = 32 } });
 
@@ -948,7 +1167,8 @@ namespace TheEmptying.Presentation.Zones
                 }
             };
 
-            panel.Add(new Label("Discard this zone?") { style = { color = Color.white, marginBottom = 12 } });
+            _discardConfirmLabel = new Label { style = { color = Color.white, marginBottom = 12 } };
+            panel.Add(_discardConfirmLabel);
 
             var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
             buttonRow.Add(new Button(ConfirmDiscardAndClose) { text = "Yes", style = { width = 100, height = 32, marginRight = 8 } });
@@ -957,6 +1177,52 @@ namespace TheEmptying.Presentation.Zones
 
             _discardConfirmPanel.Add(panel);
             _root.Add(_discardConfirmPanel);
+        }
+
+        private void BuildDeleteConfirmPanel()
+        {
+            _deleteConfirmPanel = new VisualElement
+            {
+                // R18c: same reason as _root - this is just a full-screen centering container.
+                pickingMode = PickingMode.Ignore,
+                style =
+                {
+                    flexGrow = 1,
+                    position = Position.Absolute,
+                    left = 0,
+                    right = 0,
+                    top = 0,
+                    bottom = 0,
+                    justifyContent = Justify.Center,
+                    alignItems = Align.Center,
+                    display = DisplayStyle.None
+                }
+            };
+
+            var panel = new VisualElement
+            {
+                style =
+                {
+                    flexDirection = FlexDirection.Column,
+                    alignItems = Align.Center,
+                    paddingLeft = 24,
+                    paddingRight = 24,
+                    paddingTop = 16,
+                    paddingBottom = 16,
+                    backgroundColor = new Color(0f, 0f, 0f, 0.75f)
+                }
+            };
+
+            _deleteConfirmLabel = new Label { style = { color = Color.white, marginBottom = 12, whiteSpace = WhiteSpace.Normal, maxWidth = 320 } };
+            panel.Add(_deleteConfirmLabel);
+
+            var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
+            buttonRow.Add(new Button(ConfirmDeleteZone) { text = "Yes", style = { width = 100, height = 32, marginRight = 8 } });
+            buttonRow.Add(new Button(CloseDeleteConfirm) { text = "No", style = { width = 100, height = 32 } });
+            panel.Add(buttonRow);
+
+            _deleteConfirmPanel.Add(panel);
+            _root.Add(_deleteConfirmPanel);
         }
 
         private void RefreshTypeChoices()
@@ -971,6 +1237,18 @@ namespace TheEmptying.Presentation.Zones
 
         private void OnTypeChanged()
         {
+            if (_typeChangeLockedBecauseOccupied)
+            {
+                ZoneTypeDefinition selected = SelectedZoneType();
+                if (selected == null || selected.Id != _modifyOriginalTypeId)
+                {
+                    // R21: "a stockpile holding any items can't change type" - snap back and say why.
+                    SelectTypeById(_modifyOriginalTypeId);
+                    _showToast?.Invoke("Empty this stockpile first.");
+                    return;
+                }
+            }
+
             if (_nameIsDefault)
             {
                 ApplyDefaultName();

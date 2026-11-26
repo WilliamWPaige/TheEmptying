@@ -13,6 +13,19 @@ using TheEmptying.Modules.Ponds;
 
 namespace TheEmptying.Modules.Zones
 {
+    /// <summary>R21: the result of DeleteZone - whether the whole zone was removed, or (if anything was occupied) how many occupied spots it still has, kept until the player deletes it again once they're empty.</summary>
+    public readonly struct ZoneDeleteResult
+    {
+        public bool FullyDeleted { get; }
+        public int RemainingOccupiedSpots { get; }
+
+        public ZoneDeleteResult(bool fullyDeleted, int remainingOccupiedSpots)
+        {
+            FullyDeleted = fullyDeleted;
+            RemainingOccupiedSpots = remainingOccupiedSpots;
+        }
+    }
+
     /// <summary>
     /// R18b: placed zones - sets of cells (which may form several
     /// separate pieces), each with its own name and color. Paint can
@@ -21,8 +34,11 @@ namespace TheEmptying.Modules.Zones
     /// mounds. R20: a stockpile zone also gets a fixed list of 2x2 m
     /// stack spots, laid out once (from the world seed) when it's
     /// created, in one of two layouts (Uniform or Natural); each spot
-    /// holds one item type up to that item's capacity. Depends on Map
-    /// (cell size, cell/world conversions), Buildings (the crown-building
+    /// holds one item type up to that item's capacity. R21: a zone can
+    /// be modified (type, name, color, cells - ApplyZoneEdit) or
+    /// deleted (DeleteZone), but never loses a cell a spot still holds
+    /// anything in - see the Occupancy region. Depends on Map (cell
+    /// size, cell/world conversions), Buildings (the crown-building
     /// check) and Ponds (the pond-water check).
     /// </summary>
     public sealed class ZonesModule : IModule, ISaveableModule
@@ -187,14 +203,6 @@ namespace TheEmptying.Modules.Zones
             _zones.Add(id, state);
             _context.Events.Post(ZonePlacedEventId, _context.CurrentTick, new EventData().SetString("contentId", zoneTypeId));
             return id;
-        }
-
-        public void RemoveZone(EntityId id)
-        {
-            if (_zones.Has(id))
-            {
-                _entities.Destroy(id);
-            }
         }
 
         /// <summary>How many people (from the given current set) fall within this zone's painted cells right now. Takes the set as a parameter - this module never reads PeopleModule, so the dependency only ever runs the other way.</summary>
@@ -622,6 +630,218 @@ namespace TheEmptying.Modules.Zones
             }
 
             return entry;
+        }
+
+        #endregion
+
+        #region Occupancy
+
+        /// <summary>
+        /// R21: the cells occupied right now - covered by a stockpile
+        /// spot that holds anything. Occupied cells can never be
+        /// removed by erasing, Erase all, Delete or a type change. The
+        /// one place this is computed, so a future occupant (a house,
+        /// say) only needs to extend this method, not every caller that
+        /// already checks it.
+        /// </summary>
+        public HashSet<CellCoord> GetOccupiedCells(EntityId zoneId)
+        {
+            return _zones.TryGet(zoneId, out ZoneState zone) ? OccupiedCellsOf(zone) : new HashSet<CellCoord>();
+        }
+
+        /// <summary>Whether this zone holds anything anywhere right now - a stockpile with any occupied spot. A Living Area (or anything else with no spots) is never occupied.</summary>
+        public bool IsZoneOccupied(EntityId zoneId)
+        {
+            return _zones.TryGet(zoneId, out ZoneState zone) && zone.Spots.Any(s => s.AmountStored > 0);
+        }
+
+        private HashSet<CellCoord> OccupiedCellsOf(ZoneState zone)
+        {
+            var cells = new HashSet<CellCoord>();
+            if (zone.Spots.Count == 0)
+            {
+                return cells;
+            }
+
+            double spotSize = _settings.Get(SpotSizeMetersSettingId);
+            double cellSize = _mapModule.CellSizeMeters;
+
+            foreach (StockSpot spot in zone.Spots)
+            {
+                if (spot.AmountStored <= 0)
+                {
+                    continue;
+                }
+
+                cells.UnionWith(CellRasterizer.RasterizeRectangleToCells(spot.CenterX, spot.CenterZ, spotSize, spotSize, spot.RotationDegrees, cellSize));
+            }
+
+            return cells;
+        }
+
+        #endregion
+
+        #region Modify and delete
+
+        /// <summary>
+        /// R21: applies a Modify session's edits (the "Save changes"
+        /// Yes). Occupied cells are kept no matter what newCells says -
+        /// the UI must never let them be erased, but this is the one
+        /// place that actually guarantees it, so a stockpile holding
+        /// anything can never lose that type change either. Otherwise,
+        /// only cells CanPaintCell still allows (excluding this zone
+        /// itself) are kept, same as creation. A type change clears any
+        /// existing spots (and item limits/blocks, meaningless for a
+        /// different type) and, if the new type is a stockpile, lays
+        /// out a fresh layout. Staying a stockpile reconciles spots
+        /// instead - see ReconcileStockpileSpots.
+        /// </summary>
+        public void ApplyZoneEdit(EntityId zoneId, string name, string colorHex, string zoneTypeId, IEnumerable<CellCoord> newCells, string layoutId)
+        {
+            if (!_zones.TryGet(zoneId, out ZoneState zone))
+            {
+                return;
+            }
+
+            HashSet<CellCoord> occupiedCells = OccupiedCellsOf(zone);
+            if (occupiedCells.Count > 0)
+            {
+                zoneTypeId = zone.ZoneTypeId;
+            }
+
+            zone.Name = name;
+            zone.ColorHex = colorHex;
+
+            var finalCells = new HashSet<CellCoord>();
+            foreach (CellCoord cell in newCells)
+            {
+                if (CanPaintCell(cell, zoneId))
+                {
+                    finalCells.Add(cell);
+                }
+            }
+
+            finalCells.UnionWith(occupiedCells);
+
+            bool typeChanged = zone.ZoneTypeId != zoneTypeId;
+
+            zone.Cells.Clear();
+            foreach (CellCoord cell in finalCells)
+            {
+                zone.Cells.Add(cell);
+            }
+
+            RecomputeCentroid(zone);
+
+            if (typeChanged)
+            {
+                zone.ZoneTypeId = zoneTypeId;
+                zone.Spots.Clear();
+                zone.StockpileItems.Clear();
+
+                if (zoneTypeId == StockpileTypeId)
+                {
+                    zone.LayoutId = layoutId == LayoutUniformId ? LayoutUniformId : LayoutNaturalId;
+                    GenerateSpots(zoneId, zone);
+                }
+                else
+                {
+                    zone.LayoutId = null;
+                }
+
+                return;
+            }
+
+            if (zoneTypeId == StockpileTypeId)
+            {
+                ReconcileStockpileSpots(zoneId, zone, layoutId);
+            }
+        }
+
+        /// <summary>
+        /// R21: keeps every spot that still fits fully inside the
+        /// (possibly changed) painted cells - an occupied one always
+        /// does, since ApplyZoneEdit never lets its cells go missing -
+        /// then fills whatever's left with a freshly generated layout,
+        /// dropping any new candidate that would overlap a kept spot.
+        /// </summary>
+        private void ReconcileStockpileSpots(EntityId zoneId, ZoneState zone, string layoutId)
+        {
+            double spotSize = _settings.Get(SpotSizeMetersSettingId);
+            double cellSize = _mapModule.CellSizeMeters;
+
+            var keptSpots = new List<StockSpot>();
+            var coveredCells = new HashSet<CellCoord>();
+
+            foreach (StockSpot spot in zone.Spots)
+            {
+                HashSet<CellCoord> covered = CellRasterizer.RasterizeRectangleToCells(spot.CenterX, spot.CenterZ, spotSize, spotSize, spot.RotationDegrees, cellSize);
+                if (covered.Count > 0 && covered.All(zone.Cells.Contains))
+                {
+                    keptSpots.Add(spot);
+                    coveredCells.UnionWith(covered);
+                }
+            }
+
+            zone.LayoutId = layoutId == LayoutUniformId ? LayoutUniformId : LayoutNaturalId;
+
+            SimRandom random = _randomService.GetStream($"zones.layout.{zoneId}");
+            List<StockSpot> candidates = StockSpotLayoutGenerator.Generate(
+                zone.LayoutId,
+                zone.Cells,
+                cellSize,
+                spotSize,
+                (int)_settings.Get(NaturalPatchMinSpotsPerSideSettingId),
+                (int)_settings.Get(NaturalPatchMaxSpotsPerSideSettingId),
+                _settings.Get(NaturalPatchMinAngleDegreesSettingId),
+                _settings.Get(NaturalPatchMaxAngleDegreesSettingId),
+                (int)_settings.Get(NaturalMaxPlacementAttemptsSettingId),
+                random);
+
+            zone.Spots.Clear();
+            zone.Spots.AddRange(keptSpots);
+
+            foreach (StockSpot candidate in candidates)
+            {
+                HashSet<CellCoord> covered = CellRasterizer.RasterizeRectangleToCells(candidate.CenterX, candidate.CenterZ, spotSize, spotSize, candidate.RotationDegrees, cellSize);
+                if (covered.Overlaps(coveredCells))
+                {
+                    continue;
+                }
+
+                zone.Spots.Add(candidate);
+                coveredCells.UnionWith(covered);
+            }
+        }
+
+        /// <summary>
+        /// R21: removes every unoccupied cell and spot. If nothing was
+        /// occupied, the zone is removed entirely. If anything was
+        /// occupied, the zone stays with just its occupied spots and
+        /// cells, ready to be deleted again once they're empty.
+        /// </summary>
+        public ZoneDeleteResult DeleteZone(EntityId zoneId)
+        {
+            if (!_zones.TryGet(zoneId, out ZoneState zone))
+            {
+                return new ZoneDeleteResult(true, 0);
+            }
+
+            List<StockSpot> occupiedSpots = zone.Spots.Where(s => s.AmountStored > 0).ToList();
+
+            if (occupiedSpots.Count == 0)
+            {
+                _entities.Destroy(zoneId);
+                return new ZoneDeleteResult(true, 0);
+            }
+
+            HashSet<CellCoord> occupiedCells = OccupiedCellsOf(zone);
+            zone.Cells.IntersectWith(occupiedCells);
+            zone.Spots.Clear();
+            zone.Spots.AddRange(occupiedSpots);
+            RecomputeCentroid(zone);
+
+            return new ZoneDeleteResult(false, occupiedSpots.Count);
         }
 
         #endregion

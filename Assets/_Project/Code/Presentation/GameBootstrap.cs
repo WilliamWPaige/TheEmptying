@@ -506,7 +506,8 @@ namespace TheEmptying.Presentation
                 _worldMapView.Decorations,
                 _pondsPresenter,
                 camera,
-                _uiDocument.rootVisualElement);
+                _uiDocument.rootVisualElement,
+                ShowToast);
         }
 
         /// <summary>
@@ -615,6 +616,7 @@ namespace TheEmptying.Presentation
                 _discoveriesWindow,
                 _worldSelection,
                 HideToastNow,
+                ShowToast,
                 () => _overlaysMenu?.Close(),
                 () =>
                 {
@@ -625,6 +627,7 @@ namespace TheEmptying.Presentation
                 RefreshZoneVisibility);
 
             _worldSelection.ZoningMenu = _zoningMenu;
+            _worldSelection.OnModifyZoneRequested = _zoningMenu.OpenForModify;
 
             ForceZoningPaintLogOnInEditor();
         }

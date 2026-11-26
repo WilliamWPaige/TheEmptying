@@ -508,5 +508,210 @@ namespace TheEmptying.Tests.EditMode.Modules
         }
 
         #endregion
+
+        #region Modify and delete
+
+        [Test]
+        public void ApplyZoneEdit_KeepsOccupiedCells_EvenIfTheCallerOmitsThem()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            HashSet<CellCoord> originalCells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", originalCells, ZonesModule.LayoutUniformId);
+            zones.TryAddItemToStockpile(zoneId, "item.grub", 10);
+
+            HashSet<CellCoord> occupiedCells = zones.GetOccupiedCells(zoneId);
+            Assert.Greater(occupiedCells.Count, 0);
+
+            // A caller (the UI should never actually do this) tries to paint a cell set with every occupied cell left out.
+            var attemptedNewCells = new HashSet<CellCoord>(originalCells);
+            attemptedNewCells.ExceptWith(occupiedCells);
+
+            zones.ApplyZoneEdit(zoneId, "Stockpile Zone", "#3DA5D9", ZonesModule.StockpileTypeId, attemptedNewCells, ZonesModule.LayoutUniformId);
+
+            Assert.IsTrue(zones.TryGetZone(zoneId, out ZoneState zone));
+            CollectionAssert.IsSubsetOf(occupiedCells, zone.Cells);
+
+            (int amount, _, _) = zones.GetStockpileItemInfo(zoneId, "item.grub");
+            Assert.AreEqual(10, amount, "The occupied spot's contents must never vanish.");
+        }
+
+        [Test]
+        public void ApplyZoneEdit_CannotChangeTypeAwayFromAStockpile_WhileItHoldsItems()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            HashSet<CellCoord> cells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", cells, ZonesModule.LayoutUniformId);
+            zones.TryAddItemToStockpile(zoneId, "item.grub", 10);
+
+            zones.ApplyZoneEdit(zoneId, "Renamed", "#112233", ZonesModule.LivingAreaTypeId, cells, ZonesModule.LayoutUniformId);
+
+            Assert.IsTrue(zones.TryGetZone(zoneId, out ZoneState zone));
+            Assert.AreEqual(ZonesModule.StockpileTypeId, zone.ZoneTypeId, "The type change should be blocked while the stockpile holds anything.");
+            Assert.AreEqual("Renamed", zone.Name, "The name should still update even though the type change was blocked.");
+        }
+
+        [Test]
+        public void ApplyZoneEdit_CanChangeType_WhenTheStockpileHoldsNothing()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            HashSet<CellCoord> cells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", cells, ZonesModule.LayoutUniformId);
+
+            zones.ApplyZoneEdit(zoneId, "Living Area Zone", "#8BC34A", ZonesModule.LivingAreaTypeId, cells, ZonesModule.LayoutUniformId);
+
+            Assert.IsTrue(zones.TryGetZone(zoneId, out ZoneState zone));
+            Assert.AreEqual(ZonesModule.LivingAreaTypeId, zone.ZoneTypeId);
+            Assert.AreEqual(0, zone.Spots.Count, "A Living Area has no spots.");
+        }
+
+        [Test]
+        public void ApplyZoneEdit_KeepsExistingSpotsInPlace_AndAddsNewSpotsOnlyInTheNewArea_WithoutOverlap()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            HashSet<CellCoord> originalCells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", originalCells, ZonesModule.LayoutUniformId);
+
+            Assert.IsTrue(zones.TryGetZone(zoneId, out ZoneState zoneBefore));
+            Assert.AreEqual(4, zoneBefore.Spots.Count);
+            List<(double X, double Z)> originalPositions = zoneBefore.Spots.Select(s => (s.CenterX, s.CenterZ)).ToList();
+
+            HashSet<CellCoord> expandedCells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 8, 4);
+            zones.ApplyZoneEdit(zoneId, "Stockpile Zone", "#3DA5D9", ZonesModule.StockpileTypeId, expandedCells, ZonesModule.LayoutUniformId);
+
+            Assert.IsTrue(zones.TryGetZone(zoneId, out ZoneState zoneAfter));
+            Assert.AreEqual(8, zoneAfter.Spots.Count);
+
+            foreach ((double x, double z) in originalPositions)
+            {
+                Assert.IsTrue(
+                    zoneAfter.Spots.Any(s => System.Math.Abs(s.CenterX - x) < 0.0001 && System.Math.Abs(s.CenterZ - z) < 0.0001),
+                    "An existing spot should stay exactly where it was.");
+            }
+
+            for (int i = 0; i < zoneAfter.Spots.Count; i++)
+            {
+                for (int j = i + 1; j < zoneAfter.Spots.Count; j++)
+                {
+                    double dx = zoneAfter.Spots[i].CenterX - zoneAfter.Spots[j].CenterX;
+                    double dz = zoneAfter.Spots[i].CenterZ - zoneAfter.Spots[j].CenterZ;
+                    Assert.GreaterOrEqual(System.Math.Sqrt(dx * dx + dz * dz), 1.99, "No two spots should overlap.");
+                }
+            }
+        }
+
+        [Test]
+        public void ApplyZoneEdit_RemovesEmptySpotsThatNoLongerFitInsideTheNewPaint()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            HashSet<CellCoord> originalCells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 6, 4);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", originalCells, ZonesModule.LayoutUniformId);
+
+            Assert.IsTrue(zones.TryGetZone(zoneId, out ZoneState zoneBefore));
+            Assert.AreEqual(6, zoneBefore.Spots.Count);
+
+            CellCoord anchor = map.WorldToCell(map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5);
+            var shrunkCells = new HashSet<CellCoord>(originalCells);
+
+            // Removes exactly one Uniform spot's worth of cells (a 2x2 block, aligned with the grid), leaving no room for a replacement there.
+            for (int dx = 4; dx < 6; dx++)
+            {
+                for (int dz = 0; dz < 2; dz++)
+                {
+                    shrunkCells.Remove(new CellCoord(anchor.X + dx, anchor.Z + dz));
+                }
+            }
+
+            zones.ApplyZoneEdit(zoneId, "Stockpile Zone", "#3DA5D9", ZonesModule.StockpileTypeId, shrunkCells, ZonesModule.LayoutUniformId);
+
+            Assert.IsTrue(zones.TryGetZone(zoneId, out ZoneState zoneAfter));
+            Assert.AreEqual(5, zoneAfter.Spots.Count);
+        }
+
+        [Test]
+        public void DeleteZone_WithNoOccupiedSpots_RemovesTheZoneEntirely()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            HashSet<CellCoord> cells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", cells, ZonesModule.LayoutUniformId);
+
+            ZoneDeleteResult result = zones.DeleteZone(zoneId);
+
+            Assert.IsTrue(result.FullyDeleted);
+            Assert.AreEqual(0, result.RemainingOccupiedSpots);
+            Assert.IsFalse(zones.TryGetZone(zoneId, out _));
+        }
+
+        [Test]
+        public void DeleteZone_WithOccupiedSpots_KeepsOnlyTheOccupiedSpotsAndCells()
+        {
+            using var core = new TempCoreContentCopy();
+            (_, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            HashSet<CellCoord> cells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 6, 4);
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", cells, ZonesModule.LayoutUniformId);
+            zones.TryAddItemToStockpile(zoneId, "item.grub", 10);
+
+            ZoneDeleteResult result = zones.DeleteZone(zoneId);
+
+            Assert.IsFalse(result.FullyDeleted);
+            Assert.AreEqual(1, result.RemainingOccupiedSpots);
+
+            Assert.IsTrue(zones.TryGetZone(zoneId, out ZoneState zone));
+            Assert.AreEqual(1, zone.Spots.Count);
+            Assert.Greater(zone.Spots[0].AmountStored, 0);
+
+            (int amount, _, _) = zones.GetStockpileItemInfo(zoneId, "item.grub");
+            Assert.AreEqual(10, amount);
+
+            // Deleting again, now that it's empty, removes it entirely.
+            zones.RemoveItemFromStockpile(zoneId, "item.grub", 10);
+            ZoneDeleteResult secondResult = zones.DeleteZone(zoneId);
+            Assert.IsTrue(secondResult.FullyDeleted);
+            Assert.IsFalse(zones.TryGetZone(zoneId, out _));
+        }
+
+        [Test]
+        public void SaveAndLoad_AfterApplyZoneEdit_SurvivesTheRoundTrip()
+        {
+            using var core = new TempCoreContentCopy();
+            (Simulation simulation, MapModule map, _, _, ZonesModule zones) = BuildNewGame(core);
+
+            EntityId zoneId = zones.CreateZone(ZonesModule.StockpileTypeId, "Stockpile Zone", "#3DA5D9", RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 4, 4), ZonesModule.LayoutUniformId);
+            zones.TryAddItemToStockpile(zoneId, "item.grub", 10);
+
+            HashSet<CellCoord> expandedCells = RectCells(map, map.WorldWidthMeters * 0.5, map.WorldDepthMeters * 0.5, 6, 4);
+            zones.ApplyZoneEdit(zoneId, "Modified Name", "#654321", ZonesModule.StockpileTypeId, expandedCells, ZonesModule.LayoutUniformId);
+
+            using var stream = new MemoryStream();
+            GameSave.Save(simulation, new SaveHeaderInfo { KingdomName = "K", Population = 0 }, stream);
+            stream.Position = 0;
+
+            IModule[] loadedModules = ModuleCatalog.CreateModules();
+            GameSave.Load(stream, new[] { core.FolderPath }, loadedModules, contentAssets: TempCoreContentCopy.LoadRealContentAssets());
+            var loadedZones = (ZonesModule)loadedModules.First(m => m is ZonesModule);
+
+            Assert.IsTrue(loadedZones.TryGetZone(zoneId, out ZoneState zone));
+            Assert.AreEqual("Modified Name", zone.Name);
+            Assert.AreEqual("#654321", zone.ColorHex);
+            Assert.AreEqual(expandedCells.Count, zone.Cells.Count);
+            Assert.AreEqual(6, zone.Spots.Count);
+
+            (int amount, _, _) = loadedZones.GetStockpileItemInfo(zoneId, "item.grub");
+            Assert.AreEqual(10, amount);
+        }
+
+        #endregion
     }
 }

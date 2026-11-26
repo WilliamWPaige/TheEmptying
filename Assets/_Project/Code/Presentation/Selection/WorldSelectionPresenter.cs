@@ -46,6 +46,7 @@ namespace TheEmptying.Presentation.Selection
         private PondsPresenter _pondsPresenter;
         private Camera _camera;
         private VisualElement _uiRoot;
+        private Action<string> _showToast;
 
         private readonly InfoWindowPresenter _infoWindow = new InfoWindowPresenter();
         private ISelectionTarget _current;
@@ -74,6 +75,9 @@ namespace TheEmptying.Presentation.Selection
         /// <summary>R11: called when the starting site marker is clicked - GameBootstrap opens the founding popup.</summary>
         public Action OnSiteMarkerClicked { get; set; }
 
+        /// <summary>R21: set by GameBootstrap right after both are built - a selected zone's info window Modify button comes here, to open the zoning menu pre-loaded with it.</summary>
+        public Action<EntityId> OnModifyZoneRequested { get; set; }
+
         public void Initialize(
             PeopleModule peopleModule,
             MapModule mapModule,
@@ -90,7 +94,8 @@ namespace TheEmptying.Presentation.Selection
             TemporaryChunkDecorations decorations,
             PondsPresenter pondsPresenter,
             Camera camera,
-            VisualElement uiRoot)
+            VisualElement uiRoot,
+            Action<string> showToast)
         {
             _peopleModule = peopleModule;
             _mapModule = mapModule;
@@ -108,6 +113,7 @@ namespace TheEmptying.Presentation.Selection
             _pondsPresenter = pondsPresenter;
             _camera = camera;
             _uiRoot = uiRoot;
+            _showToast = showToast;
 
             _infoWindow.Initialize(uiRoot, CenterCameraOnSelection, ClearSelection);
             BuildHighlight();
@@ -246,7 +252,7 @@ namespace TheEmptying.Presentation.Selection
 
                 if (_zonePresenter != null && _zonePresenter.TryGetZoneForInstance(hit.collider.gameObject, out EntityId zoneId))
                 {
-                    Select(new ZoneSelectionTarget(_zonesModule, _peopleModule, _content, _mapModule, zoneId, HandleZoneRemoved));
+                    Select(new ZoneSelectionTarget(_zonesModule, _peopleModule, _content, _mapModule, zoneId, HandleZoneRemoved, RefreshZoneVisuals, OnModifyZoneRequested, _showToast));
                     return;
                 }
             }
@@ -254,12 +260,17 @@ namespace TheEmptying.Presentation.Selection
             ClearSelection();
         }
 
-        /// <summary>R12: a zone's "Remove zone" button - the zone is already gone from ZonesModule; redraw the ground so its visual disappears too, then clear the selection.</summary>
+        /// <summary>R21: a zone fully deleted (no occupied spots left) - the zone is already gone from ZonesModule; clear the selection (RefreshZoneVisuals already redrew the ground, via onZoneChanged).</summary>
         private void HandleZoneRemoved()
+        {
+            ClearSelection();
+        }
+
+        /// <summary>R21: the zone's cells or spots changed (a partial or full Delete) - redraw the ground and stockpile stacks so the visual matches, without necessarily closing the selection.</summary>
+        private void RefreshZoneVisuals()
         {
             _zonePresenter?.Rebuild(_zonesModule);
             _stockpileStackPresenter?.Rebuild(_zonesModule);
-            ClearSelection();
         }
 
         private void Select(ISelectionTarget target)

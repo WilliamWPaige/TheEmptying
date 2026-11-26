@@ -16,10 +16,12 @@ namespace TheEmptying.Presentation.Selection
     /// and painted area. A Stockpile shows spots used/total and a row
     /// per known item (amount, a keep-on-hand limit field, and a block
     /// toggle). A Living Area shows how many people are inside it right
-    /// now. Both have a "Remove zone" button. A zone's own on-screen
-    /// highlight is its tint brightening in place (ZonePresenter), not
-    /// the generic highlight quad - Footprint is never actually drawn
-    /// from for a zone; see WorldSelectionPresenter.
+    /// now. R21: both have a Modify button (opens the zoning menu with
+    /// this zone loaded) and a Delete button, which asks "Delete
+    /// "name"? This can't be undone." before actually deleting. A
+    /// zone's own on-screen highlight is its tint brightening in place
+    /// (ZonePresenter), not the generic highlight quad - Footprint is
+    /// never actually drawn from for a zone; see WorldSelectionPresenter.
     /// </summary>
     public sealed class ZoneSelectionTarget : ISelectionTarget
     {
@@ -29,10 +31,15 @@ namespace TheEmptying.Presentation.Selection
         private readonly MapModule _mapModule;
         private readonly EntityId _id;
         private readonly Action _onRemoved;
+        private readonly Action _onZoneChanged;
+        private readonly Action<EntityId> _onModify;
+        private readonly Action<string> _showToast;
+
+        private bool _confirmingDelete;
 
         public EntityId Id => _id;
 
-        public ZoneSelectionTarget(ZonesModule zonesModule, PeopleModule peopleModule, ContentDatabase content, MapModule mapModule, EntityId id, Action onRemoved)
+        public ZoneSelectionTarget(ZonesModule zonesModule, PeopleModule peopleModule, ContentDatabase content, MapModule mapModule, EntityId id, Action onRemoved, Action onZoneChanged, Action<EntityId> onModify, Action<string> showToast)
         {
             _zonesModule = zonesModule;
             _peopleModule = peopleModule;
@@ -40,6 +47,9 @@ namespace TheEmptying.Presentation.Selection
             _mapModule = mapModule;
             _id = id;
             _onRemoved = onRemoved;
+            _onZoneChanged = onZoneChanged;
+            _onModify = onModify;
+            _showToast = showToast;
         }
 
         public Vector2 Footprint => Vector2.one;
@@ -63,7 +73,15 @@ namespace TheEmptying.Presentation.Selection
                 return;
             }
 
-            container.Add(new Label(string.IsNullOrEmpty(zone.Name) ? DisplayNameForZoneType(zone.ZoneTypeId) : zone.Name)
+            string name = string.IsNullOrEmpty(zone.Name) ? DisplayNameForZoneType(zone.ZoneTypeId) : zone.Name;
+
+            if (_confirmingDelete)
+            {
+                BuildDeleteConfirmContent(container, name);
+                return;
+            }
+
+            container.Add(new Label(name)
             {
                 style = { color = Color.white, fontSize = 20, unityFontStyleAndWeight = FontStyle.Bold, marginBottom = 4 }
             });
@@ -81,7 +99,23 @@ namespace TheEmptying.Presentation.Selection
                 BuildLivingAreaContent(container, zone);
             }
 
-            container.Add(new Button(RemoveZone) { text = "Remove zone", style = { marginTop = 14, width = 140 } });
+            var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row, marginTop = 14 } };
+            buttonRow.Add(new Button(RequestModify) { text = "Modify", style = { width = 90, marginRight = 8 } });
+            buttonRow.Add(new Button(RequestDelete) { text = "Delete", style = { width = 90 } });
+            container.Add(buttonRow);
+        }
+
+        private void BuildDeleteConfirmContent(VisualElement container, string name)
+        {
+            container.Add(new Label($"Delete \"{name}\"? This can't be undone.")
+            {
+                style = { color = Color.white, whiteSpace = WhiteSpace.Normal, marginBottom = 12 }
+            });
+
+            var buttonRow = new VisualElement { style = { flexDirection = FlexDirection.Row } };
+            buttonRow.Add(new Button(ConfirmDelete) { text = "Yes", style = { width = 90, marginRight = 8 } });
+            buttonRow.Add(new Button(CancelDelete) { text = "No", style = { width = 90 } });
+            container.Add(buttonRow);
         }
 
         private double AreaSquareMeters(ZoneState zone)
@@ -149,10 +183,34 @@ namespace TheEmptying.Presentation.Selection
             });
         }
 
-        private void RemoveZone()
+        private void RequestModify()
         {
-            _zonesModule.RemoveZone(_id);
-            _onRemoved?.Invoke();
+            _onModify?.Invoke(_id);
+        }
+
+        private void RequestDelete()
+        {
+            _confirmingDelete = true;
+        }
+
+        private void CancelDelete()
+        {
+            _confirmingDelete = false;
+        }
+
+        private void ConfirmDelete()
+        {
+            _confirmingDelete = false;
+            ZoneDeleteResult result = _zonesModule.DeleteZone(_id);
+            _onZoneChanged?.Invoke();
+
+            if (result.FullyDeleted)
+            {
+                _onRemoved?.Invoke();
+                return;
+            }
+
+            _showToast?.Invoke($"Could not delete {result.RemainingOccupiedSpots} spot(s) - occupied. Empty them, then delete again.");
         }
 
         private string DisplayNameForItem(string itemContentId)
