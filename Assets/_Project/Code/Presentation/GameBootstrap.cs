@@ -611,6 +611,16 @@ namespace TheEmptying.Presentation
                 RefreshZoneVisibility);
 
             _worldSelection.ZoningMenu = _zoningMenu;
+
+            ForceZoningPaintLogOnInEditor();
+        }
+
+        /// <summary>R18c: forces the zoning paint debug log on in the Editor, regardless of the setting's data default - a build should stay quiet unless the player turns it on. Must run again after Load(), since loading replaces the settings registry.</summary>
+        private void ForceZoningPaintLogOnInEditor()
+        {
+#if UNITY_EDITOR
+            _simulation.Settings.Set(ZoningMenuPresenter.LogPaintingSettingId, 1);
+#endif
         }
 
         /// <summary>R18b: the small Overlays button's popup - for now, just "Toggle zones".</summary>
@@ -1313,6 +1323,7 @@ namespace TheEmptying.Presentation
 
                 _discoveryModule = modules.OfType<DiscoveryModule>().First();
                 WireUpPersonDecisionLog();
+                ForceZoningPaintLogOnInEditor();
                 WireUpDiscoveryNotifications();
                 _discoveriesWindow?.Rebind(_discoveryModule, _simulation.Content);
                 BuiltInConsoleCommands.RegisterAll(_simulation, this, this);

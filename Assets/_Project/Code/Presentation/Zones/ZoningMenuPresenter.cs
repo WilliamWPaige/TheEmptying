@@ -38,6 +38,7 @@ namespace TheEmptying.Presentation.Zones
         public const string BrushMaxSizeCellsSettingId = "setting.zoning.brush_max_size_cells";
         public const string CreateMinSquareCellsSettingId = "setting.zoning.create_min_square_cells";
         public const string UndoMaxStepsSettingId = "setting.zoning.undo_max_steps";
+        public const string LogPaintingSettingId = "setting.zoning.log_painting";
 
         /// <summary>R18a: wide enough for every label, field, the 140px-wide color wheel and every button at all three UI size settings, with room to spare - was 260, too narrow (text cut off).</summary>
         private const float MenuPanelWidth = 340f;
@@ -93,6 +94,13 @@ namespace TheEmptying.Presentation.Zones
         private bool _isPainting;
         private bool _isErasing;
         private CellCoord? _lastDragCell;
+
+        /// <summary>R18c: debug-log bookkeeping for one continuous mouse hold (see LogPaintingSettingId) - reset when the button goes down, reported once when it comes back up.</summary>
+        private bool _paintLogStrokeActive;
+        private bool _paintLogStrokeOverUi;
+        private string _paintLogStrokeUiElement;
+        private bool _paintLogStrokeFoundGround;
+        private int _paintLogStrokeCellsAtStart;
 
         public bool IsOpen => _root != null && _root.style.display == DisplayStyle.Flex;
 
@@ -300,8 +308,20 @@ namespace TheEmptying.Presentation.Zones
                 return;
             }
 
-            if (Mouse.current == null || UiInputUtility.IsPointerOverUi(_uiRoot, Mouse.current.position.ReadValue()))
+            bool mouseHeld = Mouse.current != null && (Mouse.current.leftButton.isPressed || Mouse.current.rightButton.isPressed);
+            TrackPaintLogStroke(mouseHeld);
+
+            if (Mouse.current == null)
             {
+                _brushPreview.SetActive(false);
+                EndDragIfAny();
+                return;
+            }
+
+            VisualElement uiHit = UiInputUtility.PickOverUi(_uiRoot, Mouse.current.position.ReadValue());
+            if (uiHit != null)
+            {
+                RecordPaintLogOverUi(uiHit);
                 _brushPreview.SetActive(false);
                 EndDragIfAny();
                 return;
@@ -314,12 +334,67 @@ namespace TheEmptying.Presentation.Zones
                 return;
             }
 
+            RecordPaintLogGroundFound();
+
             int sizeCells = _sizeField.value;
             BrushShape shape = _shapeField.value == 1 ? BrushShape.Round : BrushShape.Square;
 
             UpdateBrushPreview(cell, shape, sizeCells);
             UpdatePaintDrag(cell, shape, sizeCells);
         }
+
+        #region Paint debug log
+
+        /// <summary>R18c: starts a new logged stroke the frame a mouse button goes down, and reports it the frame it comes back up - behind LogPaintingSettingId (on by default in the Editor), so the user can confirm by hand whether a stroke was blocked by the UI check or the ground raycast, and how many cells it actually changed.</summary>
+        private void TrackPaintLogStroke(bool mouseHeld)
+        {
+            if (mouseHeld && !_paintLogStrokeActive)
+            {
+                _paintLogStrokeActive = true;
+                _paintLogStrokeOverUi = false;
+                _paintLogStrokeUiElement = null;
+                _paintLogStrokeFoundGround = false;
+                _paintLogStrokeCellsAtStart = _paintedCells.Count;
+            }
+            else if (!mouseHeld && _paintLogStrokeActive)
+            {
+                _paintLogStrokeActive = false;
+                ReportPaintLogStroke();
+            }
+        }
+
+        private void RecordPaintLogOverUi(VisualElement uiHit)
+        {
+            if (!_paintLogStrokeActive)
+            {
+                return;
+            }
+
+            _paintLogStrokeOverUi = true;
+            _paintLogStrokeUiElement ??= string.IsNullOrEmpty(uiHit.name) ? uiHit.GetType().Name : uiHit.name;
+        }
+
+        private void RecordPaintLogGroundFound()
+        {
+            if (_paintLogStrokeActive)
+            {
+                _paintLogStrokeFoundGround = true;
+            }
+        }
+
+        private void ReportPaintLogStroke()
+        {
+            if (_settings.Get(LogPaintingSettingId) == 0)
+            {
+                return;
+            }
+
+            int cellsChanged = _paintedCells.Count - _paintLogStrokeCellsAtStart;
+            string uiDescription = _paintLogStrokeOverUi ? $"yes ({_paintLogStrokeUiElement ?? "unnamed element"})" : "no";
+            Debug.Log($"[Zoning] Paint stroke: over UI = {uiDescription}, ground cell found = {_paintLogStrokeFoundGround}, cells changed = {cellsChanged}");
+        }
+
+        #endregion
 
         private void UpdateBrushPreview(CellCoord cell, BrushShape shape, int sizeCells)
         {
@@ -543,6 +618,13 @@ namespace TheEmptying.Presentation.Zones
         {
             _root = new VisualElement
             {
+                // R18c: this covers the whole screen so the menu/info panels inside it can be
+                // positioned, but it must never be a pick target itself - a full-screen element
+                // with the default pickingMode (Position) is hit by every screen point that
+                // isn't over one of its real children, so every click (including paint strokes
+                // over the open ground) was being swallowed as "over UI" before it ever reached
+                // the world. The menu/info panels and their buttons keep the default picking.
+                pickingMode = PickingMode.Ignore,
                 style =
                 {
                     flexGrow = 1,
@@ -661,6 +743,10 @@ namespace TheEmptying.Presentation.Zones
         {
             _createConfirmPanel = new VisualElement
             {
+                // R18c: same reason as _root - this is just a full-screen centering container,
+                // not a real panel; the actual dialog box (with its background and buttons)
+                // is the child added below, which keeps the default picking.
+                pickingMode = PickingMode.Ignore,
                 style =
                 {
                     flexGrow = 1,
@@ -705,6 +791,8 @@ namespace TheEmptying.Presentation.Zones
         {
             _discardConfirmPanel = new VisualElement
             {
+                // R18c: same reason as _root - this is just a full-screen centering container.
+                pickingMode = PickingMode.Ignore,
                 style =
                 {
                     flexGrow = 1,

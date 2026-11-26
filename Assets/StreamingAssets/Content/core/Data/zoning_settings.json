@@ -60,6 +60,16 @@
             "maximum": 100,
             "category": "Zoning",
             "description": "TEMPORARY placeholder (R18b). How many strokes (press to release, paint or erase, including Erase all) Undo can go back."
+        },
+        {
+            "id": "setting.zoning.log_painting",
+            "label": "Log zoning painting",
+            "valueType": "Boolean",
+            "default": 0,
+            "minimum": 0,
+            "maximum": 1,
+            "category": "Zoning",
+            "description": "TEMPORARY placeholder (R18c). Debug: once per mouse hold while armed, logs whether the pointer counted as over UI (and which element), whether a ground cell was found, and how many cells the stroke changed. On by default in the Editor."
         }
     ]
 }

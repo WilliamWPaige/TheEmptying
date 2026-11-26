@@ -27,6 +27,7 @@ namespace TheEmptying.Tests.EditMode.Content
         [TestCase(ZoningMenuPresenter.BrushMaxSizeCellsSettingId, SettingValueType.Integer, 10.0, 1.0, 20.0, "Zoning")]
         [TestCase(ZoningMenuPresenter.CreateMinSquareCellsSettingId, SettingValueType.Integer, 2.0, 1.0, 10.0, "Zoning")]
         [TestCase(ZoningMenuPresenter.UndoMaxStepsSettingId, SettingValueType.Integer, 20.0, 1.0, 100.0, "Zoning")]
+        [TestCase(ZoningMenuPresenter.LogPaintingSettingId, SettingValueType.Boolean, 0.0, 0.0, 1.0, "Zoning")]
         public void Setting_LoadsFromRealContent_WithExpectedDefaultRangeAndCategory(
             string settingId, SettingValueType expectedType, double expectedDefault, double expectedMinimum, double expectedMaximum, string expectedCategory)
         {
