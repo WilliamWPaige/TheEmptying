@@ -185,5 +185,6 @@ What a new module needs, based on what the milestone-1 demo module (`module.demo
 - Never touch `Assets/ThirdParty/`, `Library/`, or Unity version settings.
 - Never add packages or third-party code without asking.
 - Never commit or push unless the prompt says to. When asked, use clear commit messages describing what changed.
+- Version: every prompt's commit sets Project Settings > Player > Version as 0.N.F, where N is the prompt number and F is the fix letter's position (no letter = 0, a = 1, b = 2, and so on). Example: R18g = 0.18.7, R20 = 0.20.0. Never change the leading 0 unless the user says so. Say the new version in the report.
 - Reporting: keep messages and the final report in plain language. Name the files changed and say what changed and why, including test results, anything left open, and any place the docs and the code disagree. Do not paste code excerpts in messages or reports; William will read the code if needed.
 - New ideas from William go through a mini review (scope, what it touches, fit with the locked design) before they enter the docs or the code.
