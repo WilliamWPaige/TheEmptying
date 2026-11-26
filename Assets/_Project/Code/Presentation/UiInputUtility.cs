@@ -17,6 +17,14 @@ namespace TheEmptying.Presentation
         /// is Position (the default) and it isn't display: none - a layout-only full-screen
         /// container must set pickingMode to Ignore, or it catches every click meant for the
         /// world behind it (see ZoningMenuPresenter's own root, fixed in R18c).
+        ///
+        /// R18g: RuntimePanelUtils.ScreenToPanel only scales by the panel's UI size - it does
+        /// not flip the y axis. Input System screen positions start at the bottom-left (y grows
+        /// upward); UI Toolkit panel positions start at the top-left (y grows downward). Without
+        /// flipping first, a point near the top of the screen converts to a point near the
+        /// bottom of the panel (and vice versa), so this used to check the mirror image of what
+        /// was actually on screen - missing small UI (like the zoning info box) while a large,
+        /// full-height panel (like the zoning menu) still mostly caught clicks by coincidence.
         /// </summary>
         public static VisualElement PickOverUi(VisualElement uiRoot, Vector2 screenPosition)
         {
@@ -25,9 +33,17 @@ namespace TheEmptying.Presentation
                 return null;
             }
 
-            Vector2 panelPosition = RuntimePanelUtils.ScreenToPanel(uiRoot.panel, screenPosition);
+            Vector2 panelPosition = RuntimePanelUtils.ScreenToPanel(uiRoot.panel, FlipScreenY(screenPosition, Screen.height));
             return uiRoot.panel.Pick(panelPosition);
         }
+
+        /// <summary>
+        /// R18g: Input System screen positions start at the bottom-left (y grows upward);
+        /// UI Toolkit panel positions start at the top-left (y grows downward). Exposed as its
+        /// own pure step (the exact one PickOverUi applies before scaling by the panel's UI size)
+        /// so the flip itself can be tested without a live runtime panel.
+        /// </summary>
+        public static Vector2 FlipScreenY(Vector2 screenPosition, float screenHeight) => new Vector2(screenPosition.x, screenHeight - screenPosition.y);
 
         /// <summary>
         /// Whether the currently focused UI control is a text field actively

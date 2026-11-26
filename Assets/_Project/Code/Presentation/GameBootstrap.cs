@@ -927,6 +927,19 @@ namespace TheEmptying.Presentation
             root.style.bottom = 0;
             root.style.flexDirection = FlexDirection.Column;
 
+            // R18g: UI Toolkit gives every runtime panel its own internal, unnamed root
+            // (panel.visualTree) that root (UIDocument.rootVisualElement, "root" above) sits
+            // inside of - a plain full-screen layout wrapper nobody here ever meant to be a
+            // pick target. It was found receiving real pointer events everywhere on screen
+            // (reported as a nameless "VisualElement", even over open ground) while chasing
+            // R18f's bug, since it's a different object than "root" and so never equal to it in
+            // the usual "did this hit nothing real" comparison. It has no content of its own, so
+            // picking is turned off here, before anything can rely on that comparison again.
+            if (root.panel?.visualTree != null)
+            {
+                root.panel.visualTree.pickingMode = PickingMode.Ignore;
+            }
+
             BuildHud(root);
             BuildQuestionPopup(root);
             BuildToast(root);

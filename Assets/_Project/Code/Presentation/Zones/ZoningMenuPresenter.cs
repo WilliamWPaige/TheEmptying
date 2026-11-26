@@ -115,19 +115,6 @@ namespace TheEmptying.Presentation.Zones
         private bool _wasMouseHeld;
         private bool _strokeStartedOnGround;
 
-        /// <summary>
-        /// R18f: the real UI Toolkit element the pointer is actually over right now, or _uiRoot
-        /// itself if it's over nothing real - kept current by real PointerDownEvent/PointerMoveEvent
-        /// dispatch (bubbled up from wherever the panel's own hit-test actually placed it), the
-        /// same technique WorldSelectionPresenter already uses (R17b) for exactly this reason: it
-        /// can never disagree with what's actually drawn on screen, unlike converting the mouse's
-        /// screen position into panel space by hand (RuntimePanelUtils.ScreenToPanel plus
-        /// Mouse.current.position), which this project's own UI size setting and/or the Editor
-        /// Game view's own scaling can throw off by enough to miss a small element like the info
-        /// box while still (mostly) catching the much wider menu panel.
-        /// </summary>
-        private VisualElement _lastRealPointerTarget;
-
         public bool IsOpen => _root != null && _root.style.display == DisplayStyle.Flex;
 
         public void Initialize(
@@ -177,17 +164,6 @@ namespace TheEmptying.Presentation.Zones
 
             BuildPanel();
             uiRoot.Add(_root);
-
-            _uiRoot.RegisterCallback<PointerDownEvent>(OnUiRootPointerEvent);
-            _uiRoot.RegisterCallback<PointerMoveEvent>(evt => OnUiRootPointerEvent(evt.target));
-        }
-
-        /// <summary>R18f: PointerDownEvent and PointerMoveEvent share no common base with a usable target, so this takes the resolved IEventHandler directly - see _lastRealPointerTarget.</summary>
-        private void OnUiRootPointerEvent(PointerDownEvent evt) => OnUiRootPointerEvent(evt.target);
-
-        private void OnUiRootPointerEvent(IEventHandler target)
-        {
-            _lastRealPointerTarget = target as VisualElement;
         }
 
         /// <summary>After a load, the content, map and zones are new instances; a currently-open zoning view is abandoned rather than left showing stale content.</summary>
@@ -357,24 +333,21 @@ namespace TheEmptying.Presentation.Zones
             }
 
             bool mouseHeld = Mouse.current != null && (Mouse.current.leftButton.isPressed || Mouse.current.rightButton.isPressed);
+            VisualElement uiHit = Mouse.current != null ? UiInputUtility.PickOverUi(_uiRoot, Mouse.current.position.ReadValue()) : null;
             bool popupOpen = _createConfirmPanel.style.display == DisplayStyle.Flex || _discardConfirmPanel.style.display == DisplayStyle.Flex;
-
-            // R18f: the real decision below uses UI Toolkit's own hit-test (kept current by real
-            // pointer events - see _lastRealPointerTarget), not a hand-converted screen position;
-            // the hand-converted version is only still computed for the diagnostic log.
-            bool overRealUi = popupOpen || (_lastRealPointerTarget != null && _lastRealPointerTarget != _uiRoot);
+            bool overUi = popupOpen || uiHit != null;
 
             bool freshPress = mouseHeld && !_wasMouseHeld;
             if (freshPress)
             {
-                LogPaintPressDiagnostics(overRealUi);
+                LogPaintPressDiagnostics(uiHit);
             }
 
             // Tracked every frame while armed - including while a popup blocks everything else
             // below - so a press that started on the popup is never mistaken for a fresh one
             // that started on the ground the moment the popup closes while still held.
             TrackPaintLogStroke(mouseHeld);
-            TrackPaintStrokeOrigin(mouseHeld, overRealUi);
+            TrackPaintStrokeOrigin(mouseHeld, overUi);
 
             if (popupOpen)
             {
@@ -390,9 +363,9 @@ namespace TheEmptying.Presentation.Zones
                 return;
             }
 
-            if (overRealUi)
+            if (uiHit != null)
             {
-                RecordPaintLogOverUi(_lastRealPointerTarget);
+                RecordPaintLogOverUi(uiHit);
                 _brushPreview.SetActive(false);
                 EndDragIfAny();
                 return;
@@ -454,14 +427,13 @@ namespace TheEmptying.Presentation.Zones
         }
 
         /// <summary>
-        /// R18f: on every fresh press (behind LogPaintingSettingId), logs the raw mouse screen
-        /// position, the old hand-converted panel position and what it used to pick, the real
-        /// hit UI Toolkit itself reports (what the press actually acts on), the info box's and
-        /// menu's own on-screen rectangles, and the ground cell under the cursor - so a mismatch
-        /// between "what the old check saw" and "what was actually drawn" can be seen directly,
-        /// and confirmed fixed by comparing the real hit against the two rectangles.
+        /// R18g: on every fresh press (behind LogPaintingSettingId), logs the raw mouse screen
+        /// position, the converted panel position and what it picked, the info box's and menu's
+        /// own on-screen rectangles, and the ground cell under the cursor - so the converted
+        /// position landing inside whichever rectangle is actually under the cursor (and not its
+        /// mirror image) can be confirmed directly, at any UI size or Game view size.
         /// </summary>
-        private void LogPaintPressDiagnostics(bool overRealUi)
+        private void LogPaintPressDiagnostics(VisualElement uiHit)
         {
             if (_settings.Get(LogPaintingSettingId) == 0 || Mouse.current == null)
             {
@@ -469,16 +441,15 @@ namespace TheEmptying.Presentation.Zones
             }
 
             Vector2 screenPosition = Mouse.current.position.ReadValue();
-            Vector2 oldPanelPosition = _uiRoot.panel != null ? RuntimePanelUtils.ScreenToPanel(_uiRoot.panel, screenPosition) : Vector2.zero;
-            VisualElement oldPick = UiInputUtility.PickOverUi(_uiRoot, screenPosition);
-            string oldPickName = DescribeElement(oldPick);
-            string realHitName = overRealUi ? DescribeElement(_lastRealPointerTarget) : "none";
+            Vector2 panelPosition = _uiRoot.panel != null
+                ? RuntimePanelUtils.ScreenToPanel(_uiRoot.panel, UiInputUtility.FlipScreenY(screenPosition, Screen.height))
+                : Vector2.zero;
             bool groundFound = TryGetGroundCell(out CellCoord cell);
             string groundDescription = groundFound ? $"({cell.X}, {cell.Z})" : "none";
 
             Debug.Log(
-                $"[Zoning] Paint press: screen = {screenPosition}, old converted panel position = {oldPanelPosition}, " +
-                $"old pick = {oldPickName}, real hit = {realHitName}, info box rect = {_infoPanel.worldBound}, " +
+                $"[Zoning] Paint press: screen = {screenPosition}, converted panel position = {panelPosition}, " +
+                $"pick = {DescribeElement(uiHit)}, info box rect = {_infoPanel.worldBound}, " +
                 $"menu rect = {_menuPanel.worldBound}, ground cell = {groundDescription}");
         }
 
