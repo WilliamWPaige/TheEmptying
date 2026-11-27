@@ -12,14 +12,24 @@
             "description": "Placeholder (R20). The side length, in meters, of one stockpile stack spot."
         },
         {
-            "id": "setting.zones.stockpile_capacity_units_per_spot",
-            "label": "Stockpile capacity per spot",
+            "id": "setting.zones.stockpile_capacity_units_per_quarter",
+            "label": "Stockpile capacity per quarter",
             "valueType": "Integer",
-            "default": 100,
+            "default": 25,
             "minimum": 1,
             "maximum": 1000,
             "category": "Zones",
-            "description": "Placeholder (R20). How many size-1 capacity units one stack spot holds; a size-N item holds this divided by N per spot."
+            "description": "Placeholder (R22). How many size-1 capacity units one quarter of a stack spot holds; a pile of a size-N item holds this times the quarters its shape covers, divided by N, rounded down."
+        },
+        {
+            "id": "setting.zones.stockpile_pile_box_coverage_fraction",
+            "label": "Stockpile pile box coverage",
+            "valueType": "Number",
+            "default": 0.85,
+            "minimum": 0.1,
+            "maximum": 1,
+            "category": "Zones",
+            "description": "Placeholder (R22). How much of a pile's own footprint (its quarters' area) the placeholder box covers, so spots don't look oversized for what's in them."
         },
         {
             "id": "setting.zones.stockpile_natural_patch_min_spots_per_side",

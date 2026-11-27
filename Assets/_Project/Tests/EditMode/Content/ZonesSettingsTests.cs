@@ -5,6 +5,7 @@ using TheEmptying.Core.Modules;
 using TheEmptying.Core.Startup;
 using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation;
+using TheEmptying.Presentation.Zones;
 using TheEmptying.Tests.EditMode.Startup;
 
 namespace TheEmptying.Tests.EditMode.Content
@@ -13,7 +14,8 @@ namespace TheEmptying.Tests.EditMode.Content
     public class ZonesSettingsTests
     {
         [TestCase(ZonesModule.SpotSizeMetersSettingId, SettingValueType.Number, 2.0, 1.0, 10.0, "Zones")]
-        [TestCase(ZonesModule.CapacityUnitsPerSpotSettingId, SettingValueType.Integer, 100.0, 1.0, 1000.0, "Zones")]
+        [TestCase(ZonesModule.CapacityUnitsPerQuarterSettingId, SettingValueType.Integer, 25.0, 1.0, 1000.0, "Zones")]
+        [TestCase(StockpileStackPresenter.PileBoxCoverageFractionSettingId, SettingValueType.Number, 0.85, 0.1, 1.0, "Zones")]
         [TestCase(ZonesModule.NaturalPatchMinSpotsPerSideSettingId, SettingValueType.Integer, 2.0, 1.0, 10.0, "Zones")]
         [TestCase(ZonesModule.NaturalPatchMaxSpotsPerSideSettingId, SettingValueType.Integer, 4.0, 1.0, 10.0, "Zones")]
         [TestCase(ZonesModule.NaturalPatchMinAngleDegreesSettingId, SettingValueType.Number, 0.0, 0.0, 360.0, "Zones")]

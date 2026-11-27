@@ -67,7 +67,8 @@ namespace TheEmptying.Presentation.Content
             BaseValueTenthCopper = asset.BaseValueTenthCopper,
             SpoilTimeMinutes = asset.SpoilTimeMinutes,
             Size = asset.Size,
-            StackModelCount = asset.StackModels.Count
+            StackModelCount = asset.StackModels.Count,
+            PileShape = asset.PileShape
         };
 
         private static ResourceContent ToRecord(ResourceAsset asset) => new ResourceContent

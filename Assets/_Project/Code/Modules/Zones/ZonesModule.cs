@@ -33,13 +33,15 @@ namespace TheEmptying.Modules.Zones
     /// footprint, or pond water, but may cover trees, stones and grub
     /// mounds. R20: a stockpile zone also gets a fixed list of 2x2 m
     /// stack spots, laid out once (from the world seed) when it's
-    /// created, in one of two layouts (Uniform or Natural); each spot
-    /// holds one item type up to that item's capacity. R21: a zone can
-    /// be modified (type, name, color, cells - ApplyZoneEdit) or
-    /// deleted (DeleteZone), but never loses a cell a spot still holds
-    /// anything in - see the Occupancy region. Depends on Map (cell
-    /// size, cell/world conversions), Buildings (the crown-building
-    /// check) and Ponds (the pond-water check).
+    /// created, in one of two layouts (Uniform or Natural). R22: each
+    /// spot splits into four 1x1 m quarters and can hold several piles
+    /// (mixing), each of one item, covering one or more quarters
+    /// depending on that item's PileShape. R21: a zone can be modified
+    /// (type, name, color, cells - ApplyZoneEdit) or deleted (DeleteZone),
+    /// but never loses a cell a spot still holds anything in - see the
+    /// Occupancy region. Depends on Map (cell size, cell/world
+    /// conversions), Buildings (the crown-building check) and Ponds (the
+    /// pond-water check).
     /// </summary>
     public sealed class ZonesModule : IModule, ISaveableModule
     {
@@ -53,8 +55,8 @@ namespace TheEmptying.Modules.Zones
         /// <summary>R20: a stack spot's side length in meters, placeholder.</summary>
         public const string SpotSizeMetersSettingId = "setting.zones.stockpile_spot_size_meters";
 
-        /// <summary>R20: how many size-1 capacity units one spot holds, placeholder.</summary>
-        public const string CapacityUnitsPerSpotSettingId = "setting.zones.stockpile_capacity_units_per_spot";
+        /// <summary>R22: how many size-1 capacity units one quarter (a quarter of a spot) holds, placeholder.</summary>
+        public const string CapacityUnitsPerQuarterSettingId = "setting.zones.stockpile_capacity_units_per_quarter";
 
         public const string NaturalPatchMinSpotsPerSideSettingId = "setting.zones.stockpile_natural_patch_min_spots_per_side";
         public const string NaturalPatchMaxSpotsPerSideSettingId = "setting.zones.stockpile_natural_patch_max_spots_per_side";
@@ -87,7 +89,7 @@ namespace TheEmptying.Modules.Zones
 
         public string Id => ModuleId;
         public int Version => 1;
-        public int SectionVersion => 3;
+        public int SectionVersion => 4;
         public IReadOnlyList<string> Dependencies { get; } = new[] { MapModule.ModuleId, BuildingsModule.ModuleId, PondsModule.ModuleId };
 
         public IEnumerable<KeyValuePair<EntityId, ZoneState>> Zones => _zones.Rows();
@@ -260,10 +262,14 @@ namespace TheEmptying.Modules.Zones
             state.Spots.AddRange(spots);
         }
 
-        /// <summary>100 (placeholder) divided by the item's size, at least 1 - how much of this item one spot can hold.</summary>
-        public int CapacityPerSpot(int itemSize) => Math.Max(1, (int)_settings.Get(CapacityUnitsPerSpotSettingId) / Math.Max(1, itemSize));
+        /// <summary>R22: 25 (placeholder) capacity units per quarter this pile shape covers, divided by the item's size, rounded down, minimum 1 - how much of this item one pile of this shape can hold.</summary>
+        public int CapacityPerPile(PileShape shape, int itemSize)
+        {
+            int unitsPerQuarter = (int)_settings.Get(CapacityUnitsPerQuarterSettingId);
+            return Math.Max(1, (unitsPerQuarter * shape.QuarterCount()) / Math.Max(1, itemSize));
+        }
 
-        /// <summary>The live view of one item type at one stockpile - amount stored (summed across its Spots), its keep-on-hand limit (defaulted if never overridden), and whether it's blocked.</summary>
+        /// <summary>The live view of one item type at one stockpile - amount stored (summed across every pile of it), its keep-on-hand limit (defaulted if never overridden), and whether it's blocked.</summary>
         public (int Amount, int Limit, bool Blocked) GetStockpileItemInfo(EntityId zoneId, string itemContentId)
         {
             if (!_zones.TryGet(zoneId, out ZoneState zone))
@@ -302,7 +308,7 @@ namespace TheEmptying.Modules.Zones
             GetOrCreateEntry(zone, itemContentId).Blocked = blocked;
         }
 
-        /// <summary>R13/R20: removes up to amount of this item (eating a grub from a stockpile, say), taking from the least-full stack first and spilling into the next least-full stack if that one empties before amount is satisfied; returns how much was actually removed, never more than what's stored. A spot that empties becomes free for any item's next stack.</summary>
+        /// <summary>R13/R20/R22: removes up to amount of this item, taking from the least-full pile first (anywhere in the stockpile) and spilling into the next least-full pile if that one empties before amount is satisfied; returns how much was actually removed, never more than what's stored. An emptied pile is removed, freeing its quarters for the next pile.</summary>
         public int RemoveItemFromStockpile(EntityId zoneId, string itemContentId, int amount)
         {
             if (amount <= 0 || !_zones.TryGet(zoneId, out ZoneState zone))
@@ -315,24 +321,20 @@ namespace TheEmptying.Modules.Zones
 
             while (remaining > 0)
             {
-                StockSpot spot = zone.Spots
-                    .Where(s => s.ItemContentId == itemContentId && s.AmountStored > 0)
-                    .OrderBy(s => s.AmountStored)
-                    .FirstOrDefault();
-
-                if (spot == null)
+                (StockSpot spot, StockPile pile) = FindLeastFullPile(zone, itemContentId);
+                if (pile == null)
                 {
                     break;
                 }
 
-                int takeNow = Math.Min(remaining, spot.AmountStored);
-                spot.AmountStored -= takeNow;
+                int takeNow = Math.Min(remaining, pile.AmountStored);
+                pile.AmountStored -= takeNow;
                 remaining -= takeNow;
                 removed += takeNow;
 
-                if (spot.AmountStored == 0)
+                if (pile.AmountStored == 0)
                 {
-                    spot.ItemContentId = null;
+                    spot.Piles.Remove(pile);
                 }
             }
 
@@ -340,12 +342,15 @@ namespace TheEmptying.Modules.Zones
         }
 
         /// <summary>
-        /// Adds as much of amountRequested as spots, size, blocks and the
-        /// keep-on-hand limit allow: fills a spot already holding this
-        /// item first, then starts the nearest empty spot to that item's
-        /// other stacks (or any empty spot if it has none), spilling into
-        /// the next spot the same way if one fills partway through. Added
-        /// may be less than requested. Reason is null when everything fit.
+        /// R22: adds as much of amountRequested as piles, quarters, sizes,
+        /// blocks and the keep-on-hand limit allow: tops up any pile of
+        /// this item with room first, then starts a new pile - in a spot
+        /// that already holds this item with free quarters for its shape,
+        /// else the nearest spot already partly used by other items with
+        /// free quarters, else the empty spot nearest this item's other
+        /// piles (any empty spot if it has none) - spilling into the next
+        /// pile the same way if one fills partway through. Added may be
+        /// less than requested. Reason is null when everything fit.
         /// </summary>
         public (int Added, int DidNotFit, string Reason) TryAddItemToStockpile(EntityId zoneId, string itemContentId, int amountRequested)
         {
@@ -370,7 +375,7 @@ namespace TheEmptying.Modules.Zones
                 return (0, amountRequested, "Blocked here.");
             }
 
-            int capacityPerSpot = CapacityPerSpot(item.Size);
+            int capacityPerPile = CapacityPerPile(item.PileShape, item.Size);
             int defaultLimit = DefaultLimitFor(zone, itemContentId);
             int limit = zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry limitEntry) ? limitEntry.KeepOnHandLimitOverride ?? defaultLimit : defaultLimit;
             int currentAmount = AmountStoredOf(zone, itemContentId);
@@ -388,28 +393,39 @@ namespace TheEmptying.Modules.Zones
                     break;
                 }
 
-                StockSpot spot = PickSpotForDelivery(zone, itemContentId, capacityPerSpot);
-                if (spot == null)
+                (StockSpot existingSpot, StockPile existingPile) = FindPileWithRoom(zone, itemContentId, capacityPerPile);
+                if (existingPile != null)
+                {
+                    int room = capacityPerPile - existingPile.AmountStored;
+                    int addNow = Math.Min(remaining, Math.Min(room, limitRoom));
+                    if (addNow <= 0)
+                    {
+                        break;
+                    }
+
+                    existingPile.AmountStored += addNow;
+                    remaining -= addNow;
+                    added += addNow;
+                    continue;
+                }
+
+                if (!TryFindSpotForNewPile(zone, itemContentId, item.PileShape, out StockSpot newSpot, out List<int> quarters))
                 {
                     break;
                 }
 
-                int spotRoom = capacityPerSpot - spot.AmountStored;
-                int addNow = Math.Min(remaining, Math.Min(spotRoom, limitRoom));
-                if (addNow <= 0)
+                int addNowNew = Math.Min(remaining, Math.Min(capacityPerPile, limitRoom));
+                if (addNowNew <= 0)
                 {
                     break;
                 }
 
-                if (spot.AmountStored == 0)
-                {
-                    spot.ItemContentId = itemContentId;
-                    spot.StackModelIndex = PickStackModelIndex(zoneId, item);
-                }
+                var newPile = new StockPile { ItemContentId = itemContentId, StackModelIndex = PickStackModelIndex(zoneId, item), AmountStored = addNowNew };
+                newPile.QuarterIndices.AddRange(quarters);
+                newSpot.Piles.Add(newPile);
 
-                spot.AmountStored += addNow;
-                remaining -= addNow;
-                added += addNow;
+                remaining -= addNowNew;
+                added += addNowNew;
             }
 
             int didNotFit = remaining;
@@ -423,7 +439,7 @@ namespace TheEmptying.Modules.Zones
         }
 
         /// <summary>
-        /// R13/R20: how many more of this item this stockpile could
+        /// R13/R20/R22: how many more of this item this stockpile could
         /// currently take across every spot - the same capacity math
         /// TryAddItemToStockpile uses, without adding anything - 0 if
         /// blocked, not a stockpile, or the item is unknown. Lets
@@ -448,7 +464,7 @@ namespace TheEmptying.Modules.Zones
                 return 0;
             }
 
-            int capacityPerSpot = CapacityPerSpot(item.Size);
+            int capacityPerPile = CapacityPerPile(item.PileShape, item.Size);
             int currentAmount = AmountStoredOf(zone, itemContentId);
             int defaultLimit = DefaultLimitFor(zone, itemContentId);
             int limit = zone.StockpileItems.TryGetValue(itemContentId, out StockpileItemEntry limitEntry) ? limitEntry.KeepOnHandLimitOverride ?? defaultLimit : defaultLimit;
@@ -458,20 +474,21 @@ namespace TheEmptying.Modules.Zones
             int spotRoom = 0;
             foreach (StockSpot spot in zone.Spots)
             {
-                if (spot.ItemContentId == itemContentId)
+                foreach (StockPile pile in spot.Piles)
                 {
-                    spotRoom += capacityPerSpot - spot.AmountStored;
+                    if (pile.ItemContentId == itemContentId)
+                    {
+                        spotRoom += capacityPerPile - pile.AmountStored;
+                    }
                 }
-                else if (spot.ItemContentId == null)
-                {
-                    spotRoom += capacityPerSpot;
-                }
+
+                spotRoom += StockSpotQuarters.MaxAdditionalPiles(spot, item.PileShape) * capacityPerPile;
             }
 
             return Math.Max(0, Math.Min(spotRoom, limitRoom));
         }
 
-        /// <summary>The spot a delivery of this item should go to next: an existing stack of it with room, else the empty spot nearest to its other stacks (or any empty spot, if it has none). Null if no spot can take it.</summary>
+        /// <summary>The spot a delivery of this item should go to next: the spot already holding a pile of it with room, else the spot TryFindSpotForNewPile would start a new pile in. Null if no spot can take it.</summary>
         public bool TryFindDeliverySpot(EntityId zoneId, string itemContentId, out StockSpot spot)
         {
             spot = null;
@@ -485,11 +502,24 @@ namespace TheEmptying.Modules.Zones
                 return false;
             }
 
-            spot = PickSpotForDelivery(zone, itemContentId, CapacityPerSpot(item.Size));
-            return spot != null;
+            int capacityPerPile = CapacityPerPile(item.PileShape, item.Size);
+            (StockSpot existingSpot, StockPile existingPile) = FindPileWithRoom(zone, itemContentId, capacityPerPile);
+            if (existingPile != null)
+            {
+                spot = existingSpot;
+                return true;
+            }
+
+            if (TryFindSpotForNewPile(zone, itemContentId, item.PileShape, out StockSpot newSpot, out _))
+            {
+                spot = newSpot;
+                return true;
+            }
+
+            return false;
         }
 
-        /// <summary>The spot RemoveItemFromStockpile would take from next (its least-full stack of this item) - lets a hungry person walk toward the spot they'll actually eat from.</summary>
+        /// <summary>The spot RemoveItemFromStockpile would take from next (the spot holding this item's least-full pile) - lets a hungry person walk toward the spot they'll actually eat from.</summary>
         public bool TryFindTakeSpot(EntityId zoneId, string itemContentId, out StockSpot spot)
         {
             spot = null;
@@ -498,12 +528,14 @@ namespace TheEmptying.Modules.Zones
                 return false;
             }
 
-            spot = zone.Spots
-                .Where(s => s.ItemContentId == itemContentId && s.AmountStored > 0)
-                .OrderBy(s => s.AmountStored)
-                .FirstOrDefault();
+            (StockSpot foundSpot, StockPile pile) = FindLeastFullPile(zone, itemContentId);
+            if (pile == null)
+            {
+                return false;
+            }
 
-            return spot != null;
+            spot = foundSpot;
+            return true;
         }
 
         /// <summary>A cell of this zone next to the given spot (not one of the cells the spot itself covers) for a person to stand on while dropping off or picking up - the nearest such cell to the spot's center, or the spot's own cell if somehow none exists.</summary>
@@ -545,37 +577,166 @@ namespace TheEmptying.Modules.Zones
             return true;
         }
 
-        /// <summary>An existing stack of this item with room, else the empty spot nearest to its other stacks, else any empty spot (the first found, so the choice stays deterministic) - null if neither exists.</summary>
-        private static StockSpot PickSpotForDelivery(ZoneState zone, string itemContentId, int capacityPerSpot)
+        /// <summary>The first pile of this item (in spot order) with room for more, anywhere in the stockpile - null if none.</summary>
+        private static (StockSpot Spot, StockPile Pile) FindPileWithRoom(ZoneState zone, string itemContentId, int capacityPerPile)
         {
             foreach (StockSpot spot in zone.Spots)
             {
-                if (spot.ItemContentId == itemContentId && spot.AmountStored < capacityPerSpot)
+                foreach (StockPile pile in spot.Piles)
                 {
-                    return spot;
+                    if (pile.ItemContentId == itemContentId && pile.AmountStored < capacityPerPile)
+                    {
+                        return (spot, pile);
+                    }
                 }
             }
 
-            List<StockSpot> existingStacks = zone.Spots.Where(s => s.ItemContentId == itemContentId).ToList();
+            return (null, null);
+        }
 
-            StockSpot best = null;
-            double bestDistance = double.PositiveInfinity;
+        /// <summary>The least-full pile of this item anywhere in the stockpile (amount &gt; 0) - null if it has none.</summary>
+        private static (StockSpot Spot, StockPile Pile) FindLeastFullPile(ZoneState zone, string itemContentId)
+        {
+            StockSpot bestSpot = null;
+            StockPile bestPile = null;
+
             foreach (StockSpot spot in zone.Spots)
             {
-                if (spot.ItemContentId != null)
+                foreach (StockPile pile in spot.Piles)
+                {
+                    if (pile.ItemContentId == itemContentId && pile.AmountStored > 0 && (bestPile == null || pile.AmountStored < bestPile.AmountStored))
+                    {
+                        bestSpot = spot;
+                        bestPile = pile;
+                    }
+                }
+            }
+
+            return (bestSpot, bestPile);
+        }
+
+        /// <summary>
+        /// R22: where a new pile of this item and shape should start, in
+        /// order: a spot that already holds this item with free quarters
+        /// for the shape (first found); else the nearest spot already
+        /// partly used by other items with free quarters for the shape;
+        /// else the empty spot nearest this item's other piles (any empty
+        /// spot, if it has none). False if nothing fits anywhere.
+        /// </summary>
+        private static bool TryFindSpotForNewPile(ZoneState zone, string itemContentId, PileShape shape, out StockSpot spot, out List<int> quarters)
+        {
+            foreach (StockSpot candidate in zone.Spots)
+            {
+                if (!candidate.Piles.Any(p => p.ItemContentId == itemContentId))
                 {
                     continue;
                 }
 
-                double distance = existingStacks.Count == 0 ? 0 : existingStacks.Min(s => DistanceSquared(s, spot));
-                if (distance < bestDistance)
+                List<int> free = StockSpotQuarters.FindFreeQuarters(candidate, shape);
+                if (free != null)
                 {
-                    bestDistance = distance;
-                    best = spot;
+                    spot = candidate;
+                    quarters = free;
+                    return true;
                 }
             }
 
-            return best;
+            List<StockSpot> existingItemSpots = zone.Spots.Where(s => s.Piles.Any(p => p.ItemContentId == itemContentId)).ToList();
+
+            StockSpot bestPartlyUsed = null;
+            List<int> bestPartlyUsedQuarters = null;
+            double bestPartlyUsedDistance = double.PositiveInfinity;
+
+            foreach (StockSpot candidate in zone.Spots)
+            {
+                if (candidate.Piles.Count == 0)
+                {
+                    continue;
+                }
+
+                List<int> free = StockSpotQuarters.FindFreeQuarters(candidate, shape);
+                if (free == null)
+                {
+                    continue;
+                }
+
+                double distance = existingItemSpots.Count == 0 ? 0 : existingItemSpots.Min(s => DistanceSquared(s, candidate));
+                if (distance < bestPartlyUsedDistance)
+                {
+                    bestPartlyUsedDistance = distance;
+                    bestPartlyUsed = candidate;
+                    bestPartlyUsedQuarters = free;
+                }
+            }
+
+            if (bestPartlyUsed != null)
+            {
+                spot = bestPartlyUsed;
+                quarters = bestPartlyUsedQuarters;
+                return true;
+            }
+
+            StockSpot bestEmpty = null;
+            double bestEmptyDistance = double.PositiveInfinity;
+
+            foreach (StockSpot candidate in zone.Spots)
+            {
+                if (candidate.Piles.Count != 0)
+                {
+                    continue;
+                }
+
+                double distance = existingItemSpots.Count == 0 ? 0 : existingItemSpots.Min(s => DistanceSquared(s, candidate));
+                if (distance < bestEmptyDistance)
+                {
+                    bestEmptyDistance = distance;
+                    bestEmpty = candidate;
+                }
+            }
+
+            if (bestEmpty != null)
+            {
+                spot = bestEmpty;
+                quarters = StockSpotQuarters.FindFreeQuarters(bestEmpty, shape);
+                return true;
+            }
+
+            spot = null;
+            quarters = null;
+            return false;
+        }
+
+        /// <summary>Delivers as much of amount as piles/quarters allow, ignoring keep-on-hand limits and blocks - used only by save migrations, which are restoring old state rather than making a new delivery under today's rules. Returns how much was actually placed.</summary>
+        private int DeliverIgnoringLimitsAndBlocks(EntityId zoneId, ZoneState zone, string itemContentId, ItemContent item, int amount)
+        {
+            int capacityPerPile = CapacityPerPile(item.PileShape, item.Size);
+            int remaining = amount;
+
+            while (remaining > 0)
+            {
+                (StockSpot existingSpot, StockPile existingPile) = FindPileWithRoom(zone, itemContentId, capacityPerPile);
+                if (existingPile != null)
+                {
+                    int addNow = Math.Min(remaining, capacityPerPile - existingPile.AmountStored);
+                    existingPile.AmountStored += addNow;
+                    remaining -= addNow;
+                    continue;
+                }
+
+                if (!TryFindSpotForNewPile(zone, itemContentId, item.PileShape, out StockSpot newSpot, out List<int> quarters))
+                {
+                    break;
+                }
+
+                int addNowNew = Math.Min(remaining, capacityPerPile);
+                var newPile = new StockPile { ItemContentId = itemContentId, StackModelIndex = PickStackModelIndex(zoneId, item), AmountStored = addNowNew };
+                newPile.QuarterIndices.AddRange(quarters);
+                newSpot.Piles.Add(newPile);
+
+                remaining -= addNowNew;
+            }
+
+            return amount - remaining;
         }
 
         private static double DistanceSquared(StockSpot a, StockSpot b)
@@ -585,7 +746,7 @@ namespace TheEmptying.Modules.Zones
             return dx * dx + dz * dz;
         }
 
-        /// <summary>Picked at random (from the world seed, via a stream named for this zone) whenever a spot's stack starts - kept until it empties again.</summary>
+        /// <summary>Picked at random (from the world seed, via a stream named for this zone) whenever a pile starts - kept for its lifetime.</summary>
         private int PickStackModelIndex(EntityId zoneId, ItemContent item)
         {
             if (item.StackModelCount <= 0)
@@ -602,15 +763,19 @@ namespace TheEmptying.Modules.Zones
             int total = 0;
             foreach (StockSpot spot in zone.Spots)
             {
-                if (spot.ItemContentId == itemContentId)
+                foreach (StockPile pile in spot.Piles)
                 {
-                    total += spot.AmountStored;
+                    if (pile.ItemContentId == itemContentId)
+                    {
+                        total += pile.AmountStored;
+                    }
                 }
             }
 
             return total;
         }
 
+        /// <summary>The most this stockpile could hold of this item alone: how many piles of its shape the stockpile's total quarters could fit, times one pile's capacity.</summary>
         private int DefaultLimitFor(ZoneState zone, string itemContentId)
         {
             if (!_content.TryGet(BuiltInContentTypes.ItemTypeName, itemContentId, out ContentEntry entry) || !(entry.Definition is ItemContent item))
@@ -618,7 +783,11 @@ namespace TheEmptying.Modules.Zones
                 return 0;
             }
 
-            return zone.Spots.Count * CapacityPerSpot(item.Size);
+            int capacityPerPile = CapacityPerPile(item.PileShape, item.Size);
+            int totalQuarters = zone.Spots.Count * StockSpotQuarters.Count;
+            int maxPiles = totalQuarters / item.PileShape.QuarterCount();
+
+            return maxPiles * capacityPerPile;
         }
 
         private static StockpileItemEntry GetOrCreateEntry(ZoneState zone, string itemContentId)
@@ -652,7 +821,7 @@ namespace TheEmptying.Modules.Zones
         /// <summary>Whether this zone holds anything anywhere right now - a stockpile with any occupied spot. A Living Area (or anything else with no spots) is never occupied.</summary>
         public bool IsZoneOccupied(EntityId zoneId)
         {
-            return _zones.TryGet(zoneId, out ZoneState zone) && zone.Spots.Any(s => s.AmountStored > 0);
+            return _zones.TryGet(zoneId, out ZoneState zone) && zone.Spots.Any(s => s.Piles.Count > 0);
         }
 
         private HashSet<CellCoord> OccupiedCellsOf(ZoneState zone)
@@ -668,7 +837,7 @@ namespace TheEmptying.Modules.Zones
 
             foreach (StockSpot spot in zone.Spots)
             {
-                if (spot.AmountStored <= 0)
+                if (spot.Piles.Count == 0)
                 {
                     continue;
                 }
@@ -827,7 +996,7 @@ namespace TheEmptying.Modules.Zones
                 return new ZoneDeleteResult(true, 0);
             }
 
-            List<StockSpot> occupiedSpots = zone.Spots.Where(s => s.AmountStored > 0).ToList();
+            List<StockSpot> occupiedSpots = zone.Spots.Where(s => s.Piles.Count > 0).ToList();
 
             if (occupiedSpots.Count == 0)
             {
@@ -883,9 +1052,20 @@ namespace TheEmptying.Modules.Zones
                 writer.WriteDouble(spot.CenterX);
                 writer.WriteDouble(spot.CenterZ);
                 writer.WriteDouble(spot.RotationDegrees);
-                writer.WriteString(spot.ItemContentId ?? string.Empty);
-                writer.WriteInt(spot.AmountStored);
-                writer.WriteInt(spot.StackModelIndex);
+
+                writer.WriteInt(spot.Piles.Count);
+                foreach (StockPile pile in spot.Piles)
+                {
+                    writer.WriteString(pile.ItemContentId ?? string.Empty);
+                    writer.WriteInt(pile.AmountStored);
+                    writer.WriteInt(pile.StackModelIndex);
+
+                    writer.WriteInt(pile.QuarterIndices.Count);
+                    foreach (int quarter in pile.QuarterIndices)
+                    {
+                        writer.WriteInt(quarter);
+                    }
+                }
             }
         }
 
@@ -916,8 +1096,18 @@ namespace TheEmptying.Modules.Zones
                 else
                 {
                     zone.LayoutId = reader.ReadString();
-                    ReadSpots(reader, zone);
-                    ReadStockpileItems(reader, zone);
+
+                    if (savedVersion < 4)
+                    {
+                        List<(int SpotIndex, string ItemId, int Amount, int StackModelIndex)> oldStacks = ReadSpotsOldSingleStackFormat(reader, zone);
+                        ReadStockpileItems(reader, zone);
+                        MigrateOldSpotStacksToPiles(id, zone, oldStacks);
+                    }
+                    else
+                    {
+                        ReadSpots(reader, zone);
+                        ReadStockpileItems(reader, zone);
+                    }
                 }
 
                 _zones.Add(id, zone);
@@ -944,9 +1134,50 @@ namespace TheEmptying.Modules.Zones
             return zone;
         }
 
-        private void ReadSpots(SaveReader reader, ZoneState zone)
+        private static void ReadSpots(SaveReader reader, ZoneState zone)
         {
             int spotCount = reader.ReadInt();
+            for (int j = 0; j < spotCount; j++)
+            {
+                double centerX = reader.ReadDouble();
+                double centerZ = reader.ReadDouble();
+                double rotation = reader.ReadDouble();
+
+                var spot = new StockSpot { CenterX = centerX, CenterZ = centerZ, RotationDegrees = rotation };
+
+                int pileCount = reader.ReadInt();
+                for (int p = 0; p < pileCount; p++)
+                {
+                    string itemId = reader.ReadString();
+                    int amount = reader.ReadInt();
+                    int stackModelIndex = reader.ReadInt();
+
+                    var pile = new StockPile
+                    {
+                        ItemContentId = string.IsNullOrEmpty(itemId) ? null : itemId,
+                        AmountStored = amount,
+                        StackModelIndex = stackModelIndex
+                    };
+
+                    int quarterCount = reader.ReadInt();
+                    for (int q = 0; q < quarterCount; q++)
+                    {
+                        pile.QuarterIndices.Add(reader.ReadInt());
+                    }
+
+                    spot.Piles.Add(pile);
+                }
+
+                zone.Spots.Add(spot);
+            }
+        }
+
+        /// <summary>R20/R21 format (SectionVersion 3): one stack per spot, no quarters/piles. Builds the spots with their positions and returns each non-empty spot's old (single) stack for MigrateOldSpotStacksToPiles to convert, after the stockpile items dict (which follows this, in the stream) is also read.</summary>
+        private static List<(int SpotIndex, string ItemId, int Amount, int StackModelIndex)> ReadSpotsOldSingleStackFormat(SaveReader reader, ZoneState zone)
+        {
+            int spotCount = reader.ReadInt();
+            var oldStacks = new List<(int SpotIndex, string ItemId, int Amount, int StackModelIndex)>();
+
             for (int j = 0; j < spotCount; j++)
             {
                 double centerX = reader.ReadDouble();
@@ -956,16 +1187,15 @@ namespace TheEmptying.Modules.Zones
                 int amount = reader.ReadInt();
                 int stackModelIndex = reader.ReadInt();
 
-                zone.Spots.Add(new StockSpot
+                zone.Spots.Add(new StockSpot { CenterX = centerX, CenterZ = centerZ, RotationDegrees = rotation });
+
+                if (!string.IsNullOrEmpty(itemId) && amount > 0)
                 {
-                    CenterX = centerX,
-                    CenterZ = centerZ,
-                    RotationDegrees = rotation,
-                    ItemContentId = string.IsNullOrEmpty(itemId) ? null : itemId,
-                    AmountStored = amount,
-                    StackModelIndex = stackModelIndex
-                });
+                    oldStacks.Add((zone.Spots.Count - 1, itemId, amount, stackModelIndex));
+                }
             }
+
+            return oldStacks;
         }
 
         private static void ReadStockpileItems(SaveReader reader, ZoneState zone)
@@ -987,13 +1217,59 @@ namespace TheEmptying.Modules.Zones
         }
 
         /// <summary>
+        /// R22: pre-R22 saves (SectionVersion &lt; 4) stored one single
+        /// stack per spot. Each old stack is first split into that
+        /// item's own piles inside the same spot it was already in;
+        /// anything that doesn't fit there moves into free room elsewhere
+        /// in the stockpile, by the normal delivery rules (ignoring
+        /// keep-on-hand limits and blocks, since this is restoring old
+        /// state, not a new delivery under today's rules); anything that
+        /// still doesn't fit is dropped - a one-time migration cost, not
+        /// an ongoing rule.
+        /// </summary>
+        private void MigrateOldSpotStacksToPiles(EntityId zoneId, ZoneState zone, List<(int SpotIndex, string ItemId, int Amount, int StackModelIndex)> oldStacks)
+        {
+            foreach ((int spotIndex, string itemId, int amount, int stackModelIndex) in oldStacks)
+            {
+                if (!_content.TryGet(BuiltInContentTypes.ItemTypeName, itemId, out ContentEntry entry) || !(entry.Definition is ItemContent item))
+                {
+                    continue;
+                }
+
+                StockSpot spot = zone.Spots[spotIndex];
+                int capacityPerPile = CapacityPerPile(item.PileShape, item.Size);
+                int remaining = amount;
+
+                while (remaining > 0)
+                {
+                    List<int> quarters = StockSpotQuarters.FindFreeQuarters(spot, item.PileShape);
+                    if (quarters == null)
+                    {
+                        break;
+                    }
+
+                    int addNow = Math.Min(remaining, capacityPerPile);
+                    var pile = new StockPile { ItemContentId = itemId, StackModelIndex = stackModelIndex, AmountStored = addNow };
+                    pile.QuarterIndices.AddRange(quarters);
+                    spot.Piles.Add(pile);
+
+                    remaining -= addNow;
+                }
+
+                if (remaining > 0)
+                {
+                    DeliverIgnoringLimitsAndBlocks(zoneId, zone, itemId, item, remaining);
+                }
+            }
+        }
+
+        /// <summary>
         /// R20: pre-R20 saves (SectionVersion &lt; 3) stored each item's
         /// amount directly, with no spots or layout at all. Reads that
         /// old format, then - for a stockpile - generates a fresh
         /// (Natural) layout for its painted cells and lays each item's
-        /// old amount into that layout's spots, same rule as a normal
-        /// delivery (fill a spot with room, else start the nearest empty
-        /// one), ignoring keep-on-hand limits and blocks since this is
+        /// old amount into that layout's piles, by the normal delivery
+        /// rules, ignoring keep-on-hand limits and blocks since this is
         /// restoring old state, not a new delivery under today's rules.
         /// If the new layout genuinely can't hold everything it used to
         /// (a Natural layout rarely packs as tightly as the old abstract
@@ -1046,33 +1322,7 @@ namespace TheEmptying.Modules.Zones
                 return;
             }
 
-            int capacityPerSpot = CapacityPerSpot(item.Size);
-            int remaining = amount;
-
-            while (remaining > 0)
-            {
-                StockSpot spot = PickSpotForDelivery(zone, itemContentId, capacityPerSpot);
-                if (spot == null)
-                {
-                    break;
-                }
-
-                int spotRoom = capacityPerSpot - spot.AmountStored;
-                int addNow = Math.Min(remaining, spotRoom);
-                if (addNow <= 0)
-                {
-                    break;
-                }
-
-                if (spot.AmountStored == 0)
-                {
-                    spot.ItemContentId = itemContentId;
-                    spot.StackModelIndex = PickStackModelIndex(zoneId, item);
-                }
-
-                spot.AmountStored += addNow;
-                remaining -= addNow;
-            }
+            DeliverIgnoringLimitsAndBlocks(zoneId, zone, itemContentId, item, amount);
         }
 
         /// <summary>

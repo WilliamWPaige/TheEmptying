@@ -34,5 +34,9 @@ namespace TheEmptying.Core.Content
         /// <summary>R20: how many stack models this item has (its box's visuals are Presentation-only; the simulation only needs the count, to pick a model index deterministically). 0 means there's nothing to pick - the spot it starts a stack in just uses index 0.</summary>
         [JsonProperty("stackModelCount")]
         public int StackModelCount { get; set; }
+
+        /// <summary>R22: how much of a stockpile spot this item's piles cover - Quarter, Half or Full.</summary>
+        [JsonProperty("pileShape")]
+        public PileShape PileShape { get; set; }
     }
 }

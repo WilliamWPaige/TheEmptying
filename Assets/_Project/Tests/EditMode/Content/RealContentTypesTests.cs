@@ -79,6 +79,21 @@ namespace TheEmptying.Tests.EditMode.Content
             Assert.AreEqual(expectedCarryAmount, item.CarryAmount);
         }
 
+        /// <summary>R22: grub, stick, rock and flint are Quarter piles; log is Half; stone is Full.</summary>
+        [TestCase("item.grub", PileShape.Quarter)]
+        [TestCase("item.stick", PileShape.Quarter)]
+        [TestCase("item.rock", PileShape.Quarter)]
+        [TestCase("item.flint", PileShape.Quarter)]
+        [TestCase("item.log", PileShape.Half)]
+        [TestCase("item.stone", PileShape.Full)]
+        public void RealItems_HaveTheExpectedPileShape(string itemId, PileShape expectedShape)
+        {
+            ContentCatalog catalog = LoadCatalog();
+            ItemAsset item = catalog.Items.Single(a => a.Id == itemId);
+
+            Assert.AreEqual(expectedShape, item.PileShape);
+        }
+
         /// <summary>R15: base goods' prices - 5 sticks or rocks make exactly 1 copper, grubs are 1 copper, flint is 2 copper.</summary>
         [TestCase("item.grub", 10)]
         [TestCase("item.stick", 2)]

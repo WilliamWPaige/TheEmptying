@@ -20,6 +20,7 @@ MonoBehaviour:
   baseValueTenthCopper: 2
   spoilTimeMinutes: 0
   size: 1
+  pileShape: 0
   stackModels:
   - stage1Model: {fileID: 0}
     stage2Model: {fileID: 0}

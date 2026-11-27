@@ -485,7 +485,7 @@ namespace TheEmptying.Presentation
             _zonePresenter.Rebuild(_zonesModule);
 
             _stockpileStackPresenter = gameObject.AddComponent<StockpileStackPresenter>();
-            _stockpileStackPresenter.Initialize(_simulation.Content, _floatingOrigin, camera, _uiDocument.rootVisualElement);
+            _stockpileStackPresenter.Initialize(_simulation.Content, _simulation.Settings, _floatingOrigin, camera, _uiDocument.rootVisualElement);
             _stockpileStackPresenter.Rebuild(_zonesModule);
             _stockpileStackPresenter.SetIconsVisible(_itemIconsOverlayVisible);
 
@@ -1375,7 +1375,7 @@ namespace TheEmptying.Presentation
                 _pondsPresenter?.Rebind(_pondsModule, _mapModule, _simulation.Settings);
                 _zonePresenter?.Rebind(_simulation.Content, _mapModule);
                 _zonePresenter?.Rebuild(_zonesModule);
-                _stockpileStackPresenter?.Rebind(_simulation.Content);
+                _stockpileStackPresenter?.Rebind(_simulation.Content, _simulation.Settings);
                 _stockpileStackPresenter?.Rebuild(_zonesModule);
                 _stockpileStackPresenter?.SetIconsVisible(_itemIconsOverlayVisible);
                 _zoningMenu?.Rebind(_mapModule, _zonesModule, _simulation.Content, _simulation.Settings);

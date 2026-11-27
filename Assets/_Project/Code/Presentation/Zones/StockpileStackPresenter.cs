@@ -1,4 +1,6 @@
+using System;
 using System.Collections.Generic;
+using System.Linq;
 using TheEmptying.Core.Content;
 using TheEmptying.Modules.Zones;
 using TheEmptying.Presentation.World;
@@ -9,32 +11,40 @@ using EntityId = TheEmptying.Core.Entities.EntityId;
 namespace TheEmptying.Presentation.Zones
 {
     /// <summary>
-    /// R20: draws every stockpile's stack spots as placeholder brown
-    /// boxes (one box per third of the item's capacity the spot holds -
-    /// stage 1 from any amount, stage 2 from a third, stage 3 from two
-    /// thirds, dropping back as it empties), plus each non-empty spot's
-    /// item icon, projected onto the UI as a small colored badge that
-    /// shows a name/amount tooltip on hover. The box models and icon
-    /// sprites come from the item's own content asset once William's
-    /// real art exists (ItemAsset.StackModels / Icon); until then every
-    /// slot there is empty, so every box is this placeholder cube and
-    /// every icon is the placeholder letter badge. Not a per-frame
-    /// rebuild: spot positions never change, so GameObjects are built
-    /// once per Rebuild (after a zone is created/removed, or a load) and
-    /// only their active box count and icon badge are refreshed as
-    /// contents change. Icon badges are hidden together by the Overlays
-    /// "Item icons" toggle; boxes are always shown (they're the
-    /// stockpile itself, not an overlay).
+    /// R20/R22: draws every stockpile's stack spots as placeholder brown
+    /// boxes - one box per third of a pile's capacity it holds (stage 1
+    /// from any amount, stage 2 from a third, stage 3 from two thirds,
+    /// dropping back as it empties) - plus each pile's own item icon,
+    /// projected onto the UI as a small colored badge that shows a
+    /// name/amount tooltip on hover. A spot can hold several piles
+    /// (mixing); each is drawn in its own quarters, turning with the
+    /// spot, sized to its shape and covering about
+    /// PileBoxCoverageFractionSettingId of that footprint. The box models
+    /// and icon sprites come from the item's own content asset once
+    /// William's real art exists (ItemAsset.StackModels / Icon); until
+    /// then every slot there is empty, so every box is this placeholder
+    /// cube and every icon is the placeholder letter badge. Piles come
+    /// and go as deliveries/takes happen, so (unlike the fixed spot list)
+    /// pile visuals are reconciled every frame in Refresh - built the
+    /// first time a pile is seen, torn down the moment its pile is gone.
+    /// Icon badges are hidden together by the Overlays "Item icons"
+    /// toggle; boxes are always shown (they're the stockpile itself, not
+    /// an overlay).
     /// </summary>
     public sealed class StockpileStackPresenter : MonoBehaviour
     {
-        /// <summary>A placeholder brown box's size - public so PersonPresenter's carried box can size itself relative to it.</summary>
+        /// <summary>A placeholder brown box's height, and the carried box's reference size - public so PersonPresenter's carried box can size itself relative to it.</summary>
         public const float BoxSizeMeters = 0.5f;
+
+        /// <summary>R22: how much of a pile's own footprint (its quarters' area) the placeholder box covers, so spots don't look oversized for what's in them.</summary>
+        public const string PileBoxCoverageFractionSettingId = "setting.zones.stockpile_pile_box_coverage_fraction";
+
         private const float BoxStackStepMeters = 0.42f;
         private const float BadgeSizePixels = 20f;
         private const float BadgeHeightAboveSpotMeters = 1.4f;
 
         private ContentDatabase _content;
+        private SettingsRegistry _settings;
         private ZonesModule _zonesModule;
         private FloatingOrigin _floatingOrigin;
         private Camera _camera;
@@ -44,12 +54,13 @@ namespace TheEmptying.Presentation.Zones
         private VisualElement _tooltip;
         private Label _tooltipLabel;
 
-        private readonly Dictionary<(EntityId ZoneId, int SpotIndex), SpotVisual> _spotVisuals = new Dictionary<(EntityId, int), SpotVisual>();
+        private readonly Dictionary<StockPile, PileVisual> _pileVisuals = new Dictionary<StockPile, PileVisual>();
         private bool _iconsVisible = true;
 
-        public void Initialize(ContentDatabase content, FloatingOrigin floatingOrigin, Camera camera, VisualElement uiRoot)
+        public void Initialize(ContentDatabase content, SettingsRegistry settings, FloatingOrigin floatingOrigin, Camera camera, VisualElement uiRoot)
         {
             _content = content;
+            _settings = settings;
             _floatingOrigin = floatingOrigin;
             _camera = camera;
             _uiRoot = uiRoot;
@@ -75,10 +86,11 @@ namespace TheEmptying.Presentation.Zones
             _uiRoot.Add(_tooltip);
         }
 
-        /// <summary>After a load, the content database is a new instance.</summary>
-        public void Rebind(ContentDatabase content)
+        /// <summary>After a load, the content database and settings registry are new instances.</summary>
+        public void Rebind(ContentDatabase content, SettingsRegistry settings)
         {
             _content = content;
+            _settings = settings;
         }
 
         public void SetIconsVisible(bool visible)
@@ -89,43 +101,33 @@ namespace TheEmptying.Presentation.Zones
                 _tooltip.style.display = DisplayStyle.None;
             }
 
-            foreach (SpotVisual visual in _spotVisuals.Values)
+            foreach (PileVisual visual in _pileVisuals.Values)
             {
-                visual.Badge.style.display = visible && visual.LastItemId != null ? DisplayStyle.Flex : DisplayStyle.None;
+                visual.Badge.style.display = visible ? DisplayStyle.Flex : DisplayStyle.None;
             }
         }
 
-        /// <summary>Rebuilds every stockpile spot's GameObjects and badge from scratch - call after a zone is created/removed, and after a load. Also replaces the ZonesModule instance Update reads from every frame (a fresh one after a load).</summary>
+        /// <summary>Tears down and rebuilds every pile visual from scratch - call after a zone is created/removed, and after a load (which replaces the ZonesModule instance Update reads from every frame).</summary>
         public void Rebuild(ZonesModule zonesModule)
         {
             _zonesModule = zonesModule;
 
-            foreach (SpotVisual visual in _spotVisuals.Values)
+            foreach (PileVisual visual in _pileVisuals.Values)
             {
-                Destroy(visual.BoxesRoot);
-                visual.Badge.RemoveFromHierarchy();
+                DestroyPileVisual(visual);
             }
 
-            _spotVisuals.Clear();
-
-            foreach (KeyValuePair<EntityId, ZoneState> row in zonesModule.Stockpiles)
-            {
-                ZoneState zone = row.Value;
-                for (int i = 0; i < zone.Spots.Count; i++)
-                {
-                    _spotVisuals[(row.Key, i)] = BuildSpotVisual(zone.Spots[i]);
-                }
-            }
+            _pileVisuals.Clear();
 
             Refresh();
         }
 
-        /// <summary>Cheap per-frame sync: updates every spot's visible box count and badge content/position, without rebuilding any GameObject - amounts change far more often than zones are created or removed.</summary>
+        /// <summary>Reconciles pile visuals (piles come and go every tick, unlike the fixed spot list) and refreshes each one's stage/badge, then repositions every badge - cheap, since nothing here rebuilds a GameObject unless a pile actually appeared or disappeared.</summary>
         private void Update()
         {
             Refresh();
 
-            foreach (SpotVisual visual in _spotVisuals.Values)
+            foreach (PileVisual visual in _pileVisuals.Values)
             {
                 UpdateBadgePosition(visual);
             }
@@ -138,22 +140,44 @@ namespace TheEmptying.Presentation.Zones
                 return;
             }
 
+            var currentPiles = new HashSet<StockPile>();
+
             foreach (KeyValuePair<EntityId, ZoneState> row in _zonesModule.Stockpiles)
             {
-                ZoneState zone = row.Value;
-                for (int i = 0; i < zone.Spots.Count; i++)
+                foreach (StockSpot spot in row.Value.Spots)
                 {
-                    if (_spotVisuals.TryGetValue((row.Key, i), out SpotVisual visual))
+                    foreach (StockPile pile in spot.Piles)
                     {
-                        ApplySpotState(visual, zone.Spots[i]);
+                        currentPiles.Add(pile);
+
+                        if (!_pileVisuals.TryGetValue(pile, out PileVisual visual))
+                        {
+                            visual = BuildPileVisual(spot, pile);
+                            _pileVisuals[pile] = visual;
+                        }
+
+                        ApplyPileState(visual, pile);
                     }
                 }
             }
+
+            List<StockPile> stale = _pileVisuals.Keys.Where(p => !currentPiles.Contains(p)).ToList();
+            foreach (StockPile pile in stale)
+            {
+                DestroyPileVisual(_pileVisuals[pile]);
+                _pileVisuals.Remove(pile);
+            }
         }
 
-        private SpotVisual BuildSpotVisual(StockSpot spot)
+        private PileVisual BuildPileVisual(StockSpot spot, StockPile pile)
         {
-            var boxesRoot = new GameObject("Spot");
+            double spotSize = _settings.Get(ZonesModule.SpotSizeMetersSettingId);
+            double coverage = _settings.Get(PileBoxCoverageFractionSettingId);
+
+            (double localX, double localZ, double width, double depth) = PileFootprint(pile.QuarterIndices, spotSize);
+            (double worldX, double worldZ) = RotateAndOffset(localX, localZ, spot.RotationDegrees, spot.CenterX, spot.CenterZ);
+
+            var boxesRoot = new GameObject("Pile");
             boxesRoot.transform.SetParent(_root, worldPositionStays: false);
 
             var boxes = new GameObject[3];
@@ -161,13 +185,13 @@ namespace TheEmptying.Presentation.Zones
             {
                 GameObject box = GameObject.CreatePrimitive(PrimitiveType.Cube);
                 box.transform.SetParent(boxesRoot.transform, worldPositionStays: false);
-                Object.Destroy(box.GetComponent<Collider>());
-                box.transform.localScale = new Vector3(BoxSizeMeters, BoxSizeMeters, BoxSizeMeters);
+                Destroy(box.GetComponent<Collider>());
+                box.transform.localScale = new Vector3((float)(width * coverage), BoxSizeMeters, (float)(depth * coverage));
 
                 // R20a: the first box's bottom (not its pivot) rests on the ground; each stage above it stacks on the one below.
                 float groundOffset = GroundPlacement.PivotHeightAboveBase(box);
-                float jitterDegrees = PlaceholderAngleJitter(spot, stage);
-                Vector3 worldPos = new Vector3((float)spot.CenterX, groundOffset + stage * BoxStackStepMeters, (float)spot.CenterZ);
+                float jitterDegrees = PlaceholderAngleJitter(pile, stage);
+                Vector3 worldPos = new Vector3((float)worldX, groundOffset + stage * BoxStackStepMeters, (float)worldZ);
                 box.transform.position = _floatingOrigin.WorldToRender(worldPos);
                 box.transform.rotation = Quaternion.Euler(0f, (float)spot.RotationDegrees + jitterDegrees, 0f);
                 ApplyPlaceholderBrownMaterial(box, stage);
@@ -180,7 +204,7 @@ namespace TheEmptying.Presentation.Zones
                 style =
                 {
                     position = Position.Absolute,
-                    display = DisplayStyle.None,
+                    display = _iconsVisible ? DisplayStyle.Flex : DisplayStyle.None,
                     width = BadgeSizePixels,
                     height = BadgeSizePixels,
                     borderTopLeftRadius = BadgeSizePixels * 0.5f,
@@ -188,29 +212,37 @@ namespace TheEmptying.Presentation.Zones
                     borderBottomLeftRadius = BadgeSizePixels * 0.5f,
                     borderBottomRightRadius = BadgeSizePixels * 0.5f,
                     justifyContent = Justify.Center,
-                    alignItems = Align.Center
+                    alignItems = Align.Center,
+                    backgroundColor = PlaceholderBadgeColor(pile.ItemContentId)
                 }
             };
-            var badgeLabel = new Label { style = { color = Color.white, fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold } };
+            var badgeLabel = new Label
+            {
+                text = DisplayNameForItem(pile.ItemContentId).Substring(0, 1).ToUpperInvariant(),
+                style = { color = Color.white, fontSize = 12, unityFontStyleAndWeight = FontStyle.Bold }
+            };
             badge.Add(badgeLabel);
             badge.RegisterCallback<PointerEnterEvent>(_ => ShowTooltip(badge));
             badge.RegisterCallback<PointerLeaveEvent>(_ => _tooltip.style.display = DisplayStyle.None);
             _uiRoot.Add(badge);
 
-            return new SpotVisual
+            return new PileVisual
             {
-                Spot = spot,
+                Pile = pile,
                 BoxesRoot = boxesRoot,
                 Boxes = boxes,
                 Badge = badge,
-                BadgeLabel = badgeLabel
+                BadgeLabel = badgeLabel,
+                WorldX = worldX,
+                WorldZ = worldZ,
+                LastStage = -1
             };
         }
 
-        private void ApplySpotState(SpotVisual visual, StockSpot spot)
+        private void ApplyPileState(PileVisual visual, StockPile pile)
         {
-            int capacityPerSpot = CapacityPerSpotOf(spot.ItemContentId);
-            int stage = StageFor(spot.AmountStored, capacityPerSpot);
+            int capacity = CapacityOf(pile.ItemContentId);
+            int stage = StageFor(pile.AmountStored, capacity);
 
             if (stage != visual.LastStage)
             {
@@ -222,30 +254,17 @@ namespace TheEmptying.Presentation.Zones
                 visual.LastStage = stage;
             }
 
-            if (spot.ItemContentId != visual.LastItemId)
-            {
-                visual.LastItemId = spot.ItemContentId;
-
-                if (spot.ItemContentId != null)
-                {
-                    visual.BadgeLabel.text = DisplayNameForItem(spot.ItemContentId).Substring(0, 1).ToUpperInvariant();
-                    visual.Badge.style.backgroundColor = PlaceholderBadgeColor(spot.ItemContentId);
-                }
-
-                visual.Badge.style.display = spot.ItemContentId != null && _iconsVisible ? DisplayStyle.Flex : DisplayStyle.None;
-            }
-
-            visual.LastAmount = spot.AmountStored;
+            visual.LastAmount = pile.AmountStored;
         }
 
-        private void UpdateBadgePosition(SpotVisual visual)
+        private void UpdateBadgePosition(PileVisual visual)
         {
             if (visual.Badge.style.display == DisplayStyle.None || _uiRoot.panel == null)
             {
                 return;
             }
 
-            Vector3 worldPos = new Vector3((float)visual.Spot.CenterX, BadgeHeightAboveSpotMeters, (float)visual.Spot.CenterZ);
+            Vector3 worldPos = new Vector3((float)visual.WorldX, BadgeHeightAboveSpotMeters, (float)visual.WorldZ);
             Vector3 renderPos = _floatingOrigin.WorldToRender(worldPos);
             Vector3 viewportPoint = _camera.WorldToViewportPoint(renderPos);
 
@@ -264,8 +283,8 @@ namespace TheEmptying.Presentation.Zones
 
         private void ShowTooltip(VisualElement badge)
         {
-            SpotVisual visual = null;
-            foreach (SpotVisual candidate in _spotVisuals.Values)
+            PileVisual visual = null;
+            foreach (PileVisual candidate in _pileVisuals.Values)
             {
                 if (candidate.Badge == badge)
                 {
@@ -274,15 +293,21 @@ namespace TheEmptying.Presentation.Zones
                 }
             }
 
-            if (visual?.LastItemId == null)
+            if (visual == null)
             {
                 return;
             }
 
-            _tooltipLabel.text = $"{DisplayNameForItem(visual.LastItemId)}: {visual.LastAmount}";
+            _tooltipLabel.text = $"{DisplayNameForItem(visual.Pile.ItemContentId)}: {visual.LastAmount}";
             _tooltip.style.left = badge.style.left.value.value + BadgeSizePixels + 4f;
             _tooltip.style.top = badge.style.top.value.value;
             _tooltip.style.display = DisplayStyle.Flex;
+        }
+
+        private void DestroyPileVisual(PileVisual visual)
+        {
+            Destroy(visual.BoxesRoot);
+            visual.Badge.RemoveFromHierarchy();
         }
 
         /// <summary>Stage 1 from any amount, stage 2 from a third of capacity, stage 3 from two thirds (placeholders) - 0 while empty.</summary>
@@ -302,14 +327,44 @@ namespace TheEmptying.Presentation.Zones
             return fraction >= 1.0 / 3.0 ? 2 : 1;
         }
 
-        private int CapacityPerSpotOf(string itemContentId)
+        /// <summary>The local (unrotated) center offset from the spot's own center, and the local width/depth, of a pile covering these quarters - see StockSpotQuarters for the quarter layout.</summary>
+        private static (double LocalX, double LocalZ, double Width, double Depth) PileFootprint(IReadOnlyList<int> quarterIndices, double spotSizeMeters)
+        {
+            double quarterSize = spotSizeMeters * 0.5;
+            double minX = double.MaxValue, maxX = double.MinValue, minZ = double.MaxValue, maxZ = double.MinValue;
+
+            foreach (int quarter in quarterIndices)
+            {
+                int col = quarter % 2;
+                int row = quarter / 2;
+                double centerX = (col - 0.5) * quarterSize;
+                double centerZ = (row - 0.5) * quarterSize;
+
+                minX = Math.Min(minX, centerX - quarterSize * 0.5);
+                maxX = Math.Max(maxX, centerX + quarterSize * 0.5);
+                minZ = Math.Min(minZ, centerZ - quarterSize * 0.5);
+                maxZ = Math.Max(maxZ, centerZ + quarterSize * 0.5);
+            }
+
+            return ((minX + maxX) * 0.5, (minZ + maxZ) * 0.5, maxX - minX, maxZ - minZ);
+        }
+
+        private static (double WorldX, double WorldZ) RotateAndOffset(double localX, double localZ, double rotationDegrees, double centerX, double centerZ)
+        {
+            double rad = rotationDegrees * Math.PI / 180.0;
+            double cos = Math.Cos(rad);
+            double sin = Math.Sin(rad);
+            return (centerX + localX * cos - localZ * sin, centerZ + localX * sin + localZ * cos);
+        }
+
+        private int CapacityOf(string itemContentId)
         {
             if (itemContentId == null || _zonesModule == null || !_content.TryGet(BuiltInContentTypes.ItemTypeName, itemContentId, out ContentEntry entry) || !(entry.Definition is ItemContent item))
             {
                 return 1;
             }
 
-            return _zonesModule.CapacityPerSpot(item.Size);
+            return _zonesModule.CapacityPerPile(item.PileShape, item.Size);
         }
 
         private string DisplayNameForItem(string itemContentId)
@@ -323,9 +378,9 @@ namespace TheEmptying.Presentation.Zones
         }
 
         /// <summary>A slight random horizontal angle per placeholder box (design, Part 3) - a plain visual flourish, not simulation state, so a cheap deterministic-looking hash is enough; it need not survive save/load matching exactly.</summary>
-        private static float PlaceholderAngleJitter(StockSpot spot, int stage)
+        private static float PlaceholderAngleJitter(StockPile pile, int stage)
         {
-            int hash = spot.CenterX.GetHashCode() ^ spot.CenterZ.GetHashCode() ^ (stage * 7919);
+            int hash = pile.GetHashCode() ^ (stage * 7919);
             return (hash % 2000) / 100f - 10f; // -10..+10 degrees
         }
 
@@ -355,16 +410,17 @@ namespace TheEmptying.Presentation.Zones
             return Color.HSVToRGB(hue, 0.55f, 0.85f);
         }
 
-        private sealed class SpotVisual
+        private sealed class PileVisual
         {
-            public StockSpot Spot;
+            public StockPile Pile;
             public GameObject BoxesRoot;
             public GameObject[] Boxes;
             public VisualElement Badge;
             public Label BadgeLabel;
-            public string LastItemId;
             public int LastAmount;
             public int LastStage;
+            public double WorldX;
+            public double WorldZ;
         }
     }
 }

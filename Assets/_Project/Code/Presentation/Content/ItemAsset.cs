@@ -33,7 +33,10 @@ namespace TheEmptying.Presentation.Content
         [SerializeField] private double spoilTimeMinutes;
         [SerializeField] private int size = 1;
 
-        /// <summary>R20: a stockpile stack of this item picks one of these at random (and keeps it until it empties). Until William's own models exist, every slot here is left empty, so every stack renders as the placeholder brown boxes.</summary>
+        /// <summary>R22: how much of a stockpile spot one pile of this item covers.</summary>
+        [SerializeField] private PileShape pileShape = PileShape.Quarter;
+
+        /// <summary>R20: a stockpile stack of this item picks one of these at random (and keeps it until it empties). Until William's own models exist, every slot here is left empty, so every stack renders as the placeholder brown boxes. R22: each model now represents this item's own PileShape, not necessarily a full spot.</summary>
         [SerializeField] private List<StackModelDefinition> stackModels = new List<StackModelDefinition>();
 
         /// <summary>R20: shown above each of this item's stacks; null falls back to the placeholder colored-badge-with-a-letter.</summary>
@@ -49,6 +52,7 @@ namespace TheEmptying.Presentation.Content
         public int BaseValueTenthCopper => baseValueTenthCopper;
         public double SpoilTimeMinutes => spoilTimeMinutes;
         public int Size => size;
+        public PileShape PileShape => pileShape;
         public IReadOnlyList<StackModelDefinition> StackModels => stackModels;
         public Sprite Icon => icon;
 

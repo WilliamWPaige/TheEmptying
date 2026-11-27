@@ -127,7 +127,7 @@ namespace TheEmptying.Presentation.Selection
         private void BuildStockpileContent(VisualElement container, ZoneState zone)
         {
             int totalSpots = zone.Spots.Count;
-            int usedSpots = zone.Spots.Count(s => s.AmountStored > 0);
+            int usedSpots = zone.Spots.Count(s => s.Piles.Count > 0);
 
             container.Add(new Label($"Spots: {usedSpots} / {totalSpots}")
             {
@@ -135,8 +135,8 @@ namespace TheEmptying.Presentation.Selection
             });
 
             IEnumerable<string> knownItemIds = zone.Spots
-                .Where(s => s.ItemContentId != null)
-                .Select(s => s.ItemContentId)
+                .SelectMany(s => s.Piles)
+                .Select(p => p.ItemContentId)
                 .Concat(zone.StockpileItems.Keys)
                 .Distinct()
                 .OrderBy(id => id, StringComparer.Ordinal);

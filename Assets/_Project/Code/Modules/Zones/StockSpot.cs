@@ -1,11 +1,15 @@
+using System.Collections.Generic;
+using System.Linq;
+
 namespace TheEmptying.Modules.Zones
 {
     /// <summary>
     /// R20: one fixed 2x2 m stack spot in a stockpile's layout. Position
     /// and rotation are set once, when the layout is generated at zone
-    /// creation, and never change afterward. ItemContentId is null when
-    /// the spot is empty; a spot holds exactly one item type at a time,
-    /// up to that item's capacity per spot.
+    /// creation, and never change afterward. R22: a spot splits into four
+    /// 1x1 m quarters (StockSpotQuarters) and holds a list of piles, each
+    /// covering one or more quarters - a spot with an empty Piles list is
+    /// completely free.
     /// </summary>
     public sealed class StockSpot
     {
@@ -13,12 +17,9 @@ namespace TheEmptying.Modules.Zones
         public double CenterZ { get; set; }
         public double RotationDegrees { get; set; }
 
-        /// <summary>Null means empty.</summary>
-        public string ItemContentId { get; set; }
+        public List<StockPile> Piles { get; } = new List<StockPile>();
 
-        public int AmountStored { get; set; }
-
-        /// <summary>Which of the item's stack models this spot's stack is using - picked at random when the stack starts (AmountStored rises from 0), kept until the spot empties again. Meaningless while the spot is empty.</summary>
-        public int StackModelIndex { get; set; }
+        /// <summary>The sum of every pile's AmountStored in this spot - for display and occupancy checks only, never stored.</summary>
+        public int TotalStored => Piles.Sum(p => p.AmountStored);
     }
 }
